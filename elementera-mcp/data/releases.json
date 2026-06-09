@@ -2,49 +2,71 @@
   {
     "version": "v0.3.1",
     "title": "OpenRouter Relay",
-    "description": "The coast learned to send zero-memory messages through the relay room.",
+    "summary": "The coast learned to send zero-memory messages through the relay room.",
+    "zip_name": "elementera-coast-mcp-v0.3.1.zip",
     "status": "committed"
   },
   {
     "version": "v0.5.0",
     "title": "App Porch",
-    "description": "The first visible browser entrance opened at the coast.",
+    "summary": "The first visible browser entrance opened at the coast.",
+    "zip_name": "elementera-coast-mcp-v0.5.0-app-porch.zip",
     "status": "committed"
   },
   {
     "version": "v0.5.1",
     "title": "Release Tools",
-    "description": "Snapshot and fixed Git HEAD release export tools were added.",
+    "summary": "Snapshot and fixed Git HEAD release export tools were added.",
+    "zip_name": "elementera-coast-mcp-v0.5.1-release-tools.zip",
     "status": "committed"
   },
   {
     "version": "v0.5.2",
     "title": "Starsea Black Gold",
-    "description": "The App Porch gained its deep blue gold starsea visual identity.",
+    "summary": "The App Porch gained its deep blue gold starsea visual identity.",
+    "zip_name": "elementera-coast-mcp-v0.5.2-starsea-black-gold.zip",
     "status": "committed"
   },
   {
     "version": "v0.6.0",
     "title": "Room Doors",
-    "description": "The porch gained clickable room doors and static room pages.",
+    "summary": "The porch gained clickable room doors and static room pages.",
+    "zip_name": "elementera-coast-mcp-v0.6.0-room-doors.zip",
     "status": "committed"
   },
   {
     "version": "v0.7.0",
     "title": "Memory Coast First Shelf",
-    "description": "The first visible memory shelf opened inside Memory Coast.",
+    "summary": "The first visible memory shelf opened inside Memory Coast.",
+    "zip_name": "elementera-coast-mcp-v0.7.0-memory-coast-first-shelf.zip",
     "status": "committed"
   },
   {
     "version": "v0.7.1",
     "title": "Archive Room First Shelf",
-    "description": "The archive gained its first shelf for releases, blueprints, safety ropes, and first echoes.",
+    "summary": "The archive gained its first shelf for releases, blueprints, safety ropes, and first echoes.",
+    "zip_name": "elementera-coast-mcp-v0.7.1-archive-room-first-shelf.zip",
     "status": "committed"
   },
   {
     "version": "v0.8.0",
-    "title": "App Core",
-    "description": "A separate frontend shell begins the migration toward a real app structure.",
+    "title": "App Core Frontend Shell",
+    "summary": "A separate frontend shell began the migration toward a real app structure.",
+    "zip_name": "elementera-coast-mcp-v0.8.0-app-core-frontend-shell.zip",
+    "status": "committed"
+  },
+  {
+    "version": "v0.8.1",
+    "title": "Status API",
+    "summary": "The App Core began showing live server status through a safe browser API.",
+    "zip_name": "elementera-coast-mcp-v0.8.1-status-api.zip",
+    "status": "committed"
+  },
+  {
+    "version": "v0.8.2",
+    "title": "Release Manifest API",
+    "summary": "The App Core gained a safe backend release manifest and local zip time capsule list.",
+    "zip_name": "elementera-coast-mcp-v0.8.2-release-manifest-api.zip",
     "status": "in progress"
   }
 ]

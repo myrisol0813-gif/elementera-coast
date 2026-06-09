@@ -182,3 +182,26 @@ footer {
   box-shadow: 0 0 1.2rem var(--gold), 0 0 2.2rem rgba(86,175,210,.32);
   vertical-align: middle;
 }
+
+.dashboard {
+  min-height: auto;
+}
+
+.capsules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.9rem;
+}
+
+.capsule {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid rgba(244, 200, 106, 0.28);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.42);
+  color: var(--soft);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}

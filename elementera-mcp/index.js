@@ -487,3 +487,43 @@ app.get("/api/status", (req, res) => {
     note: "No secrets are exposed."
   });
 });
+
+// v0.8.2 Release Manifest API
+const localZipTimeCapsules082 = [
+  "elementera-coast-mcp-v0.3.1.zip",
+  "elementera-coast-mcp-v0.5.0-app-porch.zip",
+  "elementera-coast-mcp-v0.5.1-release-tools.zip",
+  "elementera-coast-mcp-v0.5.2-starsea-black-gold.zip",
+  "elementera-coast-mcp-v0.6.0-room-doors.zip",
+  "elementera-coast-mcp-v0.7.0-memory-coast-first-shelf.zip",
+  "elementera-coast-mcp-v0.7.1-archive-room-first-shelf.zip",
+  "elementera-coast-mcp-v0.8.1-status-api.zip",
+  "elementera-coast-mcp-v0.8.2-release-manifest-api.zip"
+];
+
+app.get("/api/releases", async (req, res) => {
+  try {
+    const fs = await import("node:fs/promises");
+    const releaseDataPath = new URL("./data/releases.json", import.meta.url);
+    const releases = JSON.parse(await fs.readFile(releaseDataPath, "utf8"));
+    res.json({
+      ok: true,
+      name: "elementera-coast",
+      current_version: "v0.8.2-release-manifest-api",
+      latest_release: releases[releases.length - 1] || null,
+      releases,
+      local_zip_time_capsules: localZipTimeCapsules082,
+      note: "Release manifest is safe to expose."
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      name: "elementera-coast",
+      current_version: "v0.8.2-release-manifest-api",
+      latest_release: null,
+      releases: [],
+      local_zip_time_capsules: localZipTimeCapsules082,
+      note: "Release manifest is not available yet."
+    });
+  }
+});
