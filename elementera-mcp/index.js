@@ -453,3 +453,11 @@ for (const layer of stack071) {
     }
   }
 }
+
+// v0.8.0 App Core static shell
+app.use("/public", express.static("public"));
+app.use("/data", express.static("data"));
+
+app.get("/app", (req, res) => {
+  res.sendFile("public/app.html", { root: process.cwd() });
+});

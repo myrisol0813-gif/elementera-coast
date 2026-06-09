@@ -1,0 +1,50 @@
+[
+  {
+    "version": "v0.3.1",
+    "title": "OpenRouter Relay",
+    "description": "The coast learned to send zero-memory messages through the relay room.",
+    "status": "committed"
+  },
+  {
+    "version": "v0.5.0",
+    "title": "App Porch",
+    "description": "The first visible browser entrance opened at the coast.",
+    "status": "committed"
+  },
+  {
+    "version": "v0.5.1",
+    "title": "Release Tools",
+    "description": "Snapshot and fixed Git HEAD release export tools were added.",
+    "status": "committed"
+  },
+  {
+    "version": "v0.5.2",
+    "title": "Starsea Black Gold",
+    "description": "The App Porch gained its deep blue gold starsea visual identity.",
+    "status": "committed"
+  },
+  {
+    "version": "v0.6.0",
+    "title": "Room Doors",
+    "description": "The porch gained clickable room doors and static room pages.",
+    "status": "committed"
+  },
+  {
+    "version": "v0.7.0",
+    "title": "Memory Coast First Shelf",
+    "description": "The first visible memory shelf opened inside Memory Coast.",
+    "status": "committed"
+  },
+  {
+    "version": "v0.7.1",
+    "title": "Archive Room First Shelf",
+    "description": "The archive gained its first shelf for releases, blueprints, safety ropes, and first echoes.",
+    "status": "committed"
+  },
+  {
+    "version": "v0.8.0",
+    "title": "App Core",
+    "description": "A separate frontend shell begins the migration toward a real app structure.",
+    "status": "in progress"
+  }
+]
