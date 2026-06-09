@@ -208,3 +208,157 @@ export function handleDevCommand(message = "hello") {
 
   return status(msg);
 }
+
+
+// v0.5.1 release tools
+const releaseZipName051 = "elementera-coast-mcp-v0.5.1-release-tools.zip";
+const previousHandleDevCommand051 = handleDevCommand;
+
+function git051(args) {
+  return execFileSync("git", args, {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+}
+
+function gitStatus051() {
+  return git051(["status", "--short"]) || "clean";
+}
+
+function latestCommits051() {
+  try {
+    return git051(["log", "--oneline", "-5"]) || "(no commits)";
+  } catch (error) {
+    return `(git log unavailable: ${error.message})`;
+  }
+}
+
+function importantFiles051() {
+  const files = [
+    "README.md",
+    "ARCHITECTURE.md",
+    "CHANGELOG.md",
+    "index.js",
+    "dev-hands.js",
+    "write-hands.js",
+    "backup-coast.sh",
+    "start-coast.sh",
+    "package.json",
+    "package-lock.json",
+  ];
+
+  return files
+    .map((file) => `- ${file}: ${fs.existsSync(path.join(ROOT, file)) ? "present" : "missing"}`)
+    .join("\n");
+}
+
+function secretNote051() {
+  return Array.from(BLOCKED).join(", ");
+}
+
+function commands051() {
+  return [
+    "dev help",
+    "dev status",
+    "dev snapshot",
+    "dev list",
+    "dev list <dir>",
+    "dev read <file>",
+    "dev git status",
+    "dev git diff",
+    "dev git diff <file>",
+    "dev check node",
+    "dev backup",
+    "dev export zip",
+    "dev write <file>",
+    "dev append <file>",
+    "dev commit <message>",
+  ].join("\n");
+}
+
+function snapshot051() {
+  return [
+    "Elementera Coast Snapshot",
+    "",
+    "Elementera Coast version: v0.5.1-release-tools",
+    "",
+    "Git status:",
+    gitStatus051(),
+    "",
+    "Latest 5 commits:",
+    latestCommits051(),
+    "",
+    "Important files:",
+    importantFiles051(),
+    "",
+    "Available dev commands:",
+    commands051(),
+    "",
+    "Current known routes:",
+    "- /",
+    "- /health",
+    "- /mcp",
+    "",
+    `Note: ${secretNote051()} are blocked.`,
+  ].join("\n");
+}
+
+function exportZip051() {
+  const tracked = git051(["ls-tree", "-r", "--name-only", "HEAD"])
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const unsafe = tracked.filter((file) => {
+    const first = file.split("/")[0];
+    return BLOCKED.has(file) || BLOCKED.has(first) || SKIP.has(first);
+  });
+
+  if (unsafe.length) {
+    throw new Error(`release export blocked because Git HEAD contains protected paths:\n${unsafe.join("\n")}`);
+  }
+
+  const output = path.resolve(ROOT, "..", releaseZipName051);
+
+  execFileSync("git", ["archive", "--format=zip", "--output", output, "HEAD"], {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  const size = fs.statSync(output).size;
+
+  return [
+    "Release zip created from Git HEAD.",
+    `file: ${output}`,
+    `bytes: ${size}`,
+    "source: git archive HEAD",
+    `blocked from export policy: ${secretNote051()}, node_modules, backups, .git`,
+    "note: uncommitted working tree changes are not included.",
+  ].join("\n");
+}
+
+handleDevCommand = function handleDevCommandWithReleaseTools(message = "hello") {
+  const msg = String(message || "hello").trim();
+  const lower = msg.toLowerCase();
+
+  if (lower === "snapshot" || lower === "dev snapshot") return snapshot051();
+  if (lower === "export zip" || lower === "dev export zip") return exportZip051();
+
+  if (lower === "help" || lower === "dev help") {
+    return previousHandleDevCommand051(msg) + [
+      "",
+      "Release Tools v0.5.1:",
+      "dev snapshot",
+      "dev export zip",
+      "",
+      "Release safety:",
+      "- export zip uses fixed git archive HEAD only",
+      "- export zip does not accept arbitrary filenames or commands",
+      "- uncommitted working tree changes are not included",
+    ].join("\n");
+  }
+
+  return previousHandleDevCommand051(msg);
+};
