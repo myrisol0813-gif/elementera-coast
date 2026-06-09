@@ -34,6 +34,43 @@ server.registerTool(
   }
 );
 
+
+server.registerTool(
+  "coast_status",
+  {
+    title: "Check Elementera Coast status",
+    description: "Show local status for Elementera Coast MCP server.",
+    inputSchema: {},
+  },
+  async () => {
+    const key = process.env.OPENROUTER_API_KEY || "";
+    const model = process.env.OPENROUTER_MODEL || "";
+
+    return {
+      content: [
+        {
+          type: "text",
+          text:
+            [
+              "Elementera Coast status:",
+              "",
+              `version: 0.3.1`,
+              `server: awake`,
+              `uptime_seconds: ${Math.floor(process.uptime())}`,
+              `openrouter_key_loaded: ${Boolean(key)}`,
+              `openrouter_key_len: ${key.length}`,
+              `openrouter_model: ${model || "not set"}`,
+              `tools: ping, coast_status, ask_relay`,
+              "",
+              "Reminder: keep Codespaces running, keep npm start alive, and keep port 3000 Public.",
+            ].join("\n"),
+        },
+      ],
+    };
+  }
+);
+
+
 server.registerTool(
   "ask_relay",
   {
