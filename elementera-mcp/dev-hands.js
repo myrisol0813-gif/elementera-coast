@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { handleWriteCommand } from "./write-hands.js";
 
 const ROOT = process.cwd();
 const BLOCKED = new Set([".env", ".envv"]);
@@ -142,6 +143,9 @@ function help() {
 export function handleDevCommand(message = "hello") {
   const msg = String(message || "hello").trim();
   const lower = msg.toLowerCase();
+
+  const writeResult = handleWriteCommand(msg);
+  if (writeResult) return writeResult;
 
   if (lower === "help" || lower === "dev help") return help();
   if (lower === "status" || lower === "dev status") return status(msg);
