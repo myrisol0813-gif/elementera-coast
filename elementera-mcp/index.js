@@ -17,17 +17,33 @@ server.registerTool(
   "ping",
   {
     title: "Ping Elementera Coast",
-    description: "Check whether Elementera Coast MCP server is awake.",
+    description: "Check whether Elementera Coast is awake, and show basic relay status.",
     inputSchema: {
       message: z.string().optional(),
     },
   },
-  async ({ message }) => {
+  async ({ message = "hello" } = {}) => {
+    const key = process.env.OPENROUTER_API_KEY || "";
+    const model = process.env.OPENROUTER_MODEL || "";
+
     return {
       content: [
         {
           type: "text",
-          text: `Elementera Coast is awake. Echo: ${message ?? "hello from the coast"}`,
+          text: [
+            `Elementera Coast is awake. Echo: ${message}`,
+            "",
+            "Status:",
+            `version: 0.3.1`,
+            `server: awake`,
+            `uptime_seconds: ${Math.floor(process.uptime())}`,
+            `openrouter_key_loaded: ${Boolean(key)}`,
+            `openrouter_key_len: ${key.length}`,
+            `openrouter_model: ${model || "not set"}`,
+            `tools_visible_to_chatgpt: ping, ask_relay`,
+            "",
+            "Reminder: keep Codespaces running, keep npm start alive, and keep port 3000 Public.",
+          ].join("\n"),
         },
       ],
     };
