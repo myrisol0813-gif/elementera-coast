@@ -461,3 +461,29 @@ app.use("/data", express.static("data"));
 app.get("/app", (req, res) => {
   res.sendFile("public/app.html", { root: process.cwd() });
 });
+
+// v0.8.1 App Core Status API
+app.get("/api/status", (req, res) => {
+  res.json({
+    ok: true,
+    name: "elementera-coast",
+    version: "v0.8.1-status-api",
+    uptime_seconds: Math.floor(process.uptime()),
+    openrouter_key_loaded: Boolean(process.env.OPENROUTER_API_KEY),
+    openrouter_model: process.env.OPENROUTER_MODEL || null,
+    routes: [
+      "/",
+      "/app",
+      "/health",
+      "/mcp",
+      "/rooms/lighthouse",
+      "/rooms/relay",
+      "/rooms/developer-hands",
+      "/rooms/memory-coast",
+      "/rooms/map-room",
+      "/rooms/archive-room"
+    ],
+    tools: ["ping", "ask_relay", "developer-hands", "write-hands", "release-tools"],
+    note: "No secrets are exposed."
+  });
+});

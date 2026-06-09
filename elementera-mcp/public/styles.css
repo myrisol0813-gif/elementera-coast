@@ -171,3 +171,14 @@ footer {
   .grid { grid-template-columns: 1fr; }
   .card { min-height: auto; }
 }
+
+.lamp {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-right: 0.55rem;
+  border-radius: 999px;
+  background: var(--gold);
+  box-shadow: 0 0 1.2rem var(--gold), 0 0 2.2rem rgba(86,175,210,.32);
+  vertical-align: middle;
+}
