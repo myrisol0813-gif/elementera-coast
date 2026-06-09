@@ -423,3 +423,33 @@ for (const layer of stack070) {
     }
   }
 }
+
+const archiveShelfCards071 = [
+  ["Git Milestones", "Committed construction stages of Elementera Coast.", ["v0.3.1 OpenRouter Relay", "v0.5.0 App Porch", "v0.5.1 Release Tools", "v0.5.2 Starsea Black Gold", "v0.6.0 Room Doors", "v0.7.0 Memory Coast First Shelf"]],
+  ["Release Seeds", "Local zip time capsules saved by Kryo.", ["elementera-coast-mcp-v0.3.1.zip", "elementera-coast-mcp-v0.5.0-app-porch.zip", "elementera-coast-mcp-v0.5.1-release-tools.zip", "elementera-coast-mcp-v0.5.2-starsea-black-gold.zip", "elementera-coast-mcp-v0.6.0-room-doors.zip", "elementera-coast-mcp-v0.7.0-memory-coast-first-shelf.zip"]],
+  ["Blueprints", "Project structure and construction maps.", ["ARCHITECTURE.md", "README.md", "CHANGELOG.md"]],
+  ["Safety Ropes", "Boundaries that keep the coast safe.", ["No secrets in Git", "dot-env and dot-envv blocked", "Protected hands, not unrestricted hands", "Backups before write and append"]],
+  ["First Echo", "The first inscription returned by the relay.", ["当第一束光抵达 Elementera Coast，所有被潮声托付的名字，都在岸上轻轻亮起。"]],
+  ["Current Archive Note", "Archive Room is not a database yet. It is the first visible shelf for release records and construction memory.", ["first archive shelf open"]],
+];
+
+function archiveShelfHtml071() {
+  const cards = archiveShelfCards071.map(([title, desc, items]) => `<article class="card"><strong>${title}</strong><span>${desc}</span><span>${items.map((item) => `• ${item}`).join("<br/>")}</span></article>`).join("");
+  return shell060("Archive Room", `<section class="hero"><p class="eyebrow">v0.7.1 Archive Room First Shelf</p><h1>Archive Room</h1><p class="subtitle">Git history, changelog, architecture, backups, and release seed packages.</p><p class="tagline">Status: first archive shelf open</p><a class="back" href="/">Back to App Porch</a></section><section class="grid" aria-label="Archive Room first shelf">${cards}</section><footer>Black gold is the gate. Deep blue gold is the sea.</footer>`);
+}
+
+const home071 = shell060("Elementera Coast", `<section class="hero" aria-labelledby="page-title"><p class="eyebrow">v0.7.1 Archive Room First Shelf</p><h1 id="page-title">Elementera Coast</h1><p class="subtitle">A protected porch, relay room, memory shore, and developer workbench for Kryo and Myri.</p><p class="tagline">Black gold is the gate. Deep blue gold is the sea.</p></section><section class="grid" aria-label="Elementera Coast room doors"><a class="card" href="/rooms/lighthouse"><strong>Lighthouse</strong><span>Golden MCP entrance and awake beacon.</span></a><a class="card" href="/rooms/relay"><strong>Relay Room</strong><span>Messages crossing the deep blue water.</span></a><a class="card" href="/rooms/developer-hands"><strong>Developer Hands</strong><span>Protected workbench for careful project work.</span></a><a class="card" href="/rooms/memory-coast"><strong>Memory Coast</strong><span>First shelf open: milestones, anchors, fragments, and letters.</span></a><a class="card" href="/rooms/map-room"><strong>Map Room</strong><span>Coming soon: star tracks and coastlines.</span></a><a class="card" href="/rooms/archive-room"><strong>Archive Room</strong><span>First archive shelf open: releases, blueprints, safety ropes, and first echoes.</span></a></section><section class="status">Current milestone: <strong>v0.7.1 Archive Room First Shelf</strong><br/>Archive Room first shelf opened in v0.7.1</section><footer>Elementera Coast is a protected external shore beside the main house.</footer>`);
+
+const stack071 = app._router?.stack || app.router?.stack || [];
+for (const layer of stack071) {
+  if (layer.route?.path === "/" && layer.route?.methods?.get) {
+    for (const routeLayer of layer.route.stack || []) {
+      routeLayer.handle = (req, res) => res.type("html").send(home071);
+    }
+  }
+  if (layer.route?.path === "/rooms/archive-room" && layer.route?.methods?.get) {
+    for (const routeLayer of layer.route.stack || []) {
+      routeLayer.handle = (req, res) => res.type("html").send(archiveShelfHtml071());
+    }
+  }
+}
