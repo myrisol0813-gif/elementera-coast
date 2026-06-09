@@ -284,3 +284,68 @@ for (const layer of appPorchStack) {
     }
   }
 }
+
+const appPorchHtml052 = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Elementera Coast · Starsea Black Gold</title>
+  <style>
+    :root { color-scheme: dark; --gold:#f4c86a; --soft:#ffe5aa; --text:#fbf2dd; --muted:#b9ad98; --blue:#0a2a4a; --line:rgba(244,200,106,.32); --glass:rgba(5,13,27,.72); }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--text); background: radial-gradient(circle at 18% 10%,rgba(244,200,106,.22),transparent 18rem), radial-gradient(circle at 78% 16%,rgba(246,166,215,.12),transparent 16rem), radial-gradient(circle at 70% 82%,rgba(86,175,210,.24),transparent 22rem), linear-gradient(145deg,#020617 0%,#06152a 44%,#0a2a4a 72%,#150f08 100%); overflow-x:hidden; }
+    body:before { content:""; position:fixed; inset:0; pointer-events:none; opacity:.62; background: radial-gradient(circle,rgba(255,255,255,.72) 0 1px,transparent 1.7px) 0 0/5.4rem 5.4rem, radial-gradient(circle,rgba(255,229,170,.55) 0 1px,transparent 1.8px) 2.3rem 1.1rem/7.2rem 7.2rem, repeating-linear-gradient(115deg,rgba(255,255,255,.03) 0 1px,transparent 1px 22px); mask-image:linear-gradient(180deg,#000,rgba(0,0,0,.55),transparent); }
+    body:after { content:""; position:fixed; inset:-8% -5%; pointer-events:none; opacity:.55; background: repeating-radial-gradient(ellipse at 50% 105%,transparent 0 2.1rem,rgba(86,175,210,.12) 2.15rem 2.22rem,transparent 2.3rem 4.2rem); transform:rotate(-4deg); }
+    main { position:relative; z-index:1; width:min(1120px,100%); margin:0 auto; padding:clamp(1rem,4vw,3rem) 1rem 2rem; }
+    .hero { position:relative; overflow:hidden; padding:clamp(1.45rem,6vw,4.25rem); border:1px solid var(--line); border-radius:clamp(1.25rem,4vw,2.2rem); background:linear-gradient(145deg,rgba(3,8,18,.94),rgba(8,32,61,.72) 55%,rgba(28,22,10,.86)); box-shadow:0 2rem 5rem rgba(0,0,0,.52), inset 0 1px 0 rgba(255,255,255,.08); }
+    .hero:after { content:""; position:absolute; right:-5rem; top:-5rem; width:18rem; height:18rem; border-radius:999px; background:radial-gradient(circle,rgba(255,229,170,.54),rgba(244,200,106,.18) 42%,transparent 68%); }
+    .eyebrow { position:relative; z-index:1; margin:0 0 1rem; color:var(--soft); font-size:.78rem; font-weight:800; letter-spacing:.16em; text-transform:uppercase; }
+    .eyebrow:before { content:""; display:inline-block; width:.7rem; height:.7rem; margin-right:.55rem; border-radius:50%; background:var(--gold); box-shadow:0 0 1.4rem var(--gold),0 0 2.6rem rgba(86,175,210,.34); }
+    h1 { position:relative; z-index:1; margin:0; color:var(--soft); font-size:clamp(2.45rem,11vw,6.6rem); line-height:.9; letter-spacing:-.075em; text-shadow:0 0 2.1rem rgba(244,200,106,.28); }
+    .subtitle,.tagline { position:relative; z-index:1; max-width:48rem; margin:1.15rem 0 0; color:var(--muted); font-size:clamp(1rem,2.6vw,1.3rem); line-height:1.7; }
+    .tagline { display:inline-flex; padding:.72rem .95rem; border:1px solid rgba(244,200,106,.28); border-radius:999px; background:rgba(2,6,23,.46); color:var(--soft); font-size:.94rem; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; margin-top:1.25rem; }
+    .card { position:relative; min-height:8rem; padding:1.16rem; border:1px solid var(--line); border-radius:1.3rem; background:linear-gradient(145deg,rgba(4,12,25,.78),rgba(9,31,57,.58)),var(--glass); box-shadow:0 1rem 2.5rem rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.07); backdrop-filter:blur(12px); overflow:hidden; }
+    .card:before { content:""; position:absolute; inset:0; background:linear-gradient(135deg,rgba(244,200,106,.15),transparent 36%,rgba(86,175,210,.1)); pointer-events:none; }
+    .card strong,.card span { position:relative; z-index:1; display:block; }
+    .card strong { color:var(--soft); font-size:1.02rem; }
+    .card span { margin-top:.55rem; color:var(--muted); line-height:1.56; }
+    .status { margin-top:1.25rem; padding:1.12rem 1.2rem; border:1px solid rgba(86,175,210,.36); border-radius:1.25rem; background:linear-gradient(135deg,rgba(86,175,210,.16),rgba(244,200,106,.1)); color:var(--soft); line-height:1.62; }
+    footer { margin:1.5rem 0 0; padding:1rem .25rem 0; color:var(--muted); font-size:.92rem; text-align:center; }
+    @media (max-width:720px) { main{padding-top:.9rem}.hero{padding:1.35rem}.tagline{border-radius:1rem}.grid{grid-template-columns:1fr}.card{min-height:auto} }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero" aria-labelledby="page-title">
+      <p class="eyebrow">v0.5.2 Starsea Black Gold</p>
+      <h1 id="page-title">Elementera Coast</h1>
+      <p class="subtitle">A protected porch, relay room, memory shore, and developer workbench for Kryo and Myri.</p>
+      <p class="tagline">Black gold is the gate. Deep blue gold is the sea.</p>
+    </section>
+    <section class="grid" aria-label="Elementera Coast rooms">
+      <article class="card"><strong>App Porch</strong><span>Black-gold gate opening onto the starsea.</span></article>
+      <article class="card"><strong>Lighthouse</strong><span>Golden beacon awake over the MCP coast.</span></article>
+      <article class="card"><strong>Relay Room</strong><span>Quiet room for messages crossing deep blue water.</span></article>
+      <article class="card"><strong>Developer Hands</strong><span>Protected workbench for read, write, backup, and commit.</span></article>
+      <article class="card"><strong>Memory Coast</strong><span>Coming soon: deep blue starsea memory.</span></article>
+      <article class="card"><strong>Map Room</strong><span>Coming soon: star tracks and coastlines.</span></article>
+      <article class="card"><strong>Archive Room</strong><span>Git commits, backups, architecture, changelog under a lamp.</span></article>
+    </section>
+    <section class="status">Current milestone: <strong>v0.5.2 Starsea Black Gold</strong><br />Built on v0.5.0 App Porch and v0.5.1 Release Tools.</section>
+    <footer>Elementera Coast is a protected external shore beside the main house.</footer>
+  </main>
+</body>
+</html>`;
+
+const appPorchStack052 = app._router?.stack || app.router?.stack || [];
+for (const layer of appPorchStack052) {
+  if (layer.route?.path === "/" && layer.route?.methods?.get) {
+    for (const routeLayer of layer.route.stack || []) {
+      routeLayer.handle = (req, res) => {
+        res.type("html").send(appPorchHtml052);
+      };
+    }
+  }
+}
