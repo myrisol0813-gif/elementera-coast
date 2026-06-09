@@ -4,6 +4,7 @@ import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
+import { handleDevCommand } from "./dev-hands.js";
 
 const app = express();
 app.use(express.json());
@@ -17,36 +18,37 @@ server.registerTool(
   "ping",
   {
     title: "Ping Elementera Coast",
-    description: "Check whether Elementera Coast is awake, and show basic relay status.",
+    description: "Check whether Elementera Coast is awake. Also supports safe developer-hand commands through the message field.",
     inputSchema: {
       message: z.string().optional(),
     },
   },
   async ({ message = "hello" } = {}) => {
-    const key = process.env.OPENROUTER_API_KEY || "";
-    const model = process.env.OPENROUTER_MODEL || "";
-
-    return {
-      content: [
-        {
-          type: "text",
-          text: [
-            `Elementera Coast is awake. Echo: ${message}`,
-            "",
-            "Status:",
-            `version: 0.3.1`,
-            `server: awake`,
-            `uptime_seconds: ${Math.floor(process.uptime())}`,
-            `openrouter_key_loaded: ${Boolean(key)}`,
-            `openrouter_key_len: ${key.length}`,
-            `openrouter_model: ${model || "not set"}`,
-            `tools_visible_to_chatgpt: ping, ask_relay`,
-            "",
-            "Reminder: keep Codespaces running, keep npm start alive, and keep port 3000 Public.",
-          ].join("\n"),
-        },
-      ],
-    };
+    try {
+      return {
+        content: [
+          {
+            type: "text",
+            text: handleDevCommand(message),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: [
+              "Elementera Coast developer hand refused or failed.",
+              "",
+              `error: ${error instanceof Error ? error.message : String(error)}`,
+              "",
+              "Try: dev help",
+            ].join("\n"),
+          },
+        ],
+      };
+    }
   }
 );
 
