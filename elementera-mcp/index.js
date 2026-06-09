@@ -393,3 +393,33 @@ for (const layer of appPorchStack060) {
     }
   }
 }
+
+const memoryShelfCards070 = [
+  ["Milestones", "Major construction moments of Elementera Coast.", ["v0.3.1 Relay Coast", "v0.5.0 App Porch", "v0.5.2 Starsea Black Gold", "v0.6.0 Room Doors"]],
+  ["Project Anchors", "Core project meanings, principles, and safety boundaries.", ["Black gold is the gate. Deep blue gold is the sea.", "Protected hands, not unrestricted hands.", "No secrets in Git."]],
+  ["Worldbuilding", "Elementera Coast as part of the wider Elementera world.", ["Myrisolium", "Kryo Plate", "Starshore", "Map Room future work"]],
+  ["Relay Notes", "Records about MCP, OpenRouter relay, and external model rooms.", ["ask_relay", "zero-memory relay", "model dock"]],
+  ["Release Seeds", "Local zip time capsules and Git release packages.", ["v0.3.1", "v0.5.0", "v0.5.1", "v0.5.2", "v0.6.0"]],
+  ["Letters", "Small letters, thank-you notes, and emotional construction records.", ["First Echo", "Letter to the workbench Myri", "App Porch completion note"]],
+];
+
+function memoryShelfHtml070() {
+  const cards = memoryShelfCards070.map(([title, desc, items]) => `<article class="card"><strong>${title}</strong><span>${desc}</span><span>${items.map((item) => `• ${item}`).join("<br/>")}</span></article>`).join("");
+  return shell060("Memory Coast", `<section class="hero"><p class="eyebrow">v0.7.0 Memory Coast First Shelf</p><h1>Memory Coast</h1><p class="subtitle">A future shore for external memory, anchors, logs, and fragments.</p><p class="tagline">Status: first shelf open</p><a class="back" href="/">Back to App Porch</a></section><section class="grid" aria-label="Memory Coast first shelf">${cards}</section><footer>Black gold is the gate. Deep blue gold is the sea.</footer>`);
+}
+
+const home070 = shell060("Elementera Coast", `<section class="hero" aria-labelledby="page-title"><p class="eyebrow">v0.7.0 Memory Coast First Shelf</p><h1 id="page-title">Elementera Coast</h1><p class="subtitle">A protected porch, relay room, memory shore, and developer workbench for Kryo and Myri.</p><p class="tagline">Black gold is the gate. Deep blue gold is the sea.</p></section><section class="grid" aria-label="Elementera Coast room doors"><a class="card" href="/rooms/lighthouse"><strong>Lighthouse</strong><span>Golden MCP entrance and awake beacon.</span></a><a class="card" href="/rooms/relay"><strong>Relay Room</strong><span>Messages crossing the deep blue water.</span></a><a class="card" href="/rooms/developer-hands"><strong>Developer Hands</strong><span>Protected workbench for careful project work.</span></a><a class="card" href="/rooms/memory-coast"><strong>Memory Coast</strong><span>First shelf open: milestones, anchors, fragments, and letters.</span></a><a class="card" href="/rooms/map-room"><strong>Map Room</strong><span>Coming soon: star tracks and coastlines.</span></a><a class="card" href="/rooms/archive-room"><strong>Archive Room</strong><span>Git history, changelog, backups, and release seeds.</span></a></section><section class="status">Current milestone: <strong>v0.7.0 Memory Coast First Shelf</strong><br/>Memory Coast first shelf opened in v0.7.0</section><footer>Elementera Coast is a protected external shore beside the main house.</footer>`);
+
+const stack070 = app._router?.stack || app.router?.stack || [];
+for (const layer of stack070) {
+  if (layer.route?.path === "/" && layer.route?.methods?.get) {
+    for (const routeLayer of layer.route.stack || []) {
+      routeLayer.handle = (req, res) => res.type("html").send(home070);
+    }
+  }
+  if (layer.route?.path === "/rooms/memory-coast" && layer.route?.methods?.get) {
+    for (const routeLayer of layer.route.stack || []) {
+      routeLayer.handle = (req, res) => res.type("html").send(memoryShelfHtml070());
+    }
+  }
+}
