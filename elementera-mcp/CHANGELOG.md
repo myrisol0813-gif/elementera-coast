@@ -111,3 +111,30 @@ Added:
 Meaning:
 
 The coast woke for the first time.
+
+v0.5.0 - App Porch
+
+Date: 2026-06-09
+
+This release gives Elementera Coast its first visible entrance.
+
+Added:
+
+- visible homepage at "/"
+- App Porch landing page
+- black-gold visual style
+- room overview for Lighthouse, Relay Room, Developer Hands, Memory Coast, Map Room, Archive Room, and App Porch
+- milestone text: "v0.5.0 App Porch"
+
+Confirmed:
+
+- root path "/" now shows a visible HTML page instead of plain text
+- "/health" remains separate
+- "/mcp" remains separate
+- "ping" still works
+- "ask_relay" remains protected
+- Developer Hands and Write Hands remain available through "ping"
+
+Meaning:
+
+Elementera Coast is no longer only a backend workbench or MCP relay. It now has a visible porch that Kryo can open in a browser and recognize as the entrance to the coast.
