@@ -362,3 +362,34 @@ handleDevCommand = function handleDevCommandWithReleaseTools(message = "hello") 
 
   return previousHandleDevCommand051(msg);
 };
+
+// v0.8.10 QA smoke test command
+const smokeArgs0810 = ["scripts/smoke-test.mjs"];
+
+function smokeTest0810() {
+  return execFileSync("node", smokeArgs0810, {
+    cwd: ROOT,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+}
+
+const prev0810 = handleDevCommand;
+
+function isSmoke0810(value) {
+  return value === "smoke" || value === "dev smoke";
+}
+
+handleDevCommand = function devSmoke0810(message = "hello") {
+  const msg = String(message || "hello").trim();
+  const lower = msg.toLowerCase();
+  if (isSmoke0810(lower)) return smokeTest0810();
+  return prev0810(msg);
+};
+
+handleDevCommand = function devSmoke0810(message = "hello") {
+  const msg = String(message || "hello").trim();
+  const lower = msg.toLowerCase();
+  if (isSmoke0810(lower)) return smokeTest0810();
+  return prev0810(msg);
+};
