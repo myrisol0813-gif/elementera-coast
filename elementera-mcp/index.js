@@ -784,3 +784,23 @@ app["delete"](inboxItemRoute089, async (req, res) => {
     res.status(500).json({ ok: false, deleted: false, note: "Draft inbox review tools are not available yet." });
   }
 });
+
+// v0.8.9 hotfix: explicit draft inbox export route
+app.get("/api/memory-drafts-export", async (req, res) => {
+  try {
+    const inbox = await readDraftInbox088();
+    res.json({
+      ok: true,
+      export_type: "memory_draft_inbox",
+      version: inbox.version,
+      storage_state: inbox.storage_state,
+      official_memory: false,
+      count: inbox.items.length,
+      items: inbox.items,
+      exported_at: new Date().toISOString(),
+      note: "Export only. Draft inbox items are not official memories."
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, note: "Draft inbox export is not available yet." });
+  }
+});
