@@ -9,9 +9,10 @@
 <body>
   <main>
     <header class="topbar">
-      <a class="brand" href="#hero"><span class="brand-mark"></span><span><strong>Elementera Coast</strong><small>v0.8.3 App Navigation Polish</small></span></a>
+      <a class="brand" href="#hero"><span class="brand-mark"></span><span><strong>Elementera Coast</strong><small>v0.8.4 Memory Draft UI</small></span></a>
       <nav class="quicknav">
         <a href="#status-section">Status</a>
+        <a href="#draft-section">Draft</a>
         <a href="#rooms-section">Rooms</a>
         <a href="#releases-section">Releases</a>
         <a href="#capsules-section">Time Capsules</a>
@@ -20,7 +21,7 @@
     </header>
 
     <section id="hero" class="hero" aria-labelledby="page-title">
-      <p class="eyebrow">v0.8.3 App Navigation Polish</p>
+      <p class="eyebrow">v0.8.4 Memory Draft UI</p>
       <h1 id="page-title">Elementera Coast</h1>
       <p class="subtitle">A protected starsea workbench and memory coast for Kryo and Myri.</p>
       <p class="tagline">Black gold is the gate. Deep blue gold is the sea.</p>
@@ -28,6 +29,20 @@
 
     <section id="status-section" class="section-head"><h2>Server Status</h2><p>Live status from the local App Core API.</p></section>
     <section id="status" class="timeline" aria-live="polite"><article class="card"><strong>Loading status...</strong><span>The lighthouse lamp is checking the server.</span></article></section>
+
+    <section id="draft-section" class="section-head"><h2>Memory Draft <span class="cn">记忆草稿</span></h2><p>Draft a memory before it becomes part of the coast.</p></section>
+    <section class="card draft-card" aria-labelledby="draft-title">
+      <strong id="draft-title">Local browser draft</strong>
+      <span>This is a local browser draft, not yet written to the coast backend.</span>
+      <form id="memory-draft-form" class="draft-form">
+        <label>Memory title / 记忆标题<input id="draft-title-input" name="title" type="text" placeholder="A small construction memory" /></label>
+        <label>Type / 类型<select id="draft-type" name="type"><option value="milestone">milestone</option><option value="project">project</option><option value="letter">letter</option><option value="worldbuilding">worldbuilding</option><option value="note">note</option></select></label>
+        <label>Tags / 标签<input id="draft-tags" name="tags" type="text" placeholder="comma, separated, tags" /></label>
+        <label>Body / 正文<textarea id="draft-body" name="body" rows="7" placeholder="Write the draft here. It stays in this browser until cleared."></textarea></label>
+        <div class="draft-actions"><button type="submit">Save Draft</button><button type="button" id="clear-draft">Clear Draft</button></div>
+      </form>
+      <p id="draft-message" class="draft-message" aria-live="polite">No local draft saved yet.</p>
+    </section>
 
     <section id="rooms-section" class="section-head"><h2>Rooms</h2><p>Core room doors rendered from local data.</p></section>
     <section id="rooms" class="grid" aria-live="polite"><article class="card"><strong>Loading rooms...</strong><span>The starsea is opening.</span></article></section>

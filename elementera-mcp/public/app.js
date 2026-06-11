@@ -1,3 +1,5 @@
+const DRAFT_KEY = "elementera.memoryDraft.v084";
+
 async function loadJson(path) {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`${path} ${res.status}`);
@@ -21,6 +23,79 @@ function releaseCard(release) {
   const summary = release.summary || release.description || "No summary provided.";
   const label = release.zip_name || release.status || "recorded";
   return `<article class="card"><strong>${release.version} ${release.title}</strong><span>${summary}</span><small>${label}</small></article>`;
+}
+
+function setDraftMessage(message) {
+  const target = document.querySelector("#draft-message");
+  if (target) target.textContent = message;
+}
+
+function getDraftFields() {
+  return {
+    title: document.querySelector("#draft-title-input"),
+    type: document.querySelector("#draft-type"),
+    tags: document.querySelector("#draft-tags"),
+    body: document.querySelector("#draft-body")
+  };
+}
+
+function readDraftForm() {
+  const fields = getDraftFields();
+  return {
+    title: fields.title?.value || "",
+    type: fields.type?.value || "note",
+    tags: fields.tags?.value || "",
+    body: fields.body?.value || "",
+    saved_at: new Date().toISOString(),
+    storage_note: "This is a local browser draft, not yet written to the coast backend."
+  };
+}
+
+function fillDraftForm(draft) {
+  const fields = getDraftFields();
+  if (fields.title) fields.title.value = draft.title || "";
+  if (fields.type) fields.type.value = draft.type || "note";
+  if (fields.tags) fields.tags.value = draft.tags || "";
+  if (fields.body) fields.body.value = draft.body || "";
+}
+
+function loadMemoryDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) {
+      setDraftMessage("No local draft saved yet.");
+      return;
+    }
+    const draft = JSON.parse(raw);
+    fillDraftForm(draft);
+    setDraftMessage("Draft restored from this browser. 草稿已从本机浏览器恢复。");
+  } catch (error) {
+    setDraftMessage("Local draft could not be restored.");
+  }
+}
+
+function saveMemoryDraft(event) {
+  event.preventDefault();
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(readDraftForm()));
+    setDraftMessage("Draft saved locally. 草稿已保存在本机浏览器。");
+  } catch (error) {
+    setDraftMessage("Draft could not be saved in this browser.");
+  }
+}
+
+function clearMemoryDraft() {
+  localStorage.removeItem(DRAFT_KEY);
+  fillDraftForm({ title: "", type: "note", tags: "", body: "" });
+  setDraftMessage("Draft cleared. 本机草稿已清除。");
+}
+
+function initMemoryDraft() {
+  const form = document.querySelector("#memory-draft-form");
+  const clearButton = document.querySelector("#clear-draft");
+  if (form) form.addEventListener("submit", saveMemoryDraft);
+  if (clearButton) clearButton.addEventListener("click", clearMemoryDraft);
+  loadMemoryDraft();
 }
 
 async function renderStatus() {
@@ -68,6 +143,7 @@ async function renderReleases() {
   }
 }
 
+initMemoryDraft();
 renderStatus();
 renderRooms();
 renderReleases();

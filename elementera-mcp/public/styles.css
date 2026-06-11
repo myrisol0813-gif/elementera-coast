@@ -312,3 +312,17 @@ html { scroll-behavior: smooth; }
     border-radius: 0.9rem;
   }
 }
+
+#draft-section { scroll-margin-top: 7rem; }
+.cn { color: var(--muted); font-size: .9em; font-weight: 500; }
+.draft-card { min-height: auto; }
+.draft-form { display: grid; gap: .9rem; margin-top: 1rem; }
+.draft-form label { display: grid; gap: .45rem; color: var(--soft); font-size: .94rem; }
+.draft-form input, .draft-form select, .draft-form textarea { width: 100%; border: 1px solid rgba(244,200,106,.28); border-radius: .95rem; background: rgba(2,6,23,.55); color: var(--text); padding: .82rem .9rem; font: inherit; outline: none; }
+.draft-form textarea { min-height: 10rem; resize: vertical; }
+.draft-form input:focus, .draft-form select:focus, .draft-form textarea:focus { border-color: rgba(255,229,170,.68); box-shadow: 0 0 1rem rgba(244,200,106,.12); }
+.draft-actions { display: flex; flex-wrap: wrap; gap: .7rem; }
+.draft-actions button { min-height: 2.7rem; border: 1px solid rgba(244,200,106,.34); border-radius: 999px; background: linear-gradient(145deg, rgba(244,200,106,.18), rgba(2,6,23,.52)); color: var(--soft); padding: .72rem 1rem; font: inherit; cursor: pointer; }
+.draft-actions button:hover, .draft-actions button:focus-visible { border-color: rgba(255,229,170,.72); outline: none; }
+.draft-message { margin: .95rem 0 0; color: var(--gold); line-height: 1.6; }
+@media (max-width: 720px) { .draft-actions button { flex: 1 1 100%; border-radius: .9rem; } }
