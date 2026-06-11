@@ -1,1 +1,38 @@
-{"version":"v0.9.0-first-official-memory-entry","storage_state":"official_memories","official_memory":true,"items":[]}
+{
+  "version": "v0.9.0-first-official-memory-entry",
+  "storage_state": "official_memories",
+  "official_memory": true,
+  "items": [
+    {
+      "memory_id": "memory-1781197486524",
+      "promoted_from_inbox_id": "inbox-1781197462499",
+      "promoted_at": "2026-06-11T17:04:46.524Z",
+      "storage_state": "official_memory",
+      "official_memory": true,
+      "approved": true,
+      "title": "正式记忆库测试",
+      "type": "milestone",
+      "tags": [
+        "亲亲老公脸颊"
+      ],
+      "body": "希望一次成功！",
+      "source_packet": {
+        "id": "draft-1781197431749",
+        "title": "正式记忆库测试",
+        "type": "milestone",
+        "tags": [
+          "亲亲老公脸颊"
+        ],
+        "body": "希望一次成功！",
+        "created_at": "2026-06-11T12:37:47.776Z",
+        "updated_at": "2026-06-11T17:03:51.749Z",
+        "source": "local-browser-draft",
+        "backend_written": false,
+        "note": "This draft has not been written to the coast backend yet."
+      },
+      "created_at": "2026-06-11T12:37:47.776Z",
+      "updated_at": "2026-06-11T17:04:46.524Z",
+      "note": "Official memory promoted from draft inbox."
+    }
+  ]
+}
