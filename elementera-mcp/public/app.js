@@ -391,3 +391,91 @@ async function validatePacket087() {
 
 const validateButton087 = document.querySelector("#validate-packet");
 if (validateButton087) validateButton087.addEventListener("click", validatePacket087);
+
+// v0.8.8 frontend inbox hook marker
+
+function renderBox088(data) {
+  const target = document.querySelector("#draft-inbox-result");
+  if (!target) return;
+  target.innerHTML = "";
+}
+
+function clearNode088(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+function addLine088(parent, tag, textValue) {
+  const el = document.createElement(tag);
+  el.textContent = textValue;
+  parent.appendChild(el);
+  return el;
+}
+
+function renderInboxList088(data) {
+  const target = document.querySelector("#draft-inbox-result");
+  if (!target) return;
+  clearNode088(target);
+  const items = data.items || [];
+  if (!items.length) {
+    const card = document.createElement("article");
+    card.className = "packet-item";
+    addLine088(card, "strong", "No items yet.");
+    addLine088(card, "span", "Draft inbox is empty.");
+    target.appendChild(card);
+    return;
+  }
+  for (const item of items) {
+    const packet = item.source_packet || {};
+    const card = document.createElement("article");
+    card.className = "packet-item";
+    addLine088(card, "strong", item.inbox_id || "item");
+    addLine088(card, "span", `title: ${packet.title || "Untitled"}`);
+    addLine088(card, "span", `type: ${packet.type || "note"}`);
+    addLine088(card, "span", `received_at: ${item.received_at || "unknown"}`);
+    addLine088(card, "small", `official_memory: ${String(Boolean(item.official_memory))}`);
+    addLine088(card, "small", `approved: ${String(Boolean(item.approved))}`);
+    target.appendChild(card);
+  }
+}
+
+async function refreshInbox088() {
+  try {
+    const data = await loadJson("/api/memory-drafts");
+    renderInboxList088(data);
+    setMessage("#draft-inbox-message", data.note || "Draft inbox refreshed.");
+  } catch (error) {
+    const target = document.querySelector("#draft-inbox-result");
+    if (target) target.innerHTML = `<article class="packet-item validator-invalid"><strong>Draft inbox unavailable</strong><span>Draft inbox is not available yet.</span></article>`;
+    setMessage("#draft-inbox-message", "Draft inbox is not available yet.");
+  }
+}
+
+async function sendInbox088() {
+  if (!currentPacket) updatePacketPreview("Packet preview updated before sending.");
+  if (!currentPacket) {
+    setMessage("#draft-inbox-message", "No packet to send yet.");
+    return;
+  }
+  try {
+    const res = await fetch("/api/memory-drafts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(currentPacket)
+    });
+    const data = await res.json();
+    if (!res.ok || !data.saved) {
+      const errors = data.errors || ["packet was not saved"];
+      const target = document.querySelector("#draft-inbox-result");
+      if (target) target.innerHTML = `<article class="packet-item validator-invalid"><strong>not saved</strong><span>${escapeHtml(errors.join("; "))}</span></article>`;
+      setMessage("#draft-inbox-message", "Packet failed validation and was not stored.");
+      return;
+    }
+    setMessage("#draft-inbox-message", `saved: true · ${data.inbox_id} · count: ${data.count}`);
+    await refreshInbox088();
+  } catch (error) {
+    setMessage("#draft-inbox-message", "Draft inbox is not available yet.");
+  }
+}
+
+const btnSend088 = document.getElementById("send-draft-inbox");
+const btnRefresh088 = document.getElementById("refresh-draft-inbox");
+if (btnSend088) btnSend088.addEventListener("click", sendInbox088);
+if (btnRefresh088) btnRefresh088.addEventListener("click", refreshInbox088);
+refreshInbox088();

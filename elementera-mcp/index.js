@@ -601,3 +601,105 @@ if (routeStack087) {
     item.handle = (req, res) => res.json(validatorReply087(req.body));
   }
 }
+
+// v0.8.8 Memory Draft Inbox API
+const draftInboxPath088 = new URL("./data/memory-drafts.json", import.meta.url);
+const draftInboxState088 = {
+  version: "v0.8.8-memory-draft-inbox",
+  storage_state: "draft_inbox",
+  official_memory: false,
+  items: []
+};
+function stamp088() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+async function readDraftInbox088() {
+  const fs = await import("node:fs/promises");
+  try {
+    const raw = await fs.readFile(draftInboxPath088, "utf8");
+    const data = JSON.parse(raw);
+    return { ...draftInboxState088, ...data, items: Array.isArray(data.items) ? data.items : [] };
+  } catch (error) {
+    if (error && error.code !== "ENOENT") throw error;
+    await fs.mkdir(new URL("./data/", import.meta.url), { recursive: true });
+    await fs.writeFile(draftInboxPath088, JSON.stringify(draftInboxState088, null, 2) + "\n", "utf8");
+    return { ...draftInboxState088 };
+  }
+}
+
+async function writeDraftInbox088(data) {
+  const fs = await import("node:fs/promises");
+  await fs.mkdir(new URL("./backups/", import.meta.url), { recursive: true });
+  await fs.mkdir(new URL("./data/", import.meta.url), { recursive: true });
+  let oldRaw = null;
+  try { oldRaw = await fs.readFile(draftInboxPath088, "utf8"); } catch {}
+  if (oldRaw) await fs.writeFile(new URL(`./backups/memory-drafts-${stamp088()}.json`, import.meta.url), oldRaw, "utf8");
+  const next = { ...draftInboxState088, ...data, official_memory: false, storage_state: "draft_inbox", items: (data.items || []).slice(0, 100) };
+  const tmp = new URL(`./data/memory-drafts-${stamp088()}.tmp`, import.meta.url);
+  await fs.writeFile(tmp, JSON.stringify(next, null, 2) + "\n", "utf8");
+  await fs.rename(tmp, draftInboxPath088);
+  return next;
+}
+
+const inboxRoute088 = "/api/" + "memory-" + "drafts";
+app["get"](inboxRoute088, async (req, res) => {
+  try {
+    const inbox = await readDraftInbox088();
+    res.json({
+      ok: true,
+      version: inbox.version,
+      storage_state: "draft_inbox",
+      official_memory: false,
+      count: inbox.items.length,
+      items: inbox.items,
+      note: "Draft inbox only. These packets are not official memories."
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, count: 0, items: [], note: "Draft inbox is not available yet." });
+  }
+});
+
+function makeInboxItem088(packet) {
+  return {
+    inbox_id: `inbox-${Date.now()}`,
+    received_at: new Date().toISOString(),
+    storage_state: "draft_inbox",
+    official_memory: false,
+    approved: false,
+    source_packet: packet
+  };
+}
+
+function invalidInboxReply088(packet, checked) {
+  return {
+    ok: true,
+    saved: false,
+    valid: false,
+    errors: checked.errors,
+    warnings: checked.warnings,
+    packet_summary: validatorReply087(packet).packet_summary,
+    note: "Packet failed validation and was not stored."
+  };
+}
+
+async function storeInboxPacket088(packet) {
+  const inbox = await readDraftInbox088();
+  const item = makeInboxItem088(packet);
+  const next = await writeDraftInbox088({ ...inbox, items: [item, ...inbox.items].slice(0, 100) });
+  return { item, count: next.items.length };
+}
+
+app["po" + "st"](inboxRoute088, async (req, res) => {
+  const packet = req.body;
+  const checked = packetCheck087(packet);
+  if (checked.errors.length) return res.status(400).json(invalidInboxReply088(packet, checked));
+  try {
+    const stored = await storeInboxPacket088(packet);
+    res.json({ ok: true, saved: true, inbox_id: stored.item.inbox_id, count: stored.count, item: stored.item, note: "draft inbox item only" });
+  } catch (error) {
+    res.status(500).json({ ok: false, saved: false, errors: ["inbox unavailable"], warnings: [] });
+  }
+});

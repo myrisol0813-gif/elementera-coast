@@ -9,10 +9,11 @@
 <body>
   <main>
     <header class="topbar">
-      <a class="brand" href="#hero"><span class="brand-mark"></span><span><strong>Elementera Coast</strong><small>v0.8.7 Memory Packet Validator</small></span></a>
+      <a class="brand" href="#hero"><span class="brand-mark"></span><span><strong>Elementera Coast</strong><small>v0.8.8 Memory Draft Inbox</small></span></a>
       <nav class="quicknav">
         <a href="#status-section">Status</a>
         <a href="#draft-section">Draft</a>
+        <a href="#inbox-section">Inbox</a>
         <a href="#shelf-section">Shelf</a>
         <a href="#rooms-section">Rooms</a>
         <a href="#releases-section">Releases</a>
@@ -22,7 +23,7 @@
     </header>
 
     <section id="hero" class="hero" aria-labelledby="page-title">
-      <p class="eyebrow">v0.8.7 Memory Packet Validator</p>
+      <p class="eyebrow">v0.8.8 Memory Draft Inbox</p>
       <h1 id="page-title">Elementera Coast</h1>
       <p class="subtitle">A protected starsea workbench and memory coast for Kryo and Myri.</p>
       <p class="tagline">Black gold is the gate. Deep blue gold is the sea.</p>
@@ -48,7 +49,7 @@
     <section class="card packet-card" aria-labelledby="packet-title">
       <strong id="packet-title">Draft Packet Preview <span class="cn">记忆包预览</span></strong>
       <span>This packet is generated in this browser only. It has not been written to the coast backend yet.</span>
-      <div class="draft-actions packet-actions"><button type="button" id="update-preview">Update Preview</button><button type="button" id="copy-packet">Copy Packet</button><button type="button" id="download-packet">Download Packet JSON</button><button type="button" id="validate-packet">Validate Packet</button><button type="button" id="save-packet-shelf">Save Packet to Local Shelf</button></div>
+      <div class="draft-actions packet-actions"><button type="button" id="update-preview">Update Preview</button><button type="button" id="copy-packet">Copy Packet</button><button type="button" id="download-packet">Download Packet JSON</button><button type="button" id="validate-packet">Validate Packet</button><button type="button" id="send-draft-inbox">Send to Draft Inbox</button><button type="button" id="save-packet-shelf">Save Packet to Local Shelf</button></div>
       <pre id="packet-preview" class="packet-preview" aria-live="polite">No packet preview yet.</pre>
       <p id="packet-message" class="draft-message" aria-live="polite">Packet preview will update when a draft is saved or restored.</p>
     </section>
@@ -57,6 +58,15 @@
       <strong id="validator-title">Packet Validator Result</strong>
       <span>Validation only. This does not write memory to the coast backend.</span>
       <div id="validator-result" class="validator-result" aria-live="polite"><article class="packet-item"><strong>No validation yet.</strong><span>Click Validate Packet after generating a preview.</span></article></div>
+    </section>
+
+    <section id="inbox-section" class="section-head"><h2>Backend Draft Inbox <span class="cn">后端草稿收件盒</span></h2><p>Validated packets can be stored as draft inbox items. They are not official memories.</p></section>
+    <section class="card inbox-card" aria-labelledby="inbox-title">
+      <strong id="inbox-title">Draft inbox only</strong>
+      <span>This is a draft inbox item, not an official memory.</span>
+      <div class="draft-actions inbox-actions"><button type="button" id="refresh-draft-inbox">Refresh Draft Inbox</button></div>
+      <div id="draft-inbox-result" class="inbox-result" aria-live="polite"><article class="packet-item"><strong>Draft inbox not loaded yet.</strong><span>Click Refresh Draft Inbox or Send to Draft Inbox.</span></article></div>
+      <p id="draft-inbox-message" class="draft-message" aria-live="polite">Draft inbox is separate from official memory.</p>
     </section>
 
     <section id="shelf-section" class="section-head"><h2>Local Memory Packet Shelf <span class="cn">本地记忆包架</span></h2><p>Store draft packets locally before writing them to the coast backend.</p></section>

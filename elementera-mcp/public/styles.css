@@ -391,3 +391,10 @@ html { scroll-behavior: smooth; }
 .validator-valid strong { color: #b7ffd7; }
 .validator-invalid strong { color: #ffd1bd; }
 .validator-result .packet-item span { overflow-wrap: anywhere; }
+
+#inbox-section { scroll-margin-top: 7rem; }
+.inbox-card { min-height: auto; margin-top: 1rem; }
+.inbox-actions { margin-top: 1rem; }
+.inbox-result { display: grid; gap: .8rem; margin-top: 1rem; }
+.inbox-result .packet-item { border-color: rgba(244,200,106,.28); }
+@media (max-width: 720px) { .inbox-actions button { flex: 1 1 100%; border-radius: .9rem; } }
