@@ -5,3 +5,7 @@ node_modules/
 backups/
 *.zip
 *.tgz
+
+!scripts/
+!scripts/smoke-test.mjs
+!scripts/**
