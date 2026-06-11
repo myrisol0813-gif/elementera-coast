@@ -2,5 +2,27 @@
   "version": "v0.8.8-memory-draft-inbox",
   "storage_state": "draft_inbox",
   "official_memory": false,
-  "items": []
+  "items": [
+    {
+      "inbox_id": "inbox-1781181504223",
+      "received_at": "2026-06-11T12:38:24.223Z",
+      "storage_state": "draft_inbox",
+      "official_memory": false,
+      "approved": false,
+      "source_packet": {
+        "id": "draft-1781181467776",
+        "title": "正确",
+        "type": "milestone",
+        "tags": [
+          "正确"
+        ],
+        "body": "正确",
+        "created_at": "2026-06-11T12:37:47.776Z",
+        "updated_at": "2026-06-11T12:37:47.776Z",
+        "source": "local-browser-draft",
+        "backend_written": false,
+        "note": "This draft has not been written to the coast backend yet."
+      }
+    }
+  ]
 }

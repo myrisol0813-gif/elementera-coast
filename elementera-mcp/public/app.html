@@ -9,7 +9,7 @@
 <body>
   <main>
     <header class="topbar">
-      <a class="brand" href="#hero"><span class="brand-mark"></span><span><strong>Elementera Coast</strong><small>v0.8.8 Memory Draft Inbox</small></span></a>
+      <a class="brand" href="#hero"><span class="brand-mark"></span><span><strong>Elementera Coast</strong><small>v0.8.9 Draft Inbox Review Tools</small></span></a>
       <nav class="quicknav">
         <a href="#status-section">Status</a>
         <a href="#draft-section">Draft</a>
@@ -23,7 +23,7 @@
     </header>
 
     <section id="hero" class="hero" aria-labelledby="page-title">
-      <p class="eyebrow">v0.8.8 Memory Draft Inbox</p>
+      <p class="eyebrow">v0.8.9 Draft Inbox Review Tools</p>
       <h1 id="page-title">Elementera Coast</h1>
       <p class="subtitle">A protected starsea workbench and memory coast for Kryo and Myri.</p>
       <p class="tagline">Black gold is the gate. Deep blue gold is the sea.</p>
@@ -60,12 +60,13 @@
       <div id="validator-result" class="validator-result" aria-live="polite"><article class="packet-item"><strong>No validation yet.</strong><span>Click Validate Packet after generating a preview.</span></article></div>
     </section>
 
-    <section id="inbox-section" class="section-head"><h2>Backend Draft Inbox <span class="cn">后端草稿收件盒</span></h2><p>Validated packets can be stored as draft inbox items. They are not official memories.</p></section>
+    <section id="inbox-section" class="section-head"><h2>Backend Draft Inbox <span class="cn">后端草稿收件盒</span></h2><p>These are draft inbox items, not official memories. official_memory: false · approved: false</p></section>
     <section class="card inbox-card" aria-labelledby="inbox-title">
-      <strong id="inbox-title">Draft inbox only</strong>
-      <span>This is a draft inbox item, not an official memory.</span>
-      <div class="draft-actions inbox-actions"><button type="button" id="refresh-draft-inbox">Refresh Draft Inbox</button></div>
+      <strong id="inbox-title">Draft inbox review tools</strong>
+      <span>Review, restore, copy, export, or delete one draft inbox item at a time.</span>
+      <div class="draft-actions inbox-actions"><button type="button" id="refresh-draft-inbox">Refresh Draft Inbox</button><button type="button" id="export-draft-inbox">Export Backend Draft Inbox JSON</button></div>
       <div id="draft-inbox-result" class="inbox-result" aria-live="polite"><article class="packet-item"><strong>Draft inbox not loaded yet.</strong><span>Click Refresh Draft Inbox or Send to Draft Inbox.</span></article></div>
+      <div id="draft-inbox-details" class="inbox-details" aria-live="polite"></div>
       <p id="draft-inbox-message" class="draft-message" aria-live="polite">Draft inbox is separate from official memory.</p>
     </section>
 

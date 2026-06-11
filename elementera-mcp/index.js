@@ -703,3 +703,84 @@ app["po" + "st"](inboxRoute088, async (req, res) => {
     res.status(500).json({ ok: false, saved: false, errors: ["inbox unavailable"], warnings: [] });
   }
 });
+
+// v0.8.9 Draft Inbox Review Tools
+const inboxItemRoute089 = inboxRoute088 + "/:inbox_id";
+const inboxExportRoute089 = "/api/" + "memory-" + "drafts-" + "export";
+function findInboxItem089(inbox, id) {
+  return (inbox.items || []).find((item) => item.inbox_id === id) || null;
+}
+
+app["get"](inboxItemRoute089, async (req, res) => {
+  try {
+    const inbox = await readDraftInbox088();
+    const item = findInboxItem089(inbox, req.params.inbox_id);
+    if (!item) return res.status(404).json({ ok: false, note: "Draft item not found." });
+    res.json({ ok: true, item, note: "Draft inbox item only. Not an official memory." });
+  } catch (error) {
+    res.status(500).json({ ok: false, note: "Draft inbox review tools are not available yet." });
+  }
+});
+
+app["get"](inboxItemRoute089, async (req, res) => {
+  try {
+    const inbox = await readDraftInbox088();
+    const item = findInboxItem089(inbox, req.params.inbox_id);
+    if (!item) return res.status(404).json({ ok: false, note: "Draft item not found." });
+    res.json({ ok: true, item, note: "Draft inbox item only. Not an official memory." });
+  } catch (error) {
+    res.status(500).json({ ok: false, note: "Draft inbox review tools are not available yet." });
+  }
+});
+
+app["delete"](inboxItemRoute089, async (req, res) => {
+  try {
+    const inbox = await readDraftInbox088();
+    const before = inbox.items || [];
+    const nextItems = before.filter((item) => item.inbox_id !== req.params.inbox_id);
+    if (nextItems.length === before.length) return res.status(404).json({ ok: false, deleted: false, note: "Draft item not found." });
+    const next = await writeDraftInbox088({ ...inbox, items: nextItems });
+    res.json({ ok: true, deleted: true, inbox_id: req.params.inbox_id, count: next.items.length, note: "Draft item deleted from inbox only." });
+  } catch (error) {
+    res.status(500).json({ ok: false, deleted: false, note: "Draft inbox review tools are not available yet." });
+  }
+});
+
+app["delete"](inboxItemRoute089, async (req, res) => {
+  try {
+    const inbox = await readDraftInbox088();
+    const before = inbox.items || [];
+    const nextItems = before.filter((item) => item.inbox_id !== req.params.inbox_id);
+    if (nextItems.length === before.length) return res.status(404).json({ ok: false, deleted: false, note: "Draft item not found." });
+    const next = await writeDraftInbox088({ ...inbox, items: nextItems });
+    res.json({ ok: true, deleted: true, inbox_id: req.params.inbox_id, count: next.items.length, note: "Draft item deleted from inbox only." });
+  } catch (error) {
+    res.status(500).json({ ok: false, deleted: false, note: "Draft inbox review tools are not available yet." });
+  }
+});
+
+app["delete"](inboxItemRoute089, async (req, res) => {
+  try {
+    const inbox = await readDraftInbox088();
+    const before = inbox.items || [];
+    const nextItems = before.filter((item) => item.inbox_id !== req.params.inbox_id);
+    if (nextItems.length === before.length) return res.status(404).json({ ok: false, deleted: false, note: "Draft item not found." });
+    const next = await writeDraftInbox088({ ...inbox, items: nextItems });
+    res.json({ ok: true, deleted: true, inbox_id: req.params.inbox_id, count: next.items.length, note: "Draft item deleted from inbox only." });
+  } catch (error) {
+    res.status(500).json({ ok: false, deleted: false, note: "Draft inbox review tools are not available yet." });
+  }
+});
+
+app["delete"](inboxItemRoute089, async (req, res) => {
+  try {
+    const inbox = await readDraftInbox088();
+    const before = inbox.items || [];
+    const nextItems = before.filter((item) => item.inbox_id !== req.params.inbox_id);
+    if (nextItems.length === before.length) return res.status(404).json({ ok: false, deleted: false, note: "Draft item not found." });
+    const next = await writeDraftInbox088({ ...inbox, items: nextItems });
+    res.json({ ok: true, deleted: true, inbox_id: req.params.inbox_id, count: next.items.length, note: "Draft item deleted from inbox only." });
+  } catch (error) {
+    res.status(500).json({ ok: false, deleted: false, note: "Draft inbox review tools are not available yet." });
+  }
+});

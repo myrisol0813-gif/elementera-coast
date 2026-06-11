@@ -479,3 +479,157 @@ const btnRefresh088 = document.getElementById("refresh-draft-inbox");
 if (btnSend088) btnSend088.addEventListener("click", sendInbox088);
 if (btnRefresh088) btnRefresh088.addEventListener("click", refreshInbox088);
 refreshInbox088();
+
+function inboxCard089(item) {
+  const packet = item.source_packet || {};
+  const card = document.createElement("article");
+  card.className = "packet-item inbox-review-item";
+  card.dataset.inboxId = item.inbox_id || "";
+  addLine088(card, "strong", item.inbox_id || "item");
+  addLine088(card, "span", `title: ${packet.title || "Untitled"}`);
+  addLine088(card, "span", `type: ${packet.type || "note"}`);
+  addLine088(card, "span", `tags: ${parseTags(packet.tags).join(", ") || "none"}`);
+  addLine088(card, "span", `received_at: ${item.received_at || "unknown"}`);
+  addLine088(card, "small", `official_memory: ${String(Boolean(item.official_memory))}`);
+  addLine088(card, "small", `approved: ${String(Boolean(item.approved))}`);
+  const actions = document.createElement("div");
+  actions.className = "inbox-item-actions";
+  for (const [action, label] of [["view", "View Details"], ["restore", "Restore to Draft"], ["copy", "Copy Packet"], ["delete", "Delete Draft"]]) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.dataset.action = action;
+    btn.dataset.inboxId = item.inbox_id || "";
+    btn.textContent = label;
+    if (action === "delete") btn.className = "danger-lite";
+    actions.appendChild(btn);
+  }
+  card.appendChild(actions);
+  return card;
+}
+
+function renderInboxList089(data) {
+  const target = document.querySelector("#draft-inbox-result");
+  if (!target) return;
+  clearNode088(target);
+  const items = data.items || [];
+  if (!items.length) {
+    const card = document.createElement("article");
+    card.className = "packet-item";
+    addLine088(card, "strong", "No items yet.");
+    addLine088(card, "span", "Draft inbox is empty.");
+    target.appendChild(card);
+    return;
+  }
+  for (const item of items) target.appendChild(inboxCard089(item));
+}
+
+async function refreshInbox089() {
+  try {
+    const data = await loadJson("/api/memory-drafts");
+    renderInboxList089(data);
+    setMessage("#draft-inbox-message", data.note || "Draft inbox refreshed.");
+  } catch (error) {
+    const target = document.querySelector("#draft-inbox-result");
+    if (target) target.innerHTML = `<article class="packet-item validator-invalid"><strong>Review tools unavailable</strong><span>Draft inbox review tools are not available yet.</span></article>`;
+    setMessage("#draft-inbox-message", "Draft inbox review tools are not available yet.");
+  }
+}
+
+async function viewInboxItem089(id) {
+  const details = document.querySelector("#draft-inbox-details");
+  if (!details) return;
+  try {
+    const url = "/api/" + "memory-" + "drafts/" + encodeURIComponent(id);
+    const data = await loadJson(url);
+    clearNode088(details);
+    const card = document.createElement("article");
+    card.className = "packet-item inbox-detail-card";
+    addLine088(card, "strong", `Details: ${data.item?.inbox_id || id}`);
+    const pre = document.createElement("pre");
+    pre.className = "packet-preview inbox-json";
+    pre.textContent = JSON.stringify(data.item, null, 2);
+    card.appendChild(pre);
+    details.appendChild(card);
+  } catch (error) {
+    details.innerHTML = `<article class="packet-item validator-invalid"><strong>Details unavailable</strong><span>Review tools are not available yet.</span></article>`;
+  }
+}
+
+async function loadInboxItemPacket089(id) {
+  const url = "/api/" + "memory-" + "drafts/" + encodeURIComponent(id);
+  const data = await loadJson(url);
+  return data.item?.source_packet || null;
+}
+
+async function restoreInboxItem089(id) {
+  try {
+    const packet = await loadInboxItemPacket089(id);
+    if (!packet) throw new Error("missing packet");
+    draftCreatedAt = packet.created_at || null;
+    fillDraftForm(packet);
+    currentPacket = { ...packet, backend_written: false, updated_at: new Date().toISOString() };
+    const preview = document.querySelector("#packet-preview");
+    if (preview) preview.textContent = JSON.stringify(currentPacket, null, 2);
+    setMessage("#draft-message", "Inbox item restored to draft.");
+    setMessage("#packet-message", "Inbox item restored to draft preview.");
+    setMessage("#draft-inbox-message", "Restored to draft. Still not official memory.");
+  } catch (error) {
+    setMessage("#draft-inbox-message", "Could not restore draft inbox item.");
+  }
+}
+
+async function copyInboxPacket089(id) {
+  try {
+    const packet = await loadInboxItemPacket089(id);
+    if (!packet) throw new Error("missing packet");
+    const json = JSON.stringify(packet, null, 2);
+    if (!navigator.clipboard) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(json);
+    setMessage("#draft-inbox-message", "Source packet copied.");
+  } catch (error) {
+    setMessage("#draft-inbox-message", "Clipboard unavailable. Use View Details and copy manually.");
+  }
+}
+
+async function deleteInboxItem089(id) {
+  const ok = confirm("Delete this draft inbox item? This does not affect official memories.");
+  if (!ok) return;
+  try {
+    const url = "/api/" + "memory-" + "drafts/" + encodeURIComponent(id);
+    const res = await fetch(url, { method: "DELETE" });
+    const data = await res.json();
+    if (!res.ok || !data.deleted) throw new Error("delete failed");
+    setMessage("#draft-inbox-message", `deleted: true · ${data.inbox_id} · count: ${data.count}`);
+    await refreshInbox089();
+  } catch (error) {
+    setMessage("#draft-inbox-message", "Could not delete draft inbox item.");
+  }
+}
+
+async function exportInbox089() {
+  try {
+    const data = await loadJson("/api/memory-drafts-export");
+    downloadJson(data, `elementera-memory-draft-inbox-v089-${stamp()}.json`);
+    setMessage("#draft-inbox-message", "Backend draft inbox JSON download started.");
+  } catch (error) {
+    setMessage("#draft-inbox-message", "Draft inbox review tools are not available yet.");
+  }
+}
+
+const actions089 = { view: viewInboxItem089, restore: restoreInboxItem089, copy: copyInboxPacket089, delete: deleteInboxItem089 };
+
+function handleInboxClick089(event) {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  const fn = actions089[button.dataset.action];
+  if (fn) fn(button.dataset.inboxId);
+}
+
+const inboxNode089 = document.getElementById("draft-inbox-result");
+if (inboxNode089) inboxNode089.addEventListener("click", handleInboxClick089);
+
+const refreshNode089 = document.getElementById("refresh-draft-inbox");
+if (refreshNode089) refreshNode089.addEventListener("click", refreshInbox089);
+const exportNode089 = document.getElementById("export-draft-inbox");
+if (exportNode089) exportNode089.addEventListener("click", exportInbox089);
+refreshInbox089();
