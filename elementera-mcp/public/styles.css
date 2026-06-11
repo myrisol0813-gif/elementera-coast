@@ -326,3 +326,30 @@ html { scroll-behavior: smooth; }
 .draft-actions button:hover, .draft-actions button:focus-visible { border-color: rgba(255,229,170,.72); outline: none; }
 .draft-message { margin: .95rem 0 0; color: var(--gold); line-height: 1.6; }
 @media (max-width: 720px) { .draft-actions button { flex: 1 1 100%; border-radius: .9rem; } }
+
+.packet-card { min-height: auto; margin-top: 1rem; }
+.packet-actions { margin-top: 1rem; }
+.packet-preview {
+  width: 100%;
+  max-width: 100%;
+  min-height: 12rem;
+  margin: 1rem 0 0;
+  padding: 1rem;
+  border: 1px solid rgba(244,200,106,.24);
+  border-radius: 1rem;
+  background: rgba(2,6,23,.62);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: .86rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+}
+
+.packet-card .draft-actions button { flex: 1 1 auto; }
+
+@media (max-width: 720px) {
+  .packet-preview { font-size: .78rem; border-radius: .9rem; }
+  .packet-card .draft-actions button { flex: 1 1 100%; }
+}

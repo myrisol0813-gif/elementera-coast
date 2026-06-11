@@ -9,7 +9,7 @@
 <body>
   <main>
     <header class="topbar">
-      <a class="brand" href="#hero"><span class="brand-mark"></span><span><strong>Elementera Coast</strong><small>v0.8.4 Memory Draft UI</small></span></a>
+      <a class="brand" href="#hero"><span class="brand-mark"></span><span><strong>Elementera Coast</strong><small>v0.8.5 Memory Draft Packet Preview</small></span></a>
       <nav class="quicknav">
         <a href="#status-section">Status</a>
         <a href="#draft-section">Draft</a>
@@ -21,7 +21,7 @@
     </header>
 
     <section id="hero" class="hero" aria-labelledby="page-title">
-      <p class="eyebrow">v0.8.4 Memory Draft UI</p>
+      <p class="eyebrow">v0.8.5 Memory Draft Packet Preview</p>
       <h1 id="page-title">Elementera Coast</h1>
       <p class="subtitle">A protected starsea workbench and memory coast for Kryo and Myri.</p>
       <p class="tagline">Black gold is the gate. Deep blue gold is the sea.</p>
@@ -42,6 +42,14 @@
         <div class="draft-actions"><button type="submit">Save Draft</button><button type="button" id="clear-draft">Clear Draft</button></div>
       </form>
       <p id="draft-message" class="draft-message" aria-live="polite">No local draft saved yet.</p>
+    </section>
+
+    <section class="card packet-card" aria-labelledby="packet-title">
+      <strong id="packet-title">Draft Packet Preview <span class="cn">记忆包预览</span></strong>
+      <span>This packet is generated in this browser only. It has not been written to the coast backend yet.</span>
+      <div class="draft-actions packet-actions"><button type="button" id="update-preview">Update Preview</button><button type="button" id="copy-packet">Copy Packet</button><button type="button" id="download-packet">Download Packet JSON</button></div>
+      <pre id="packet-preview" class="packet-preview" aria-live="polite">No packet preview yet.</pre>
+      <p id="packet-message" class="draft-message" aria-live="polite">Packet preview will update when a draft is saved or restored.</p>
     </section>
 
     <section id="rooms-section" class="section-head"><h2>Rooms</h2><p>Core room doors rendered from local data.</p></section>
