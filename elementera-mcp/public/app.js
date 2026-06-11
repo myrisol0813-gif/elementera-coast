@@ -1,4 +1,5 @@
 const DRAFT_KEY = "elementera.memoryDraft.v084";
+const SHELF_KEY = "elementera.memoryPacketShelf.v086";
 let currentPacket = null;
 let draftCreatedAt = null;
 
@@ -10,6 +11,10 @@ async function loadJson(path) {
 
 function text(value, fallback = "unknown") {
   return value === undefined || value === null || value === "" ? fallback : String(value);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[char]));
 }
 
 function fallback(id, title, message) {
@@ -42,7 +47,11 @@ function getDraftFields() {
 }
 
 function parseTags(value) {
-  return (value || "").split(",").map((tag) => tag.trim()).filter(Boolean);
+  return Array.isArray(value) ? value : (value || "").split(",").map((tag) => tag.trim()).filter(Boolean);
+}
+
+function tagsToInput(value) {
+  return Array.isArray(value) ? value.join(", ") : value || "";
 }
 
 function readDraftForm() {
@@ -61,7 +70,7 @@ function fillDraftForm(draft) {
   const fields = getDraftFields();
   if (fields.title) fields.title.value = draft.title || "";
   if (fields.type) fields.type.value = draft.type || "note";
-  if (fields.tags) fields.tags.value = draft.tags || "";
+  if (fields.tags) fields.tags.value = tagsToInput(draft.tags);
   if (fields.body) fields.body.value = draft.body || "";
 }
 
@@ -71,9 +80,9 @@ function hasDraftContent(draft) {
 
 function makeDraftPacket(draft) {
   const now = new Date().toISOString();
-  if (!draftCreatedAt) draftCreatedAt = draft.saved_at || now;
+  if (!draftCreatedAt) draftCreatedAt = draft.created_at || draft.saved_at || now;
   return {
-    id: `draft-${Date.now()}`,
+    id: draft.id || `draft-${Date.now()}`,
     title: draft.title || "",
     type: draft.type || "note",
     tags: parseTags(draft.tags),
@@ -99,6 +108,107 @@ function updatePacketPreview(message = "Packet preview updated.") {
   currentPacket = makeDraftPacket(draft);
   preview.textContent = JSON.stringify(currentPacket, null, 2);
   setMessage("#packet-message", message);
+}
+
+function loadShelf() {
+  try {
+    const raw = localStorage.getItem(SHELF_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function saveShelf(list) {
+  localStorage.setItem(SHELF_KEY, JSON.stringify(list));
+}
+
+function renderShelf() {
+  const target = document.querySelector("#packet-shelf");
+  if (!target) return;
+  const shelf = loadShelf();
+  if (!shelf.length) {
+    target.innerHTML = `<article class="packet-item"><strong>No local memory packets yet.</strong><span>还没有本地记忆包。</span></article>`;
+    setMessage("#shelf-message", "Shelf is local to this browser.");
+    return;
+  }
+  target.innerHTML = shelf.map((packet) => {
+    const tags = parseTags(packet.tags).join(", ") || "none";
+    return `<article class="packet-item" data-id="${escapeHtml(packet.id)}"><strong>${escapeHtml(packet.title || "Untitled packet")}</strong><span>type: ${escapeHtml(packet.type || "note")}</span><span>tags: ${escapeHtml(tags)}</span><span>updated_at: ${escapeHtml(packet.updated_at || "unknown")}</span><small>backend_written: ${String(Boolean(packet.backend_written))}</small><div class="shelf-item-actions"><button type="button" data-action="restore" data-id="${escapeHtml(packet.id)}">Restore to Draft</button><button type="button" data-action="delete" data-id="${escapeHtml(packet.id)}">Delete</button></div></article>`;
+  }).join("");
+  setMessage("#shelf-message", `${shelf.length} local packet${shelf.length === 1 ? "" : "s"} stored in this browser.`);
+}
+
+function savePacketToShelf() {
+  if (!currentPacket) updatePacketPreview("Packet preview updated before saving to shelf.");
+  if (!currentPacket) {
+    setMessage("#packet-message", "No packet to save yet. Write a draft first.");
+    return;
+  }
+  if (!currentPacket.title.trim() || !currentPacket.body.trim()) {
+    setMessage("#packet-message", "Please add both title and body before saving a packet to the local shelf.");
+    return;
+  }
+  const packet = { ...currentPacket, id: currentPacket.id || `draft-${Date.now()}`, backend_written: false, updated_at: new Date().toISOString() };
+  const shelf = loadShelf();
+  shelf.unshift(packet);
+  saveShelf(shelf);
+  renderShelf();
+  setMessage("#packet-message", "Packet saved to local shelf. 记忆包已放入本地架子。");
+}
+
+function restorePacket(id) {
+  const packet = loadShelf().find((item) => item.id === id);
+  if (!packet) {
+    setMessage("#shelf-message", "Packet could not be found.");
+    return;
+  }
+  draftCreatedAt = packet.created_at || null;
+  fillDraftForm(packet);
+  currentPacket = { ...packet, backend_written: false, updated_at: new Date().toISOString() };
+  const preview = document.querySelector("#packet-preview");
+  if (preview) preview.textContent = JSON.stringify(currentPacket, null, 2);
+  setMessage("#draft-message", "Packet restored to draft.");
+  setMessage("#packet-message", "Packet restored to draft.");
+  setMessage("#shelf-message", "Packet restored to draft.");
+}
+
+function deletePacket(id) {
+  const nextShelf = loadShelf().filter((item) => item.id !== id);
+  saveShelf(nextShelf);
+  renderShelf();
+  setMessage("#shelf-message", "Packet deleted from local shelf.");
+}
+
+function clearShelf() {
+  localStorage.removeItem(SHELF_KEY);
+  renderShelf();
+  setMessage("#shelf-message", "Local packet shelf cleared. 本地记忆包架已清空。");
+}
+
+function stamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+function downloadJson(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function exportShelf() {
+  const shelf = loadShelf();
+  downloadJson(shelf, `elementera-memory-packet-shelf-v086-${stamp()}.json`);
+  setMessage("#shelf-message", shelf.length ? "Shelf JSON download started." : "Empty shelf JSON download started.");
 }
 
 function loadMemoryDraft() {
@@ -159,27 +269,13 @@ async function copyPacket() {
   }
 }
 
-function stamp() {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-}
-
 function downloadPacket() {
   if (!currentPacket) updatePacketPreview("Packet preview updated before download.");
   if (!currentPacket) {
     setMessage("#packet-message", "No packet to download yet. Write a draft first.");
     return;
   }
-  const blob = new Blob([JSON.stringify(currentPacket, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `elementera-memory-draft-v085-${stamp()}.json`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  downloadJson(currentPacket, `elementera-memory-draft-v085-${stamp()}.json`);
   setMessage("#packet-message", "Packet JSON download started.");
 }
 
@@ -189,12 +285,27 @@ function initMemoryDraft() {
   const updateButton = document.querySelector("#update-preview");
   const copyButton = document.querySelector("#copy-packet");
   const downloadButton = document.querySelector("#download-packet");
+  const saveShelfButton = document.querySelector("#save-packet-shelf");
+  const exportShelfButton = document.querySelector("#export-shelf");
+  const clearShelfButton = document.querySelector("#clear-shelf");
+  const shelfTarget = document.querySelector("#packet-shelf");
   if (form) form.addEventListener("submit", saveMemoryDraft);
   if (clearButton) clearButton.addEventListener("click", clearMemoryDraft);
   if (updateButton) updateButton.addEventListener("click", () => updatePacketPreview("Packet preview updated."));
   if (copyButton) copyButton.addEventListener("click", copyPacket);
   if (downloadButton) downloadButton.addEventListener("click", downloadPacket);
+  if (saveShelfButton) saveShelfButton.addEventListener("click", savePacketToShelf);
+  if (exportShelfButton) exportShelfButton.addEventListener("click", exportShelf);
+  if (clearShelfButton) clearShelfButton.addEventListener("click", clearShelf);
+  if (shelfTarget) shelfTarget.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-action]");
+    if (!button) return;
+    const id = button.getAttribute("data-id");
+    if (button.dataset.action === "restore") restorePacket(id);
+    if (button.dataset.action === "delete") deletePacket(id);
+  });
   loadMemoryDraft();
+  renderShelf();
 }
 
 async function renderStatus() {

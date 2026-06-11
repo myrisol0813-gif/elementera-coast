@@ -353,3 +353,33 @@ html { scroll-behavior: smooth; }
   .packet-preview { font-size: .78rem; border-radius: .9rem; }
   .packet-card .draft-actions button { flex: 1 1 100%; }
 }
+
+#shelf-section { scroll-margin-top: 7rem; }
+.shelf-card { min-height: auto; margin-top: 1rem; }
+.shelf-actions { margin-top: 1rem; }
+.shelf-list { display: grid; gap: .8rem; margin-top: 1rem; }
+.packet-item {
+  display: grid;
+  gap: .42rem;
+  padding: .95rem;
+  border: 1px solid rgba(244,200,106,.22);
+  border-radius: 1rem;
+  background: rgba(2,6,23,.48);
+  overflow-wrap: anywhere;
+}
+.packet-item strong { color: var(--soft); }
+.packet-item span { color: var(--muted); line-height: 1.55; }
+.packet-item small { color: var(--gold); }
+.shelf-item-actions { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: .55rem; }
+.shelf-item-actions button {
+  min-height: 2.35rem;
+  border: 1px solid rgba(244,200,106,.3);
+  border-radius: 999px;
+  background: rgba(2,6,23,.5);
+  color: var(--soft);
+  padding: .58rem .82rem;
+  font: inherit;
+  cursor: pointer;
+}
+.shelf-item-actions button:hover, .shelf-item-actions button:focus-visible { border-color: rgba(255,229,170,.68); outline: none; }
+@media (max-width: 720px) { .shelf-item-actions button { flex: 1 1 100%; border-radius: .9rem; } }
