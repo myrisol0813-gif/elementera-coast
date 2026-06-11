@@ -9,11 +9,12 @@
 <body>
   <main>
     <header class="topbar">
-      <a class="brand" href="#hero"><span class="brand-mark"></span><span><strong>Elementera Coast</strong><small>v0.8.9 Draft Inbox Review Tools</small></span></a>
+      <a class="brand" href="#hero"><span class="brand-mark"></span><span><strong>Elementera Coast</strong><small>v0.9.0 First Official Memory Entry</small></span></a>
       <nav class="quicknav">
         <a href="#status-section">Status</a>
         <a href="#draft-section">Draft</a>
         <a href="#inbox-section">Inbox</a>
+        <a href="#official-memory-section">Official</a>
         <a href="#shelf-section">Shelf</a>
         <a href="#rooms-section">Rooms</a>
         <a href="#releases-section">Releases</a>
@@ -23,7 +24,7 @@
     </header>
 
     <section id="hero" class="hero" aria-labelledby="page-title">
-      <p class="eyebrow">v0.8.9 Draft Inbox Review Tools</p>
+      <p class="eyebrow">v0.9.0 First Official Memory Entry</p>
       <h1 id="page-title">Elementera Coast</h1>
       <p class="subtitle">A protected starsea workbench and memory coast for Kryo and Myri.</p>
       <p class="tagline">Black gold is the gate. Deep blue gold is the sea.</p>
@@ -60,14 +61,25 @@
       <div id="validator-result" class="validator-result" aria-live="polite"><article class="packet-item"><strong>No validation yet.</strong><span>Click Validate Packet after generating a preview.</span></article></div>
     </section>
 
-    <section id="inbox-section" class="section-head"><h2>Backend Draft Inbox <span class="cn">后端草稿收件盒</span></h2><p>These are draft inbox items, not official memories. official_memory: false · approved: false</p></section>
+    <section id="inbox-section" class="section-head"><h2>Backend Draft Inbox <span class="cn">后端草稿收件盒</span></h2><p>These are draft inbox items, not official memories. official_memory: false · approved: false until promoted.</p></section>
     <section class="card inbox-card" aria-labelledby="inbox-title">
       <strong id="inbox-title">Draft inbox review tools</strong>
-      <span>Review, restore, copy, export, or delete one draft inbox item at a time.</span>
+      <span>Review, restore, copy, export, delete, or promote one draft inbox item at a time.</span>
       <div class="draft-actions inbox-actions"><button type="button" id="refresh-draft-inbox">Refresh Draft Inbox</button><button type="button" id="export-draft-inbox">Export Backend Draft Inbox JSON</button></div>
       <div id="draft-inbox-result" class="inbox-result" aria-live="polite"><article class="packet-item"><strong>Draft inbox not loaded yet.</strong><span>Click Refresh Draft Inbox or Send to Draft Inbox.</span></article></div>
       <div id="draft-inbox-details" class="inbox-details" aria-live="polite"></div>
       <p id="draft-inbox-message" class="draft-message" aria-live="polite">Draft inbox is separate from official memory.</p>
+    </section>
+
+    <section id="official-memory-section" class="section-head"><h2>Official Memories <span class="cn">正式记忆库</span></h2><p>Official memories are promoted from draft inbox only.</p></section>
+    <section class="card official-card" aria-labelledby="official-memory-title">
+      <strong id="official-memory-title">Official memory shore</strong>
+      <span>This is a real backend write. Draft inbox items remain draft records; official memory items live in "data/memories.json".</span>
+      <div class="official-rules"><span>Official memories are promoted from draft inbox only.</span><span>This is a real backend write.</span><span>Draft inbox items remain draft records; official memory items live in "data/memories.json".</span></div>
+      <div class="draft-actions official-actions"><button type="button" id="refresh-official-memories">Refresh Official Memories</button></div>
+      <div id="official-memory-summary" class="official-summary" aria-live="polite"><article class="packet-item"><strong>Official memories not loaded yet.</strong><span>Click Refresh Official Memories.</span></article></div>
+      <div id="official-memory-list" class="official-memory-list" aria-live="polite"></div>
+      <p id="official-memory-message" class="draft-message" aria-live="polite">Official memory count not loaded yet.</p>
     </section>
 
     <section id="shelf-section" class="section-head"><h2>Local Memory Packet Shelf <span class="cn">本地记忆包架</span></h2><p>Store draft packets locally before writing them to the coast backend.</p></section>

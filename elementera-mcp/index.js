@@ -804,3 +804,218 @@ app.get("/api/memory-drafts-export", async (req, res) => {
     res.status(500).json({ ok: false, note: "Draft inbox export is not available yet." });
   }
 });
+
+// v0.9.0 First Official Memory Entry - official memories are promoted from draft inbox only.
+const fs090 = await import("fs");
+const path090 = await import("path");
+
+const DATA_DIR_090 = path090.join(process.cwd(), "data");
+const BACKUP_DIR_090 = path090.join(process.cwd(), "backups");
+const DRAFTS_FILE_090 = path090.join(DATA_DIR_090, "memory-drafts.json");
+const MEMORIES_FILE_090 = path090.join(DATA_DIR_090, "memories.json");
+const MEMORY_CONFIRM_090 = "PROMOTE_DRAFT_TO_OFFICIAL_MEMORY";
+const MEMORY_STORE_SEED_090 = {
+  version: "v0.9.0-first-official-memory-entry",
+  storage_state: "official_memories",
+  official_memory: true,
+  items: []
+};
+
+function isoStamp090() {
+  return new Date().toISOString();
+}
+
+function fileStamp090() {
+  return new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
+function ensureMemoryStore090() {
+  fs090.mkdirSync(DATA_DIR_090, { recursive: true });
+  if (!fs090.existsSync(MEMORIES_FILE_090)) {
+    atomicWriteJson090(MEMORIES_FILE_090, MEMORY_STORE_SEED_090);
+  }
+}
+
+function readJsonFile090(file, fallback) {
+  try {
+    if (!fs090.existsSync(file)) return fallback;
+    return JSON.parse(fs090.readFileSync(file, "utf8"));
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function atomicWriteJson090(file, data) {
+  fs090.mkdirSync(path090.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  fs090.writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+  fs090.renameSync(tmp, file);
+}
+
+function backupJsonFile090(file, label) {
+  fs090.mkdirSync(BACKUP_DIR_090, { recursive: true });
+  const safeLabel = String(label || "json").replace(/[^a-zA-Z0-9_-]/g, "-");
+  const backupFile = path090.join(BACKUP_DIR_090, `${safeLabel}-${fileStamp090()}.json`);
+  if (fs090.existsSync(file)) fs090.copyFileSync(file, backupFile);
+  return backupFile;
+}
+
+function readMemoryStore090() {
+  ensureMemoryStore090();
+  const store = readJsonFile090(MEMORIES_FILE_090, MEMORY_STORE_SEED_090);
+  const items = Array.isArray(store.items) ? store.items : [];
+  return {
+    version: store.version || MEMORY_STORE_SEED_090.version,
+    storage_state: "official_memories",
+    official_memory: true,
+    items
+  };
+}
+
+function readDraftStore090() {
+  const store = readJsonFile090(DRAFTS_FILE_090, {
+    version: "v0.8.8-memory-draft-inbox",
+    storage_state: "draft_inbox",
+    official_memory: false,
+    items: []
+  });
+  return {
+    ...store,
+    storage_state: "draft_inbox",
+    official_memory: false,
+    items: Array.isArray(store.items) ? store.items : []
+  };
+}
+
+function validateMemoryPacket087ForPromote090(packet) {
+  const errors = [];
+  const warnings = [];
+  const isObject = packet && typeof packet === "object" && !Array.isArray(packet);
+  if (!isObject) {
+    return { valid: false, errors: ["source_packet must be an object."], warnings, packet_summary: {} };
+  }
+  if (typeof packet.title !== "string" || !packet.title.trim()) errors.push("title is required.");
+  if (typeof packet.type !== "string" || !packet.type.trim()) errors.push("type is required.");
+  if (!Array.isArray(packet.tags)) errors.push("tags must be an array.");
+  if (typeof packet.body !== "string" || !packet.body.trim()) errors.push("body is required.");
+  if (typeof packet.created_at !== "string" || !packet.created_at.trim()) errors.push("created_at is required.");
+  if (typeof packet.updated_at !== "string" || !packet.updated_at.trim()) errors.push("updated_at is required.");
+  if (packet.official_memory === true) errors.push("draft source_packet must not already be official memory.");
+  if (packet.backend_written === true) warnings.push("source_packet was already marked backend_written by its draft flow.");
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    packet_summary: {
+      id: packet.id || null,
+      title: packet.title || "",
+      type: packet.type || "",
+      tags_count: Array.isArray(packet.tags) ? packet.tags.length : 0,
+      body_chars: typeof packet.body === "string" ? packet.body.length : 0
+    }
+  };
+}
+
+function memoryResponse090(store) {
+  return {
+    ok: true,
+    version: store.version,
+    storage_state: "official_memories",
+    official_memory: true,
+    count: store.items.length,
+    items: store.items,
+    note: "Official memories promoted from draft inbox."
+  };
+}
+
+app.get("/api/memories", (req, res) => {
+  const store = readMemoryStore090();
+  res.json(memoryResponse090(store));
+});
+
+app.get("/api/memories/:memory_id", (req, res) => {
+  const store = readMemoryStore090();
+  const item = store.items.find((memory) => memory.memory_id === req.params.memory_id);
+  if (!item) {
+    res.status(404).json({ ok: false, message: "Official memory not found." });
+    return;
+  }
+  res.json({ ok: true, item });
+});
+
+app.post("/api/memories/promote/:inbox_id", (req, res) => {
+  if (!req.body || req.body.confirm !== MEMORY_CONFIRM_090) {
+    res.status(400).json({ ok: false, promoted: false, message: "Missing or invalid confirm token." });
+    return;
+  }
+
+  const inboxId = req.params.inbox_id;
+  const draftStore = readDraftStore090();
+  const draftIndex = draftStore.items.findIndex((item) => item.inbox_id === inboxId);
+  if (draftIndex === -1) {
+    res.status(404).json({ ok: false, promoted: false, message: "Draft inbox item not found." });
+    return;
+  }
+
+  const draftItem = draftStore.items[draftIndex];
+  if (draftItem.storage_state !== "draft_inbox" || draftItem.official_memory !== false) {
+    res.status(400).json({ ok: false, promoted: false, message: "Only draft inbox items with official_memory false can be promoted." });
+    return;
+  }
+
+  const memoryStore = readMemoryStore090();
+  const existing = memoryStore.items.find((memory) => memory.promoted_from_inbox_id === inboxId || memory.memory_id === draftItem.promoted_memory_id);
+  if (draftItem.approved === true || existing) {
+    res.status(409).json({ ok: false, promoted: false, existing: true, memory_id: existing?.memory_id || draftItem.promoted_memory_id || null, item: existing || null, note: "Draft inbox item was already promoted. No duplicate official memory was written." });
+    return;
+  }
+
+  const sourcePacket = draftItem.source_packet;
+  const validation = validateMemoryPacket087ForPromote090(sourcePacket);
+  if (!validation.valid) {
+    res.status(400).json({ ok: false, promoted: false, message: "source_packet failed v0.8.7 validator rules.", errors: validation.errors, warnings: validation.warnings });
+    return;
+  }
+
+  const now = isoStamp090();
+  const safeTitle = sourcePacket.title.trim();
+  const safeType = sourcePacket.type.trim();
+  const officialItem = {
+    memory_id: `memory-${Date.now()}`,
+    promoted_from_inbox_id: inboxId,
+    promoted_at: now,
+    storage_state: "official_memory",
+    official_memory: true,
+    approved: true,
+    title: safeTitle,
+    type: safeType,
+    tags: Array.isArray(sourcePacket.tags) ? sourcePacket.tags : [],
+    body: sourcePacket.body,
+    source_packet: sourcePacket,
+    created_at: sourcePacket.created_at,
+    updated_at: now,
+    note: "Official memory promoted from draft inbox."
+  };
+
+  try {
+    backupJsonFile090(MEMORIES_FILE_090, "memories-before-promote");
+    memoryStore.items.push(officialItem);
+    atomicWriteJson090(MEMORIES_FILE_090, memoryStore);
+
+    backupJsonFile090(DRAFTS_FILE_090, "memory-drafts-before-promote");
+    draftStore.items[draftIndex] = {
+      ...draftItem,
+      approved: true,
+      promoted_memory_id: officialItem.memory_id,
+      promoted_at: now,
+      storage_state: "draft_inbox",
+      official_memory: false
+    };
+    atomicWriteJson090(DRAFTS_FILE_090, draftStore);
+  } catch (error) {
+    res.status(500).json({ ok: false, promoted: false, message: "Promote write failed before completion.", error: error instanceof Error ? error.message : String(error) });
+    return;
+  }
+
+  res.json({ ok: true, promoted: true, memory_id: officialItem.memory_id, item: officialItem, note: "Official memory promoted from draft inbox." });
+});

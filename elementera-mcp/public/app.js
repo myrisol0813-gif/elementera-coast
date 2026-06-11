@@ -633,3 +633,120 @@ if (refreshNode089) refreshNode089.addEventListener("click", refreshInbox089);
 const exportNode089 = document.getElementById("export-draft-inbox");
 if (exportNode089) exportNode089.addEventListener("click", exportInbox089);
 refreshInbox089();
+
+// v0.9.0 official memories placeholder
+
+(function initOfficialMemoriesV090() {
+  const TOKEN = "PROMOTE_DRAFT_TO_OFFICIAL_MEMORY";
+  const q = (selector) => document.querySelector(selector);
+  const esc = (value) => String(value ?? "").replace(/[&<>"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[char]));
+  const msg = (selector, value) => { const target = q(selector); if (target) target.textContent = value; };
+
+  async function json(path, options = {}) {
+    const response = await fetch(path, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) }
+    });
+    let data = null;
+    try { data = await response.json(); } catch (error) { data = null; }
+    if (!response.ok) {
+      const err = new Error(data?.message || data?.error || `${path} ${response.status}`);
+      err.status = response.status;
+      err.data = data;
+      throw err;
+    }
+    return data;
+  }
+
+  function tagText(tags) {
+    return Array.isArray(tags) && tags.length ? tags.join(", ") : "none";
+  }
+
+  function renderOfficial(data) {
+    const summary = q("#official-memory-summary");
+    const list = q("#official-memory-list");
+    if (!summary || !list) return;
+    const items = Array.isArray(data.items) ? data.items : [];
+    summary.innerHTML = `<article class="packet-item official-memory-item"><strong>official memory count: ${items.length}</strong><span>storage_state: ${esc(data.storage_state || "official_memories")}</span><span>official_memory: ${String(data.official_memory === true)}</span><small>${esc(data.note || "Official memories promoted from draft inbox.")}</small></article>`;
+    list.innerHTML = items.length ? items.map((item) => `<article class="packet-item official-memory-item"><strong>${esc(item.memory_id || "memory-unknown")}</strong><span>title: ${esc(item.title || "Untitled memory")}</span><span>type: ${esc(item.type || "note")}</span><span>tags: ${esc(tagText(item.tags))}</span><span>promoted_at: ${esc(item.promoted_at || "unknown")}</span><span>official_memory: ${String(item.official_memory === true)}</span><span>approved: ${String(item.approved === true)}</span></article>`).join("") : `<article class="packet-item official-memory-item"><strong>No official memories yet.</strong><span>Promote an existing draft inbox item to write the first official memory.</span></article>`;
+    msg("#official-memory-message", `Official memory count: ${items.length}`);
+  }
+
+  async function refreshOfficial() {
+    try {
+      const data = await json("/api/memories");
+      renderOfficial(data);
+    } catch (error) {
+      const summary = q("#official-memory-summary");
+      if (summary) summary.innerHTML = `<article class="packet-item validator-invalid"><strong>Official memories unavailable.</strong><span>${esc(error.message)}</span></article>`;
+      msg("#official-memory-message", "Could not load official memories.");
+    }
+  }
+
+  function inboxIdFromCard(card) {
+    const direct = card.dataset.inboxId || card.getAttribute("data-inbox-id") || card.dataset.id || card.getAttribute("data-id");
+    if (direct) return direct;
+    const buttonId = card.querySelector("button[data-id]")?.getAttribute("data-id") || card.querySelector("button[data-inbox-id]")?.getAttribute("data-inbox-id");
+    if (buttonId) return buttonId;
+    const text = card.textContent || "";
+    return text.match(/inbox[_-]id:\s*([^\s]+)/i)?.[1] || text.match(/inbox[_-]id\s+([^\s]+)/i)?.[1] || "";
+  }
+
+  function addPromoteButtons() {
+    const target = q("#draft-inbox-result");
+    if (!target) return;
+    target.querySelectorAll(".packet-item").forEach((card) => {
+      if (card.querySelector("[data-v090-promote]")) return;
+      const inboxId = inboxIdFromCard(card);
+      if (!inboxId) return;
+      const cardText = card.textContent || "";
+      const actions = card.querySelector(".inbox-item-actions") || document.createElement("div");
+      if (!actions.classList.contains("inbox-item-actions")) {
+        actions.className = "inbox-item-actions";
+        card.appendChild(actions);
+      }
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "promote-warning";
+      button.dataset.v090Promote = inboxId;
+      button.textContent = cardText.includes("approved: true") ? "Already Promoted" : "Promote to Official Memory";
+      if (cardText.includes("approved: true")) button.disabled = true;
+      actions.appendChild(button);
+    });
+  }
+
+  async function promote(inboxId) {
+    const ok = window.confirm("Promote this draft to official memory? This is the first real memory write.");
+    if (!ok) return;
+    msg("#draft-inbox-message", `Promoting draft inbox item ${inboxId}...`);
+    try {
+      const data = await json(`/api/memories/promote/${encodeURIComponent(inboxId)}`, {
+        method: "POST",
+        body: JSON.stringify({ confirm: TOKEN })
+      });
+      msg("#draft-inbox-message", `promoted: true · memory_id: ${data.memory_id || "unknown"} · ${data.note || "Official memory promoted from draft inbox."}`);
+      await refreshOfficial();
+      if (typeof refreshDraftInbox === "function") await refreshDraftInbox();
+      setTimeout(addPromoteButtons, 250);
+    } catch (error) {
+      const details = error.data?.errors ? ` errors: ${error.data.errors.join(" | ")}` : "";
+      msg("#draft-inbox-message", `Promote failed: ${error.message}${details}`);
+      if (error.status === 409 && error.data) {
+        msg("#official-memory-message", `Already promoted: ${error.data.memory_id || "existing memory"}`);
+        await refreshOfficial();
+      }
+    }
+  }
+
+  q("#refresh-official-memories")?.addEventListener("click", refreshOfficial);
+  q("#refresh-draft-inbox")?.addEventListener("click", () => setTimeout(addPromoteButtons, 600));
+  q("#send-draft-inbox")?.addEventListener("click", () => setTimeout(addPromoteButtons, 900));
+  q("#draft-inbox-result")?.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-v090-promote]");
+    if (button && !button.disabled) promote(button.dataset.v090Promote);
+  });
+  const inbox = q("#draft-inbox-result");
+  if (inbox) new MutationObserver(addPromoteButtons).observe(inbox, { childList: true, subtree: true });
+  refreshOfficial();
+  setTimeout(addPromoteButtons, 500);
+})();

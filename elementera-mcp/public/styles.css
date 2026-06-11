@@ -415,3 +415,15 @@ html { scroll-behavior: smooth; }
 .inbox-detail-card { margin-top: 1rem; }
 .inbox-json { min-height: 10rem; max-height: 28rem; overflow: auto; }
 @media (max-width: 720px) { .inbox-item-actions button { flex: 1 1 100%; border-radius: .9rem; } .inbox-json { font-size: .76rem; } }
+
+#official-memory-section { scroll-margin-top: 7rem; }
+.official-card { min-height: auto; margin-top: 1rem; border-color: rgba(244, 200, 106, 0.38); background: linear-gradient(145deg, rgba(4,12,25,.84), rgba(33,26,10,.66)), var(--glass); }
+.official-rules { display: grid; gap: .45rem; margin-top: 1rem; padding: .9rem; border: 1px solid rgba(244,200,106,.25); border-radius: 1rem; background: rgba(2,6,23,.46); }
+.official-rules span { color: var(--muted); line-height: 1.55; }
+.official-actions { margin-top: 1rem; }
+.official-summary, .official-memory-list { display: grid; gap: .8rem; margin-top: 1rem; }
+.official-memory-item { border-color: rgba(244,200,106,.36); background: linear-gradient(145deg, rgba(2,6,23,.52), rgba(244,200,106,.08)); }
+.promote-warning { border-color: rgba(244,200,106,.58) !important; background: linear-gradient(145deg, rgba(244,200,106,.22), rgba(120,60,20,.28)) !important; color: var(--soft) !important; box-shadow: 0 0 .9rem rgba(244,200,106,.08); }
+.promote-warning:hover, .promote-warning:focus-visible { border-color: rgba(255,229,170,.82) !important; box-shadow: 0 0 1.1rem rgba(244,200,106,.16); }
+.promote-warning:disabled { opacity: .58; cursor: not-allowed; }
+@media (max-width: 720px) { .official-rules { border-radius: .9rem; } .official-actions button, .promote-warning { flex: 1 1 100%; border-radius: .9rem !important; } }
