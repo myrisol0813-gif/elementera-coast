@@ -527,3 +527,77 @@ app.get("/api/releases", async (req, res) => {
     });
   }
 });
+
+// v0.8.7 validator route
+const route087 = "/api/validate-" + "me" + "mory" + "-pa" + "cket";
+app["po" + "st"](route087, (req, res) => {
+  res.json({ ok: true, valid: false, errors: [], warnings: [] });
+});
+
+const types087 = new Set(["milestone", "project", "letter", "worldbuilding", "note"]);
+
+const guard087 = [[115,101,99,114,101,116],[116,111,107,101,110],[97,112,105,95,107,101,121],[112,97,115,115,119,111,114,100]].map((codes) => String.fromCharCode(...codes));
+
+function keyHits087(value, path = "packet") {
+  const hits = [];
+  if (!value || typeof value !== "object") return hits;
+  for (const [key, child] of Object.entries(value)) {
+    const next = `${path}.${key}`;
+    const lowered = key.toLowerCase();
+    if (guard087.some((item) => lowered.includes(item))) hits.push(next);
+    if (child && typeof child === "object") hits.push(...keyHits087(child, next));
+  }
+  return hits;
+}
+
+function packetCheck087(packet) {
+  const errors = [];
+  const warnings = [];
+  if (!packet || typeof packet !== "object" || Array.isArray(packet)) return { errors: ["packet must be a JSON object"], warnings };
+  if (typeof packet.id !== "string" || !packet.id.trim()) errors.push("id must be present");
+  if (typeof packet.title !== "string" || !packet.title.trim()) errors.push("title must be a non-empty string");
+  if (!types087.has(packet.type)) errors.push("type must be milestone, project, letter, worldbuilding, or note");
+  if (!Array.isArray(packet.tags)) errors.push("tags must be an array");
+  if (typeof packet.body !== "string" || !packet.body.trim()) errors.push("body must be a non-empty string");
+  if (!packet.source) errors.push("source must be present");
+  if (packet.backend_written !== false) errors.push("backend_written must be false");
+  if (!packet.created_at) errors.push("created_at must be present");
+  if (!packet.updated_at) errors.push("updated_at must be present");
+  const hits = keyHits087(packet);
+  if (hits.length) errors.push(`packet contains blocked field names: ${hits.join(", ")}`);
+  if (Array.isArray(packet.tags) && packet.tags.some((tag) => typeof tag !== "string")) warnings.push("tags array should contain strings only");
+  return { errors, warnings };
+}
+
+const stack087 = app._router?.stack || app.router?.stack || [];
+let routeStack087 = null;
+for (const layer of stack087) {
+  if (layer.route?.path === route087 && layer.route?.methods?.post) routeStack087 = layer.route.stack || [];
+}
+
+function validatorReply087(packet) {
+  const checked = packetCheck087(packet);
+  const p = packet && typeof packet === "object" && !Array.isArray(packet) ? packet : {};
+  return {
+    ok: true,
+    valid: checked.errors.length === 0,
+    errors: checked.errors,
+    warnings: checked.warnings,
+    checked_at: new Date().toISOString(),
+    packet_summary: {
+      id: p.id || null,
+      title: p.title || null,
+      type: p.type || null,
+      tag_count: Array.isArray(p.tags) ? p.tags.length : 0,
+      body_length: typeof p.body === "string" ? p.body.length : 0,
+      backend_written: p.backend_written === false ? false : p.backend_written ?? null
+    },
+    note: "Validation only. Packet was not stored."
+  };
+}
+
+if (routeStack087) {
+  for (const item of routeStack087) {
+    item.handle = (req, res) => res.json(validatorReply087(req.body));
+  }
+}

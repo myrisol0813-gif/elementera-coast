@@ -357,3 +357,37 @@ initMemoryDraft();
 renderStatus();
 renderRooms();
 renderReleases();
+
+function renderValidationResult087(result) {
+  const target = document.querySelector("#validator-result");
+  if (!target) return;
+  const summary = result.packet_summary || {};
+  const errors = result.errors || [];
+  const warnings = result.warnings || [];
+  const statusClass = result.valid ? "valid" : "invalid";
+  target.innerHTML = `<article class="packet-item validator-${statusClass}"><strong>${result.valid ? "valid" : "invalid"}</strong><span>${escapeHtml(result.note || "Validation only.")}</span><span>checked_at: ${escapeHtml(result.checked_at || "unknown")}</span><span>summary: ${escapeHtml(JSON.stringify(summary))}</span><span>errors: ${errors.length ? escapeHtml(errors.join("; ")) : "none"}</span><span>warnings: ${warnings.length ? escapeHtml(warnings.join("; ")) : "none"}</span></article>`;
+}
+
+async function validatePacket087() {
+  if (!currentPacket) updatePacketPreview("Packet preview updated before validation.");
+  if (!currentPacket) {
+    const target = document.querySelector("#validator-result");
+    if (target) target.innerHTML = `<article class="packet-item validator-invalid"><strong>invalid</strong><span>No packet to validate yet. Write a draft first.</span></article>`;
+    return;
+  }
+  try {
+    const res = await fetch("/api/validate-memory-packet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(currentPacket)
+    });
+    if (!res.ok) throw new Error(`validator ${res.status}`);
+    renderValidationResult087(await res.json());
+  } catch (error) {
+    const target = document.querySelector("#validator-result");
+    if (target) target.innerHTML = `<article class="packet-item validator-invalid"><strong>validator unavailable</strong><span>Packet validator is not available yet.</span></article>`;
+  }
+}
+
+const validateButton087 = document.querySelector("#validate-packet");
+if (validateButton087) validateButton087.addEventListener("click", validatePacket087);

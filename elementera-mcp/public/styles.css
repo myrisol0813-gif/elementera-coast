@@ -383,3 +383,11 @@ html { scroll-behavior: smooth; }
 }
 .shelf-item-actions button:hover, .shelf-item-actions button:focus-visible { border-color: rgba(255,229,170,.68); outline: none; }
 @media (max-width: 720px) { .shelf-item-actions button { flex: 1 1 100%; border-radius: .9rem; } }
+
+.validator-card { min-height: auto; margin-top: 1rem; }
+.validator-result { display: grid; gap: .8rem; margin-top: 1rem; }
+.validator-valid { border-color: rgba(120,220,170,.42); }
+.validator-invalid { border-color: rgba(255,150,120,.42); }
+.validator-valid strong { color: #b7ffd7; }
+.validator-invalid strong { color: #ffd1bd; }
+.validator-result .packet-item span { overflow-wrap: anywhere; }
