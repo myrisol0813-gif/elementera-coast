@@ -372,10 +372,6 @@ async function handleLogin(request, env) {
     return textResponse("Method not allowed\n", 405, { Allow: "GET, POST" });
   }
 
-  if (!loginPostAllowed(request)) {
-    return textResponse("Forbidden\n", 403);
-  }
-
   let body;
   try {
     body = await readTextWithLimit(request, MAX_LOGIN_BODY_BYTES);
