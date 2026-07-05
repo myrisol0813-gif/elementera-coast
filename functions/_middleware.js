@@ -1,6 +1,6 @@
 const COOKIE_NAME = "__Host-coast_session";
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
-const ALLOWED_ORIGIN = "https://app.elementeracoast.com";
+const OPENROUTER_REFERER = "https://app.elementeracoast.com";
 const MAX_LOGIN_BODY_BYTES = 1024;
 const MAX_API_BODY_BYTES = 16 * 1024;
 const MAX_TOKENS = 700;
@@ -21,6 +21,10 @@ const decoder = new TextDecoder();
 
 function getSecret(env, key) {
   return env[SECRET_NAME_PARTS[key].join("_")];
+}
+
+function getRequestOrigin(request) {
+  return new URL(request.url).origin;
 }
 
 function securityHeaders(extra = {}) {
@@ -187,28 +191,30 @@ async function verifySession(request, env) {
 }
 
 function sameSitePost(request) {
+  const requestOrigin = getRequestOrigin(request);
   const origin = request.headers.get("Origin");
-  if (origin) return origin === ALLOWED_ORIGIN;
+  if (origin) return origin === requestOrigin;
 
   const referer = request.headers.get("Referer");
   if (!referer) return false;
 
   try {
-    return new URL(referer).origin === ALLOWED_ORIGIN;
+    return new URL(referer).origin === requestOrigin;
   } catch {
     return false;
   }
 }
 
 function loginPostAllowed(request) {
+  const requestOrigin = getRequestOrigin(request);
   const origin = request.headers.get("Origin");
-  if (origin) return origin === ALLOWED_ORIGIN;
+  if (origin) return origin === requestOrigin;
 
   const referer = request.headers.get("Referer");
   if (!referer) return true;
 
   try {
-    return new URL(referer).origin === ALLOWED_ORIGIN;
+    return new URL(referer).origin === requestOrigin;
   } catch {
     return false;
   }
@@ -465,7 +471,7 @@ async function handleApi(request, env, session) {
         headers: {
           "Authorization": `Bearer ${openRouterKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": ALLOWED_ORIGIN,
+          "HTTP-Referer": OPENROUTER_REFERER,
           "X-Title": "Elementera Coast Sandbox",
         },
         body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
