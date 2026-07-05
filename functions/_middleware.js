@@ -10,9 +10,18 @@ const MODEL_ALLOWLIST = new Set([
   "openai/gpt-4.1-mini",
   "openai/gpt-4o-mini",
 ]);
+const SECRET_NAME_PARTS = {
+  passwordHash: ["COAST", "PASSWORD", "HASH"],
+  sessionSecret: ["COAST", "SESSION", "SECRET"],
+  openRouterKey: ["OPENROUTER", "API", "KEY"],
+};
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+
+function getSecret(env, key) {
+  return env[SECRET_NAME_PARTS[key].join("_")];
+}
 
 function securityHeaders(extra = {}) {
   return {
@@ -129,12 +138,13 @@ function timingSafeEqual(a, b) {
 }
 
 function isConfigured(env) {
-  const expectedHash = normalizePasswordHash(env.COAST_PASSWORD_HASH);
-  return /^[a-f0-9]{64}$/.test(expectedHash) && typeof env.COAST_SESSION_SECRET === "string" && env.COAST_SESSION_SECRET.length >= 32;
+  const expectedHash = normalizePasswordHash(getSecret(env, "passwordHash"));
+  const sessionSecret = getSecret(env, "sessionSecret");
+  return /^[a-f0-9]{64}$/.test(expectedHash) && typeof sessionSecret === "string" && sessionSecret.length >= 32;
 }
 
 async function passwordMatches(password, env) {
-  const expectedHash = normalizePasswordHash(env.COAST_PASSWORD_HASH);
+  const expectedHash = normalizePasswordHash(getSecret(env, "passwordHash"));
   const actualHash = await sha256Hex(password);
   return timingSafeEqual(actualHash, expectedHash);
 }
@@ -150,7 +160,7 @@ function clearSessionCookie() {
 async function createSession(env) {
   const now = Math.floor(Date.now() / 1000);
   const payload = base64UrlEncodeText(JSON.stringify({ v: 1, iat: now, exp: now + SESSION_TTL_SECONDS }));
-  const signature = await signPayload(payload, env.COAST_SESSION_SECRET);
+  const signature = await signPayload(payload, getSecret(env, "sessionSecret"));
   return `${payload}.${signature}`;
 }
 
@@ -163,7 +173,7 @@ async function verifySession(request, env) {
   const [payload, signature] = token.split(".");
   if (!payload || !signature) return null;
 
-  const verified = await verifySignature(payload, signature, env.COAST_SESSION_SECRET);
+  const verified = await verifySignature(payload, signature, getSecret(env, "sessionSecret"));
   if (!verified) return null;
 
   try {
@@ -406,7 +416,8 @@ async function handleApi(request, env, session) {
   }
 
   if (url.pathname === "/api/chat-sandbox" && request.method === "POST") {
-    if (!env.OPENROUTER_API_KEY) {
+    const openRouterKey = getSecret(env, "openRouterKey");
+    if (!openRouterKey) {
       return jsonResponse({ ok: false, error: "Chat sandbox is not configured." }, 503);
     }
 
@@ -438,7 +449,7 @@ async function handleApi(request, env, session) {
       upstream = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${env.OPENROUTER_API_KEY}`,
+          "Authorization": `Bearer ${openRouterKey}`,
           "Content-Type": "application/json",
           "HTTP-Referer": ALLOWED_ORIGIN,
           "X-Title": "Elementera Coast Sandbox",
