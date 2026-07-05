@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="ChatGPT" />
+  <title>ChatGPT</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="/public/styles.css" />
+</head>
+<body>
+  <div id="app" class="chatgpt-shell">
+    <div id="scrim" class="scrim" hidden></div>
+    <aside id="sidebar" class="sidebar" aria-label="聊天历史">
+      <div class="sidebar-top">
+        <button id="sidebarClose" class="icon-button" type="button" aria-label="关闭侧边栏" data-icon="close"></button>
+        <label class="sidebar-search"><span data-icon="search"></span><input type="search" placeholder="搜索聊天" autocomplete="off" /></label>
+      </div>
+      <nav class="history-list" aria-label="最近聊天">
+        <section><h2>已保存</h2><button id="testWindowButton" class="history-item is-active" type="button">测试窗口</button></section>
+      </nav>
+      <div class="sidebar-footer">
+        <button type="button" class="account-row" id="themeToggle"><span class="account-avatar" data-icon="theme"></span><span><strong>主题</strong><small id="theme-label">浅色</small></span></button>
+        <button type="button" class="account-row"><span class="account-avatar">?</span><span><strong>帮助</strong><small>本地预览界面</small></span></button>
+      </div>
+    </aside>
+    <main class="main-panel">
+      <header class="topbar">
+        <button id="menuButton" class="icon-button" type="button" aria-label="打开侧边栏" data-icon="menu"></button>
+        <button id="modelButton" class="model-button" type="button" aria-label="选择模型"><span class="model-title">ChatGPT</span><span class="model-name">5.5 Thinking ›</span></button>
+        <div class="topbar-actions"><button id="newChatButton" class="icon-button" type="button" aria-label="新建聊天" data-icon="new-chat"></button><button id="moreButton" class="icon-button" type="button" aria-label="更多" data-icon="more"></button></div>
+      </header>
+      <section id="messageScroller" class="message-scroller" aria-label="聊天消息"><div id="messages" class="messages"></div></section>
+      <form id="composer" class="composer-wrap" autocomplete="off">
+        <div class="composer-line"></div>
+        <div class="composer-row">
+          <button id="imageButton" class="image-button" type="button" aria-label="上传图片" data-icon="image"></button>
+          <div class="input-pill">
+            <textarea id="promptInput" rows="1" placeholder="询问任何问题" aria-label="询问任何问题"></textarea>
+            <button id="micButton" class="mic-button" type="button" aria-label="语音输入" data-icon="mic"></button>
+            <button id="sendButton" class="mic-button send-inline" type="submit" aria-label="发送" data-icon="send" hidden></button>
+            <button id="stopButton" class="mic-button send-inline" type="button" aria-label="停止生成" data-icon="stop" hidden></button>
+          </div>
+          <button id="callButton" class="call-button" type="button" aria-label="通话" data-icon="call"></button>
+        </div>
+      </form>
+    </main>
+  </div>
+  <script src="/public/app.js" defer></script>
+</body>
+</html>
+

@@ -1,0 +1,20 @@
+{
+  "name": "ChatGPT 5.5 Thinking",
+  "short_name": "ChatGPT",
+  "description": "A local GPT-like mobile shell preview.",
+  "start_url": "/gptlike?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/public/icons/gptlike-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
