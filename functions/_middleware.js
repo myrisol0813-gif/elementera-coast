@@ -200,6 +200,20 @@ function sameSitePost(request) {
   }
 }
 
+function loginPostAllowed(request) {
+  const origin = request.headers.get("Origin");
+  if (origin) return origin === ALLOWED_ORIGIN;
+
+  const referer = request.headers.get("Referer");
+  if (!referer) return true;
+
+  try {
+    return new URL(referer).origin === ALLOWED_ORIGIN;
+  } catch {
+    return false;
+  }
+}
+
 async function readTextWithLimit(request, limit) {
   const reader = request.body?.getReader();
   if (!reader) return "";
@@ -352,7 +366,7 @@ async function handleLogin(request, env) {
     return textResponse("Method not allowed\n", 405, { Allow: "GET, POST" });
   }
 
-  if (!sameSitePost(request)) {
+  if (!loginPostAllowed(request)) {
     return textResponse("Forbidden\n", 403);
   }
 
