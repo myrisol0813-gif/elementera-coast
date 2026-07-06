@@ -1,108 +1,16 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html>
   <head>
-    <title>Elementera Coast · API 小屋运行控制层</title>
+    <title>Haikus for Mona</title>
     <link href="/css/main.css" rel="stylesheet" type="text/css">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta property="og:title" content="Elementera Coast">
-    <meta property="og:description" content="API 小屋运行控制层 v0.1">
+    <meta property="og:title" content="Haikus for Mona">
+    <meta property="og:description" content="Simple sample page">
   </head>
   <body>
-    <main class="coast-app">
-      <section class="coast-hero" aria-labelledby="page-title">
-        <p class="eyebrow">P3-01 · API 小屋</p>
-        <h1 id="page-title">运行控制层 v0.1</h1>
-        <p class="hero-copy">请求真正发出之前，这里先保存模型档位、上下文深度、预算和输出倾向。当前阶段只写入本地状态，不接 OpenRouter，不保存真实 API key。</p>
-      </section>
-
-      <section class="run-control-card" aria-labelledby="run-control-title" data-run-control-panel>
-        <div class="panel-heading">
-          <div>
-            <p class="eyebrow">Local settings</p>
-            <h2 id="run-control-title">上下文 / token / 输出控制面板</h2>
-          </div>
-          <p class="save-state" data-save-state>读取本地设置中…</p>
-        </div>
-
-        <form class="run-control-form" data-run-control-form>
-          <div class="settings-grid primary-settings">
-            <fieldset class="setting-group">
-              <legend>模型档位</legend>
-              <label class="option-chip"><input type="radio" name="modelPreset" value="cheap_test">便宜测试</label>
-              <label class="option-chip"><input type="radio" name="modelPreset" value="daily_chat">日常聊天</label>
-              <label class="option-chip"><input type="radio" name="modelPreset" value="deep_work">深度整理</label>
-            </fieldset>
-
-            <fieldset class="setting-group">
-              <legend>上下文模式</legend>
-              <label class="option-chip"><input type="radio" name="contextMode" value="short">短</label>
-              <label class="option-chip"><input type="radio" name="contextMode" value="balanced">平衡</label>
-              <label class="option-chip"><input type="radio" name="contextMode" value="deep">深</label>
-            </fieldset>
-
-            <fieldset class="setting-group">
-              <legend>输出长度</legend>
-              <label class="option-chip"><input type="radio" name="outputLength" value="short">短回</label>
-              <label class="option-chip"><input type="radio" name="outputLength" value="normal">正常</label>
-              <label class="option-chip"><input type="radio" name="outputLength" value="long">长信</label>
-            </fieldset>
-
-            <fieldset class="setting-group setting-group-wide">
-              <legend>记忆召回强度</legend>
-              <label class="option-chip"><input type="radio" name="memoryRecall" value="off">关</label>
-              <label class="option-chip"><input type="radio" name="memoryRecall" value="low">低</label>
-              <label class="option-chip"><input type="radio" name="memoryRecall" value="medium">中</label>
-              <p class="setting-note">预留设置：未来种子库默认沉睡，只在高度相关时偶尔召回。</p>
-            </fieldset>
-          </div>
-
-          <div class="clear-zone" aria-label="清理区">
-            <button type="button" class="danger-soft" data-clear-temp-context>清空当前临时上下文</button>
-            <button type="button" class="ghost-button" disabled>清空当前小纸条 · 暂未接入</button>
-            <button type="button" class="ghost-button" disabled>清空待确认袋 · 暂未接入</button>
-          </div>
-
-          <details class="advanced-settings">
-            <summary>高级设置</summary>
-            <div class="settings-grid">
-              <fieldset class="setting-group">
-                <legend>最近上下文轮数</legend>
-                <label class="option-chip"><input type="radio" name="recentTurns" value="2">2</label>
-                <label class="option-chip"><input type="radio" name="recentTurns" value="4">4</label>
-                <label class="option-chip"><input type="radio" name="recentTurns" value="8">8</label>
-                <label class="option-chip"><input type="radio" name="recentTurns" value="12">12</label>
-              </fieldset>
-
-              <fieldset class="setting-group setting-group-wide">
-                <legend>上下文 token 预算</legend>
-                <label class="option-chip"><input type="radio" name="contextBudget" value="2000">低 · 2000</label>
-                <label class="option-chip"><input type="radio" name="contextBudget" value="6000">中 · 6000</label>
-                <label class="option-chip"><input type="radio" name="contextBudget" value="12000">高 · 12000</label>
-                <p class="setting-note">预算值，后续接入时使用；当前不做精确 tokenizer 计算。</p>
-              </fieldset>
-
-              <fieldset class="setting-group">
-                <legend>创造性 / 稳定性</legend>
-                <label class="option-chip"><input type="radio" name="creativity" value="stable">稳一点</label>
-                <label class="option-chip"><input type="radio" name="creativity" value="natural">自然</label>
-                <label class="option-chip"><input type="radio" name="creativity" value="expansive">发散一点</label>
-              </fieldset>
-
-              <label class="number-setting">
-                <span>小纸条预算 · 预留</span>
-                <input type="number" name="scratchpadBudget" min="0" max="2400" step="100" inputmode="numeric">
-              </label>
-
-              <label class="number-setting">
-                <span>种子召回数量 · 预留</span>
-                <input type="number" name="seedRecallLimit" min="0" max="6" step="1" inputmode="numeric">
-              </label>
-            </div>
-          </details>
-        </form>
-      </section>
-    </main>
-
-    <script src="/js/run-control.js" defer></script>
+    <h1>Haikus for Mona</h1>
+    <div class="haiku-containers">
+      <p class="haikus">Simple sample page restored. Elementera Coast production UI lives in elementera-mcp/deploy-pages.</p>
+    </div>
   </body>
 </html>
