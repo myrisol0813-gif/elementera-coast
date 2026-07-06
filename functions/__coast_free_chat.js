@@ -1,7 +1,6 @@
 const OPENROUTER_REFERER = 'https://app.elementeracoast.com';
 const FREE_MODEL_ALLOWLIST = new Set([
   'nvidia/nemotron-3-ultra-550b-a55b:free',
-  'poolside/laguna-m.1:free',
   'nvidia/nemotron-3-super-120b-a12b:free',
 ]);
 const DEFAULT_FREE_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
