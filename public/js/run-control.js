@@ -17,7 +17,20 @@ const defaultRunControlSettings = {
   scratchpadBudget: 800
 };
 
+// 请求拼装预留顺序：极短屋规/登岛信核心 -> 当前小纸条 -> 最近原文上下文 -> 低频种子 -> 当前用户输入。
+// 预算不足时：先裁最旧原文上下文，再裁种子召回，再压缩小纸条；当前用户输入不裁。
+// creativity 以后可在请求层映射成 temperature/top_p，本面板不显示这些工程词。
+
 const numberFields = ['recentTurns', 'contextBudget', 'seedRecallLimit', 'scratchpadBudget'];
+const allowedValues = {
+  modelPreset: ['cheap_test', 'daily_chat', 'deep_work'],
+  contextMode: ['short', 'balanced', 'deep'],
+  recentTurns: [2, 4, 8, 12],
+  contextBudget: [2000, 6000, 12000],
+  outputLength: ['short', 'normal', 'long'],
+  creativity: ['stable', 'natural', 'expansive'],
+  memoryRecall: ['off', 'low', 'medium']
+};
 
 function asNumber(name, value) {
   if (!numberFields.includes(name)) return value;
@@ -28,7 +41,7 @@ function readSettings() {
   try {
     const stored = localStorage.getItem(RUN_CONTROL_STORAGE_KEY);
     if (!stored) return { ...defaultRunControlSettings };
-    return { ...defaultRunControlSettings, ...JSON.parse(stored) };
+    return normalizeSettings({ ...defaultRunControlSettings, ...JSON.parse(stored) });
   } catch (error) {
     console.warn('Run control settings reset to defaults.', error);
     return { ...defaultRunControlSettings };
@@ -37,10 +50,26 @@ function readSettings() {
 
 function normalizeSettings(settings) {
   const next = { ...defaultRunControlSettings, ...settings };
+
   numberFields.forEach((name) => {
     next[name] = Number(next[name]);
   });
+
+  Object.entries(allowedValues).forEach(([name, values]) => {
+    if (!values.includes(next[name])) {
+      next[name] = defaultRunControlSettings[name];
+    }
+  });
+
+  next.seedRecallLimit = clamp(next.seedRecallLimit, 0, 6, defaultRunControlSettings.seedRecallLimit);
+  next.scratchpadBudget = clamp(next.scratchpadBudget, 0, 2400, defaultRunControlSettings.scratchpadBudget);
+
   return next;
+}
+
+function clamp(value, min, max, fallback) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(Math.max(value, min), max);
 }
 
 function saveSettings(settings) {
