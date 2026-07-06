@@ -1,4 +1,4 @@
-const CACHE_NAME = "elementera-coast-pages-v1";
+const CACHE_NAME = "elementera-coast-pages-v2";
 const CORE = [
   "/",
   "/index.html",
@@ -8,6 +8,8 @@ const CORE = [
   "/service-worker.js",
   "/public/app.js",
   "/public/styles.css",
+  "/public/run-control-p301c.js",
+  "/public/api-sandbox-p302c.js",
   "/public/icons/action-copy.svg",
   "/public/icons/action-edit.svg",
   "/public/icons/action-heart.svg",
