@@ -5,9 +5,9 @@
   const MODELS = [
     ['nvidia/nemotron-3-super-120b-a12b:free', 'NVIDIA Nemotron 3 Super · free'],
     ['nvidia/nemotron-3-ultra-550b-a55b:free', 'NVIDIA Nemotron 3 Ultra · free'],
-    ['poolside/laguna-m.1:free', 'Poolside Laguna M.1 · free'],
   ];
   const DEFAULT_MODEL = 'nvidia/nemotron-3-super-120b-a12b:free';
+  const REQUEST_TIMEOUT_MS = 30000;
   let selectedModel = DEFAULT_MODEL;
 
   const q = (selector, root = document) => root.querySelector(selector);
@@ -18,7 +18,7 @@
     if (q('#apiSandboxP302CStyle')) return;
     const style = document.createElement('style');
     style.id = 'apiSandboxP302CStyle';
-    style.textContent = `.api-sandbox-p302c .sandbox-note{margin:0 0 16px;color:var(--muted);font-size:13px;line-height:1.65}.api-sandbox-p302c .sandbox-models{display:grid;gap:9px}.api-sandbox-p302c .sandbox-model{display:flex;gap:9px;align-items:flex-start;padding:13px 14px;border-bottom:1px solid var(--line)}.api-sandbox-p302c .sandbox-model:last-child{border-bottom:0}.api-sandbox-p302c .sandbox-model input{margin-top:3px}.api-sandbox-p302c .sandbox-model strong{display:block;color:var(--text);font-size:15px}.api-sandbox-p302c .sandbox-model small{display:block;margin-top:4px;color:var(--muted);font-size:12px;word-break:break-all}.api-sandbox-p302c .sandbox-actions{display:grid;gap:10px}.api-sandbox-p302c .sandbox-actions button{min-height:52px;padding:13px 16px;text-align:left;color:var(--text);background:transparent;border-bottom:1px solid var(--line)}.api-sandbox-p302c .sandbox-actions button:last-child{border-bottom:0}.api-sandbox-p302c .sandbox-result{white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.6;color:var(--text)}.api-sandbox-p302c .sandbox-result.is-muted{color:var(--muted)}`;
+    style.textContent = `.api-sandbox-p302c .sandbox-note{margin:0 0 16px;color:var(--muted);font-size:13px;line-height:1.65}.api-sandbox-p302c .sandbox-models{display:grid;gap:9px}.api-sandbox-p302c .sandbox-model{display:flex;gap:9px;align-items:flex-start;padding:13px 14px;border-bottom:1px solid var(--line)}.api-sandbox-p302c .sandbox-model:last-child{border-bottom:0}.api-sandbox-p302c .sandbox-model input{margin-top:3px}.api-sandbox-p302c .sandbox-model strong{display:block;color:var(--text);font-size:15px}.api-sandbox-p302c .sandbox-model small{display:block;margin-top:4px;color:var(--muted);font-size:12px;word-break:break-word;overflow-wrap:anywhere}.api-sandbox-p302c .sandbox-actions{display:grid;gap:0}.api-sandbox-p302c .sandbox-actions button{display:block;width:100%;min-height:58px;padding:14px 18px;text-align:left;color:var(--text);background:transparent;border-bottom:1px solid var(--line)}.api-sandbox-p302c .sandbox-actions button:last-child{border-bottom:0}.api-sandbox-p302c .sandbox-actions strong{display:block;font-size:16px;letter-spacing:-.02em}.api-sandbox-p302c .sandbox-actions small{display:block;margin-top:5px;color:var(--muted);font-size:13px;line-height:1.45}.api-sandbox-p302c .sandbox-result{box-sizing:border-box;width:100%;margin:0;padding:16px 18px;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;font-size:13px;line-height:1.7;color:var(--text)}.api-sandbox-p302c .sandbox-result.is-muted{color:var(--muted)}`;
     document.head.appendChild(style);
   }
 
@@ -42,8 +42,18 @@
     if (status === 401) return '401 Unauthorized：未登录或 session 过期，请先通过海岸密码门登录。';
     if (status === 503) return '503：OpenRouter key is not configured. 请检查 Cloudflare Variables and secrets 或重新部署。';
     if (status === 400 && String(error).includes('Model')) return '400：Model is not allowed. 当前模型不在免费白名单中。';
-    if (status === 502) return '502：Upstream request failed. 可能是 OpenRouter、模型、限流或网络问题。';
+    if (status === 502) return '502：OpenRouter 上游失败，可能是免费模型限速、排队、临时不可用或网络问题。请换另一个免费模型或稍后再试。';
     return `${status || 'Error'}：${error}`;
+  }
+
+  async function fetchWithTimeout(url, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   async function checkSession() {
@@ -62,9 +72,9 @@
   }
 
   async function sendSandbox() {
-    setResult('正在发送固定无隐私测试句……', true);
+    setResult('正在请求免费模型……如果长时间没有返回，可能是免费 endpoint 排队或限速。', true);
     try {
-      const res = await fetch('/__coast_free_chat', {
+      const res = await fetchWithTimeout('/__coast_free_chat', {
         method: 'POST',
         credentials: 'same-origin',
         cache: 'no-store',
@@ -79,6 +89,10 @@
       const content = data?.message?.content || '';
       setResult(`model: ${data.model || selectedModel}\n\n${content || '模型没有返回文本。'}`);
     } catch (error) {
+      if (error?.name === 'AbortError') {
+        setResult('请求超时：免费模型可能正在排队、限速或临时不可用。请换另一个模型或稍后再试。');
+        return;
+      }
       setResult(`请求失败：${error?.message || error}`);
     }
   }
