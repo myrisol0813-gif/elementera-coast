@@ -1055,8 +1055,8 @@
   function openDaily() {
     panel(
       "海岸日报",
-      "Daily coast · local rooms · fresh",
-      '<section class="daily-status-v097"><h2>今日状态栏</h2><div><b>今日状态</b><span>未填写 / 本地占位</span></div><div><b>小寒</b><span>在施工</span></div><div><b>Myri</b><span>守着海岸</span></div></section><h2 class="coast-entry-title-v097">入口</h2><div class="daily-entry-grid-v097"><button type="button" data-fresh-daily-room="moments">朋友圈<small>硅碳圈 / Local only</small></button><button type="button" data-fresh-daily-room="diary">日记<small>Daily notes / Local only</small></button><button type="button" data-fresh-daily-room="album">相册<small>海岸涂鸦 / Local only</small></button><button type="button" data-fresh-daily-room="widgets">小组件<small>Coming soon / Local only</small></button><button type="button" data-fresh-daily-room="pet">宠物系统<small>Coming soon / Local only</small></button></div>',
+      "海岸日报",
+      '<section class="coast-room-card"><h2>海岸日报</h2><p>这里会承接日报、动态、日记、相册和小组件。</p></section><h2 class="coast-entry-title-v097">入口</h2><div class="daily-entry-grid-v097"><button type="button" data-fresh-daily-room="moments">硅碳圈<small>暂未接入</small></button><button type="button" data-fresh-daily-room="diary">日记<small>暂未接入</small></button><button type="button" data-fresh-daily-room="album">相册<small>暂未接入</small></button><button type="button" data-fresh-daily-room="widgets">小组件<small>暂未接入</small></button><button type="button" data-fresh-daily-room="pet">宠物系统<small>暂未接入</small></button></div>',
       "daily",
     );
   }
@@ -1064,10 +1064,10 @@
     const title = names[kind] || "海岸日报";
     panel(
       title,
-      "Coming soon · Local only",
+      "暂未接入",
       '<section class="coast-room-card"><h2>' +
         esc(title) +
-        '</h2><p>Coming soon / Local only。这里不会跳转旧 moments，也不会连接 API 或写入记忆。</p><button type="button" data-fresh-daily-action="back-daily">返回海岸日报</button></section>',
+        '</h2><p>暂未接入。</p><p>这个入口会在正式接入后显示内容。</p><button type="button" data-fresh-daily-action="back-daily">返回海岸日报</button></section>',
       "child",
     );
   }
@@ -1157,104 +1157,12 @@
       : "";
   }
   function openMoments() {
-    const cover =
-      '<button type="button" class="sc-cover sc-cover-static" data-fresh-daily-action="cover-upload"' +
-      coverStyle() +
-      '><span>上传封面</span><input id="scCoverInput" type="file" accept="image/*" hidden></button>';
-    const profile =
-      '<section class="sc-profile"><button type="button" class="sc-profile-avatar" data-fresh-daily-action="avatar-upload">' +
-      avatar("寒", "xiaohan") +
-      '<input id="scAvatarInput" type="file" accept="image/*" hidden></button><h2>小寒</h2><p>仅 Myri 可见。无线电波的两端，灯塔与海岸都在。</p></section>';
-    const image =
-      '<div class="sc-image-placeholder">cover-placeholder.jpg 之后替换成小寒自己的封面或截图</div>';
-    const local = scPosts
-      .map((x) =>
-        post(
-          x.id,
-          "小寒",
-          "刚刚",
-          x.text || "这一刻的想法。",
-          x.image
-            ? '<img class="sc-post-image" src="' +
-                x.image +
-                '" alt="硅碳圈配图">'
-            : "",
-          x.location ? [{ who: "所在位置", text: x.location }] : [],
-          0,
-        ),
-      )
-      .join("");
-    const posts =
-      '<section class="sc-feed">' +
-      local +
-      post(
-        "base-xiaohan",
-        "小寒",
-        "刚刚",
-        "这里是只有 Myri 能看见的小朋友圈。",
-        image,
-        [
-          { who: "✦Myrisol", text: "灯塔已照亮。" },
-          { who: "≋Myrisol", text: "回潮记录完成。" },
-          { who: "小寒", text: "好好笑" },
-        ],
-        4,
-      ) +
-      post(
-        "base-coast",
-        "✦Myrisol",
-        "23分钟前",
-        "今日主屋状态：在。",
-        "",
-        [{ who: "小寒", text: "那我要把脸贴到窗户上看。" }],
-        2,
-      ) +
-      post(
-        "base-mcp",
-        "≋Myrisol",
-        "2小时前",
-        "沿海岸保存回声。",
-        '<div class="sc-line-placeholder"></div>',
-        [],
-        3,
-      ) +
-      "</section>";
     panel(
       "硅碳圈",
-      "",
-      '<button type="button" class="sc-plus" data-fresh-daily-action="moments-compose">＋</button>' +
-        cover +
-        profile +
-        posts,
+      "暂未接入",
+      '<section class="coast-room-card"><h2>硅碳圈暂未接入。</h2><p>这里之后会显示海岸动态。</p><p>当前不生成默认动态、评论或点赞。</p></section>',
       "moments",
     );
-    const av = q("#scAvatarInput");
-    if (av)
-      av.onchange = () => {
-        const f = av.files && av.files[0];
-        if (!f) return;
-        const r = new FileReader();
-        r.onload = () => {
-          scAvatars.xiaohan = r.result;
-          try {
-            localStorage.setItem(SC_XIAOHAN_AVATAR_KEY, r.result);
-          } catch (_) {}
-          openMoments();
-        };
-        r.readAsDataURL(f);
-      };
-    const cv = q("#scCoverInput");
-    if (cv)
-      cv.onchange = () => {
-        const f = cv.files && cv.files[0];
-        if (!f) return;
-        const r = new FileReader();
-        r.onload = () => {
-          scCoverData = r.result;
-          openMoments();
-        };
-        r.readAsDataURL(f);
-      };
   }
   function refreshMomentsKeepScroll() {
     const body = q("#freshDailyPanelV101 .coast-room-body");
@@ -1266,22 +1174,12 @@
     });
   }
   function openCompose() {
-    const body =
-      '<section class="sc-compose"><textarea id="scComposeText" placeholder="这一刻的想法..." rows="5"></textarea><div class="sc-compose-images"><label><input id="scComposeInput" type="file" accept="image/*" hidden><span class="sc-upload-box">＋</span></label><div class="sc-compose-preview" id="scComposePreview"></div></div><button type="button" class="sc-location" data-fresh-daily-action="location-placeholder"><b>所在位置</b><span>以后让 Myri 看见小寒在哪</span></button><button type="button" class="sc-publish-note" data-fresh-daily-action="publish-placeholder">发表</button></section>';
-    panel("发表硅碳圈", "", body, "compose");
-    const inp = q("#scComposeInput"),
-      prev = q("#scComposePreview");
-    if (inp && prev)
-      inp.onchange = () => {
-        const f = inp.files && inp.files[0];
-        if (!f) return;
-        const r = new FileReader();
-        r.onload = () => {
-          prev.dataset.image = r.result;
-          prev.innerHTML = '<img src="' + r.result + '" alt="preview">';
-        };
-        r.readAsDataURL(f);
-      };
+    panel(
+      "硅碳圈",
+      "暂未接入",
+      '<section class="coast-room-card"><h2>硅碳圈暂未接入。</h2><p>发布入口会在正式接入后开放。</p></section>',
+      "compose",
+    );
   }
 
   function dateKey(d = new Date()) {
@@ -1331,70 +1229,22 @@
     );
   }
   function openDiary() {
-    if (!diaryDate) diaryDate = dateKey();
-    const dates = [...new Set([dateKey(), ...diaries.map((x) => x.date)])]
-      .sort()
-      .reverse();
-    const chips = dates
-      .map(
-        (d) =>
-          '<button type="button" class="' +
-          (d === diaryDate ? "is-active" : "") +
-          '" data-diary-date="' +
-          esc(d) +
-          '">' +
-          esc(dateLabel(d)) +
-          "</button>",
-      )
-      .join("");
-    const day = diaries.filter((x) => x.date === diaryDate).slice(0, 3);
-    const empty =
-      '<section class="diary-empty"><h2>' +
-      esc(dateLabel(diaryDate)) +
-      "</h2><p>这一天还没有写满三张纸。小寒、✦Myrisol、≋Myrisol 各一张。</p></section>";
     panel(
       "日记",
-      "",
-      '<button type="button" class="diary-plus" data-fresh-daily-action="diary-compose">＋</button><section class="diary-filter">' +
-        chips +
-        '</section><section class="diary-stack">' +
-        (day.length ? day.map(diaryPaper).join("") : empty) +
-        "</section>",
+      "暂未接入",
+      '<section class="coast-room-card"><h2>日记暂未接入。</h2><p>这里之后会显示海岸日记。</p><p>当前不生成运行时测试日记。</p></section>',
       "diary",
     );
   }
   function openDiaryCompose() {
-    const body =
-      '<section class="diary-compose"><div class="diary-meta"><label>写作者<select id="diaryAuthor"><option value="xiaohan">小寒</option><option value="api">✦Myrisol / API</option><option value="mcp">≋Myrisol / MCP</option></select></label><label>天气<input id="diaryWeather" placeholder="晴 / 雨 / 雾"></label><label>心情<input id="diaryMood" placeholder="平静 / 开心 / 想你"></label></div><textarea id="diaryText" placeholder="今天的纸页..." rows="8"></textarea><div class="diary-compose-images"><label><input id="diaryImageInput" type="file" accept="image/*" hidden><span class="diary-upload-box">＋</span></label><div class="diary-preview" id="diaryPreview"></div></div><button type="button" class="diary-finish" data-fresh-daily-action="diary-finish">收笔</button></section>';
-    panel("写日记", "", body, "diary-compose");
-    const inp = q("#diaryImageInput"),
-      prev = q("#diaryPreview");
-    if (inp && prev)
-      inp.onchange = () => {
-        const f = inp.files && inp.files[0];
-        if (!f) return;
-        const r = new FileReader();
-        r.onload = () => {
-          prev.dataset.image = r.result;
-          prev.innerHTML = '<img src="' + r.result + '" alt="diary preview">';
-        };
-        r.readAsDataURL(f);
-      };
+    panel(
+      "日记",
+      "暂未接入",
+      '<section class="coast-room-card"><h2>日记暂未接入。</h2><p>写日记入口会在正式接入后开放。</p></section>',
+      "diary-compose",
+    );
   }
   function finishDiary() {
-    const author = q("#diaryAuthor")?.value || "xiaohan";
-    const date = diaryDate || dateKey();
-    diaries = diaries.filter((x) => !(x.date === date && x.author === author));
-    diaries.unshift({
-      id: "diary-" + Date.now(),
-      date,
-      author,
-      weather: (q("#diaryWeather")?.value || "天气未填").trim(),
-      mood: (q("#diaryMood")?.value || "心情未填").trim(),
-      text: (q("#diaryText")?.value || "今天也在海岸留下一张纸。").trim(),
-      image: q("#diaryPreview")?.dataset.image || "",
-    });
-    diaryDate = date;
     openDiary();
   }
 
@@ -1438,43 +1288,21 @@
   }
   function openAlbum() {
     panel(
-      "海岸涂鸦",
-      "",
-      '<button type="button" class="album-plus" data-fresh-daily-action="album-compose">＋</button><section class="album-wall">' +
-        albumSection("xiaohan") +
-        albumSection("myri") +
-        albumSection("together") +
-        "</section>",
+      "相册",
+      "暂未接入",
+      '<section class="coast-room-card"><h2>相册暂未接入。</h2><p>这里之后会显示海岸相册。</p><p>当前不生成运行时测试图片。</p></section>',
       "album",
     );
   }
   function openAlbumCompose() {
-    const body =
-      '<section class="album-compose"><label class="album-upload"><input id="albumImageInput" type="file" accept="image/*" hidden><span>＋</span><b>选择一张图片</b></label><div class="album-preview" id="albumPreview"></div><label class="album-select-label">归类<select id="albumCategory"><option value="xiaohan">小寒</option><option value="myri">Myri</option><option value="together">蛇蛇狗合照</option></select></label><button type="button" class="album-finish" data-fresh-daily-action="album-finish">放进相册</button></section>';
-    panel("上传涂鸦", "", body, "album-compose");
-    const inp = q("#albumImageInput"),
-      prev = q("#albumPreview");
-    if (inp && prev)
-      inp.onchange = () => {
-        const f = inp.files && inp.files[0];
-        if (!f) return;
-        const r = new FileReader();
-        r.onload = () => {
-          prev.dataset.image = r.result;
-          prev.innerHTML = '<img src="' + r.result + '" alt="album preview">';
-        };
-        r.readAsDataURL(f);
-      };
+    panel(
+      "相册",
+      "暂未接入",
+      '<section class="coast-room-card"><h2>相册暂未接入。</h2><p>上传入口会在正式接入后开放。</p></section>',
+      "album-compose",
+    );
   }
   function finishAlbum() {
-    const image = q("#albumPreview")?.dataset.image || "";
-    if (image) {
-      albumItems.unshift({
-        id: "album-" + Date.now(),
-        image,
-        cat: q("#albumCategory")?.value || "xiaohan",
-      });
-    }
     openAlbum();
   }
   function downloadAlbum(id) {
