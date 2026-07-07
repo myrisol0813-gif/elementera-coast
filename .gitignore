@@ -27,11 +27,35 @@ coverage
 build/Release
 
 # Dependency directories
-node_modules
-jspm_packages
+node_modules/
+jspm_packages/
 
 # Optional npm cache directory
 .npm
 
 # Optional REPL history
 .node_repl_history
+
+# Local archives and release bundles
+*.zip
+*.tgz
+*.tar.gz
+
+# Environment files and secrets
+.env
+.envv
+.env.*
+!.env.example
+
+# Local backup/download/export folders
+backups/
+downloads/
+
+# Known local memory/export artifacts
+data/memory-drafts.json
+data/memories.json
+chat-export*.json
+chat-export*.html
+memory-export*.json
+local-export*.json
+*-export.json
