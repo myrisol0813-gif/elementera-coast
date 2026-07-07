@@ -1,14 +1,14 @@
 # v106 daily modules
 
-These files are future module landing points for the v106 daily shell: 海岸日报、硅碳圈、日记、相册、草稿状态与素材处理。
+These files are module landing points for the v106 daily shell: 海岸日报、硅碳圈、日记、相册、草稿状态与素材处理。
 
-Current production behavior is still owned by `public/app.js` inside the `window.__v106SiliconCarbonMoments` IIFE. These files are not loaded by `app.html`, are not imported anywhere, and must not change runtime behavior until a later migration task explicitly wires them in.
+Current production behavior is still owned by `public/app.js` inside the `window.__v106SiliconCarbonMoments` IIFE. Starting in P3-STRUCT-04, `app.html` loads these classic-script helper files before `public/app.js`, so they can stage pure config and helper objects on `globalThis.ElementeraDailyModules`. The live v106 UI functions still keep their local fallback behavior in `app.js`; these modules must not change runtime behavior by themselves.
 
-P3-STRUCT-03 stages pure helper and configuration copies in these files. The staged helpers are classic-script compatible and attach only to `globalThis.ElementeraDailyModules` if the files are loaded in a later task. They are not loaded now, so online behavior remains unchanged.
+P3-STRUCT-03 staged pure helper and configuration copies in these files. P3-STRUCT-04 wires the files into `app.html` so the namespace exists before `app.js`, but it intentionally does not move `handle(e)`, `targetOf()`, capture listeners, or v106 UI rendering out of `app.js` yet.
 
 Planned module boundaries:
 
-- `daily-router.js`: future captured-event router for daily entry clicks and v106 child actions. P3-STRUCT-03 only records selectors and action names; it does not move the live `handle(e)`.
+- `daily-router.js`: future captured-event router for daily entry clicks and v106 child actions. It currently only records selectors, action names, and capture event names; it does not move the live `handle(e)`.
 - `daily-shell.js`: future `#freshDailyPanelV101` panel shell, daily hall config, and generic child empty states.
 - `moments.js`: future 硅碳圈 UI shell, post cards, comments, likes, compose form, and local-draft copy.
 - `diary.js`: future 日记 UI shell, pure date/author helpers, paper cards, and compose form.
@@ -24,4 +24,4 @@ Do not place these unrelated areas here:
 - Model box / API sandbox / run-control internals.
 - keys, secrets, tokens, `.env`, `.envv`, or server data.
 
-Until a later P3-STRUCT migration wires this directory into the app, changes here must stay behavior-neutral: comments, pure helpers, constants, and module-boundary documentation only. Do not add `import`/`export`, do not add script tags, and do not create new storage keys.
+Until a later P3-STRUCT migration explicitly moves live code, changes here must stay behavior-neutral: pure helpers, constants, and module-boundary documentation only. Do not add `import`/`export`, do not create new storage keys, and do not make these files mutate the live DOM by themselves.
