@@ -28,7 +28,7 @@
     if (q('#modelBoxP303AStyle')) return;
     const style = document.createElement('style');
     style.id = 'modelBoxP303AStyle';
-    style.textContent = `.model-box-p303a .mb-note{margin:0 0 16px;color:var(--muted);font-size:13px;line-height:1.6}.model-box-p303a .mb-toolbar{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;margin-bottom:14px}.model-box-p303a .mb-toolbar input{min-height:44px;border:1px solid var(--line);border-radius:16px;background:var(--bg);color:var(--text);padding:10px 13px;font-size:15px;outline:0}.model-box-p303a button{color:var(--text)}.model-box-p303a .mb-refresh,.model-box-p303a .mb-chip{min-height:42px;border:1px solid var(--line);border-radius:999px;background:transparent;padding:8px 13px}.model-box-p303a .mb-list{display:grid}.model-box-p303a .mb-model{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}.model-box-p303a .mb-model:last-child{border-bottom:0}.model-box-p303a .mb-model strong{display:block;font-size:15px;color:var(--text);letter-spacing:-.02em}.model-box-p303a .mb-model code{display:block;margin-top:4px;color:var(--muted);font-size:12px;white-space:normal;word-break:break-word;overflow-wrap:anywhere}.model-box-p303a .mb-model small{display:block;margin-top:6px;color:var(--muted);font-size:12px;line-height:1.45}.model-box-p303a .mb-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}.model-box-p303a .mb-actions button{min-height:34px;border:1px solid var(--line);border-radius:999px;background:transparent;padding:6px 10px;font-size:12px}.model-box-p303a .mb-actions button.is-current{border-color:var(--call);box-shadow:0 0 0 1px color-mix(in srgb,var(--call) 30%,transparent)}.model-box-p303a .mb-status{margin:0 0 12px;color:var(--muted);font-size:12px;line-height:1.5}.model-box-p303a .mb-empty{padding:16px;color:var(--muted);font-size:13px;line-height:1.6}.model-box-entry-p303a small{line-height:1.35}`;
+    style.textContent = `.topbar .model-button{min-width:0;max-width:min(52vw,290px);overflow:hidden}.topbar .model-button .model-title,.topbar .model-button .model-name{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.topbar .topbar-actions{flex-shrink:0}.model-box-p303a .mb-note{margin:0 0 16px;color:var(--muted);font-size:13px;line-height:1.6}.model-box-p303a .mb-version{margin:-7px 0 15px;color:var(--muted);font-size:11px;opacity:.72}.model-box-p303a .mb-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;margin-bottom:14px}.model-box-p303a .mb-toolbar input{min-width:0;min-height:44px;border:1px solid var(--line);border-radius:16px;background:var(--bg);color:var(--text);padding:10px 13px;font-size:15px;outline:0}.model-box-p303a button{color:var(--text)}.model-box-p303a .mb-refresh,.model-box-p303a .mb-chip{min-height:42px;border:1px solid var(--line);border-radius:999px;background:transparent;padding:8px 13px}.model-box-p303a .mb-list{display:grid}.model-box-p303a .mb-model{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}.model-box-p303a .mb-model:last-child{border-bottom:0}.model-box-p303a .mb-model strong{display:block;font-size:15px;color:var(--text);letter-spacing:-.02em}.model-box-p303a .mb-model code{display:block;margin-top:4px;color:var(--muted);font-size:12px;white-space:normal;word-break:break-word;overflow-wrap:anywhere}.model-box-p303a .mb-model small{display:block;margin-top:6px;color:var(--muted);font-size:12px;line-height:1.45}.model-box-p303a .mb-badge{display:inline-flex;margin:0 6px 0 0;padding:2px 7px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:11px;vertical-align:1px}.model-box-p303a .mb-badge.is-free{border-color:color-mix(in srgb,var(--call) 42%,var(--line));color:var(--text)}.model-box-p303a .mb-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:7px}.model-box-p303a .mb-actions button{min-height:34px;border:1px solid var(--line);border-radius:999px;background:transparent;padding:6px 10px;font-size:12px}.model-box-p303a .mb-actions button.is-current{border-color:var(--call);box-shadow:0 0 0 1px color-mix(in srgb,var(--call) 30%,transparent)}.model-box-p303a .mb-status{margin:0 0 12px;color:var(--muted);font-size:12px;line-height:1.5;word-break:break-word;overflow-wrap:anywhere}.model-box-p303a .mb-empty{padding:16px;color:var(--muted);font-size:13px;line-height:1.6}.model-box-entry-p303a small{line-height:1.35}.assistant-text .chat-error-detail{display:block;margin-top:8px;color:var(--muted);font-size:12px;line-height:1.55;word-break:break-word;overflow-wrap:anywhere}@media(max-width:720px){.topbar .model-button{max-width:min(50vw,230px)}.model-box-p303a .mb-model{grid-template-columns:1fr;gap:11px;padding:15px 16px}.model-box-p303a .mb-actions{justify-content:flex-start}.model-box-p303a .mb-toolbar{grid-template-columns:1fr}.model-box-p303a .mb-refresh{border-radius:15px}.composer-wrap{padding-bottom:calc(8px + env(safe-area-inset-bottom,0px))}}`;
     document.head.appendChild(style);
   }
 
@@ -63,14 +63,34 @@
     saveJson(MODEL_BOX_KEY, box);
   }
 
-  function modelById(modelId, catalog = catalogState) {
+  function allModels(catalog = catalogState) {
     const groups = catalog?.groups || {};
-    return [...(groups.openai_chat || []), ...(groups.openai_image || []), ...(groups.free_test || [])].find((model) => model.id === modelId) || null;
+    return [...(groups.openai_chat || []), ...(groups.openai_image || []), ...(groups.free_test || [])];
+  }
+
+  function modelById(modelId, catalog = catalogState) {
+    return allModels(catalog).find((model) => model.id === modelId) || null;
   }
 
   function modelName(modelId, catalog = catalogState) {
     const model = modelById(modelId, catalog);
     return model?.name || modelId || '未选择模型';
+  }
+
+  function modelKind(modelId, model) {
+    if (model?.is_free || String(modelId).includes(':free')) return 'Free';
+    if (String(modelId).includes('gpt-image')) return 'Image';
+    if (String(modelId).startsWith('openai/')) return 'OpenAI';
+    return 'Model';
+  }
+
+  function shortModelLabel(modelId) {
+    const name = modelName(modelId);
+    const kind = modelKind(modelId, modelById(modelId));
+    if (!modelId) return '模型箱 ›';
+    if (kind === 'OpenAI') return `OpenAI: ${name} ›`;
+    if (kind === 'Free') return `Free: ${name.replace(/NVIDIA\s*/i, '').replace(/ · free$/i, '')} ›`;
+    return `${name} ›`;
   }
 
   function priceText(model) {
@@ -130,10 +150,13 @@
 
   function updateTopModelLabel() {
     const current = localStorage.getItem(CURRENT_CHAT_KEY) || '';
-    const label = current ? `${modelName(current)} ›` : '模型箱 ›';
+    const label = shortModelLabel(current);
     localStorage.setItem(OLD_MODEL_LABEL_KEY, label);
     const node = q('.model-name');
-    if (node) node.textContent = label;
+    if (node) {
+      node.textContent = label;
+      node.title = current;
+    }
   }
 
   function group(title, body) {
@@ -145,10 +168,12 @@
     const current = localStorage.getItem(CURRENT_CHAT_KEY) === modelId;
     const canSet = where !== 'image';
     const actions = [];
+    const kind = modelKind(modelId, model);
+    const badgeClass = kind === 'Free' ? ' is-free' : '';
     if (actionMode === 'catalog') actions.push(`<button type="button" data-mb-add="${esc(modelId)}" data-mb-kind="${esc(where)}">加入</button>`);
     if (actionMode === 'box' && canSet) actions.push(`<button type="button" class="${current ? 'is-current' : ''}" data-mb-current="${esc(modelId)}">${current ? '当前' : '设为当前'}</button>`);
     if (actionMode === 'box') actions.push(`<button type="button" data-mb-remove="${esc(modelId)}" data-mb-kind="${esc(where)}">移除</button>`);
-    return `<article class="mb-model"><span><strong>${esc(model.name || modelId)}</strong><code>${esc(modelId)}</code><small>${esc([`ctx ${model.context_length ?? '?'}`, priceText(model), tagText(model)].join(' · '))}</small></span><span class="mb-actions">${actions.join('')}</span></article>`;
+    return `<article class="mb-model"><span><strong><span class="mb-badge${badgeClass}">${esc(kind)}</span>${esc(model.name || modelId)}</strong><code>${esc(modelId)}</code><small>${esc([`ctx ${model.context_length ?? '?'}`, priceText(model), tagText(model)].join(' · '))}</small></span><span class="mb-actions">${actions.join('')}</span></article>`;
   }
 
   function currentBoxHtml() {
@@ -156,7 +181,7 @@
     const chatRows = (box.chat || []).map((id) => modelRow(id, 'chat', 'box')).join('') || '<p class="mb-empty">还没有常驻 OpenAI chat 模型。刷新目录后会自动加入推荐默认项。</p>';
     const freeRows = (box.free || []).map((id) => modelRow(id, 'free', 'box')).join('') || '<p class="mb-empty">还没有免费测试模型。</p>';
     const imageRows = (box.image || []).map((id) => modelRow(id, 'image', 'box')).join('') || '<p class="mb-empty">当前目录没有 GPT Image 2 / GPT Image 1。</p>';
-    return group('当前聊天模型', `<div class="mb-list">${modelRow(localStorage.getItem(CURRENT_CHAT_KEY) || '', 'chat', 'box')}</div>`) + group('常驻 OpenAI Chat', `<div class="mb-list">${chatRows}</div>`) + group('免费测试模型', `<div class="mb-list">${freeRows}</div>`) + group('生图模型 · 仅保存', `<div class="mb-list">${imageRows}</div>`);
+    return group('当前聊天模型', `<div class="mb-list">${modelRow(localStorage.getItem(CURRENT_CHAT_KEY) || '', 'chat', 'box')}</div>`) + group('常驻 OpenAI Chat', `<div class="mb-list">${chatRows}</div>`) + group('Free Test', `<div class="mb-list">${freeRows}</div>`) + group('Image model slot · 仅保存', `<div class="mb-list">${imageRows}</div>`);
   }
 
   function catalogHtml(search = '') {
@@ -165,12 +190,12 @@
     const free = (catalogState?.groups?.free_test || []).filter((model) => !text || `${model.name} ${model.id}`.toLowerCase().includes(text)).slice(0, 30);
     const openaiRows = openai.map((model) => modelRow(model.id, 'chat', 'catalog')).join('') || '<p class="mb-empty">没有匹配的 OpenAI chat 模型。</p>';
     const freeRows = free.map((model) => modelRow(model.id, 'free', 'catalog')).join('') || '<p class="mb-empty">没有匹配的免费模型。</p>';
-    return group('OpenAI Chat 目录', `<div class="mb-list">${openaiRows}</div>`) + group('免费测试目录', `<div class="mb-list">${freeRows}</div>`);
+    return group('OpenAI Chat 目录', `<div class="mb-list">${openaiRows}</div>`) + group('Free Test 目录', `<div class="mb-list">${freeRows}</div>`);
   }
 
   function panelHtml(search = '') {
     const updated = catalogState?.updated_at || '未刷新';
-    return `<header class="clean-head"><button class="clean-back" type="button" data-mb-back>←</button><div><h1>模型箱</h1><p>OpenAI chat · Free test · GPT Image</p></div></header><main class="clean-body"><p class="mb-note">模型目录来自 Cloudflare /api/models。常驻模型箱只保存模型 id 和轻量目录缓存；不会保存 API key。</p><p class="mb-status">updated_at: ${esc(updated)} · 当前 chat: ${esc(localStorage.getItem(CURRENT_CHAT_KEY) || '未选择')}</p><div class="mb-toolbar"><input id="modelBoxSearchP303A" type="search" placeholder="搜索 OpenAI chat 模型" value="${esc(search)}"><button class="mb-refresh" type="button" data-mb-refresh>刷新目录</button></div>${currentBoxHtml()}${catalogHtml(search)}</main>`;
+    return `<header class="clean-head"><button class="clean-back" type="button" data-mb-back>←</button><div><h1>模型箱</h1><p>OpenAI chat · Free test · GPT Image</p></div></header><main class="clean-body"><p class="mb-note">模型目录来自 Cloudflare /api/models。常驻模型箱只保存模型 id 和轻量目录缓存；不会保存 API key。</p><p class="mb-version">Panel version: p303a-fix1</p><p class="mb-status">updated_at: ${esc(updated)} · 当前 chat: ${esc(localStorage.getItem(CURRENT_CHAT_KEY) || '未选择')}</p><div class="mb-toolbar"><input id="modelBoxSearchP303A" type="search" placeholder="搜索 OpenAI chat 模型" value="${esc(search)}"><button class="mb-refresh" type="button" data-mb-refresh>刷新目录</button></div>${currentBoxHtml()}${catalogHtml(search)}</main>`;
   }
 
   function openModelBox(search = '') {
@@ -269,7 +294,7 @@
       if (message.role === 'user') {
         return `<article class="message user" data-id="${esc(message.id)}"><div class="content"><div class="user-bubble">${esc(message.content)}</div><div class="user-actions" data-user-actions-for="${esc(message.id)}">${actionButton('edit','编辑','data-user-act="edit"')}${actionButton('delete','删除','data-user-act="remove"')}</div></div></article>`;
       }
-      return `<article class="message assistant" data-id="${esc(message.id)}">${avatar()}<div class="content"><div class="assistant-text">${html(message.content)}${message.id === loadingId ? '<span class="typing-cursor"></span>' : ''}</div><div class="assistant-actions" data-actions-for="${esc(message.id)}">${actionButton('copy','复制')}${actionButton('like','点赞')}${actionButton('refresh','重新生成')}${actionButton('favorite','收藏')}${actionButton('delete','删除')}</div></div></article>`;
+      return `<article class="message assistant" data-id="${esc(message.id)}">${avatar()}<div class="content"><div class="assistant-text">${html(message.content)}${message.errorDetail ? `<span class="chat-error-detail">${esc(message.errorDetail)}</span>` : ''}${message.id === loadingId ? '<span class="typing-cursor"></span>' : ''}</div><div class="assistant-actions" data-actions-for="${esc(message.id)}">${actionButton('copy','复制')}${actionButton('like','点赞')}${actionButton('refresh','重新生成')}${actionButton('favorite','收藏')}${actionButton('delete','删除')}</div></div></article>`;
     }).join('') + '<div class="thread-spacer"></div>';
     requestAnimationFrame(() => { if (scroller) scroller.scrollTop = scroller.scrollHeight; });
     saveMessages(items);
@@ -282,10 +307,12 @@
     if (isBusy) {
       call.dataset.icon = 'stop';
       call.setAttribute('aria-label', '停止生成');
+      call.dataset.busy = 'true';
       if (mic) mic.hidden = true;
     } else {
-      call.dataset.icon = 'call';
-      call.setAttribute('aria-label', '通话');
+      call.removeAttribute('data-busy');
+      call.dataset.icon = (q('#promptInput')?.value || '').trim() ? 'send' : 'call';
+      call.setAttribute('aria-label', (q('#promptInput')?.value || '').trim() ? '发送' : '通话');
       if (mic && !(q('#promptInput')?.value || '').trim()) mic.hidden = false;
     }
   }
@@ -313,6 +340,17 @@
       localStorage.setItem(CURRENT_CHAT_KEY, DEFAULT_FREE[0]);
       return DEFAULT_FREE[0];
     }
+  }
+
+  function safeFrontendError(data, status, model) {
+    const raw = data?.error;
+    if (raw && typeof raw === 'object') {
+      const main = raw.message || '消息生成失败，请稍后重试。';
+      const details = [`status: ${raw.status || status || '?'}`, raw.model || model ? `model: ${raw.model || model}` : '', raw.type ? `type: ${raw.type}` : '', raw.providerMessagePreview ? `provider: ${raw.providerMessagePreview}` : ''].filter(Boolean).join('\n');
+      return { main, details };
+    }
+    const text = typeof raw === 'string' ? raw : `HTTP ${status || 'error'}`;
+    return { main: text, details: model ? `model: ${model}` : '' };
   }
 
   async function sendChat(prompt) {
@@ -347,12 +385,16 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || data.ok === false) {
-        assistant.content = `请求失败：${data.error || res.status}`;
+        const formatted = safeFrontendError(data, res.status, model);
+        assistant.content = formatted.main;
+        assistant.errorDetail = formatted.details;
       } else {
         assistant.content = data?.message?.content || '模型没有返回文本。';
+        assistant.errorDetail = '';
       }
     } catch (error) {
       assistant.content = error?.name === 'AbortError' ? '已停止生成。' : `请求失败：${error?.message || error}`;
+      assistant.errorDetail = model ? `model: ${model}` : '';
     } finally {
       chatAbort = null;
       loadingId = null;
@@ -467,7 +509,7 @@
       if (action === 'copy') { await navigator.clipboard?.writeText(message.content); return; }
       if (action === 'like' || action === 'favorite') { assistantAction.classList.toggle('is-active'); return; }
       if (action === 'delete') { items = items.filter((item) => item.id !== messageId); renderChat(items); return; }
-      if (action === 'refresh') { message.content = '重新生成将在下一轮接入；当前先保留正式 API 单次发送。'; renderChat(items); }
+      if (action === 'refresh') { message.content = '重新生成将在下一轮接入；当前先保留正式 API 单次发送。'; message.errorDetail = ''; renderChat(items); }
     }
   }, true);
 
