@@ -1,4 +1,4 @@
-const CACHE_NAME = "elementera-coast-pages-v3";
+const CACHE_NAME = "elementera-coast-pages-v4";
 const CORE = [
   "/",
   "/index.html",
