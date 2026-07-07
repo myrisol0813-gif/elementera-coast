@@ -1,8 +1,9 @@
-const CACHE_NAME = "elementera-coast-pages-v6-clean";
+const CACHE_NAME = "elementera-coast-pages-v7-v2-store";
 const CORE = [
   "/",
   "/index.html",
   "/app.html",
+  "/app-v2.html",
   "/gptlike",
   "/manifest.json",
   "/service-worker.js",
@@ -11,6 +12,10 @@ const CORE = [
   "/public/run-control-p301c.js",
   "/public/api-sandbox-p302c.js",
   "/public/model-box-p303a.js",
+  "/public/src/main.js",
+  "/public/src/styles-v2.css",
+  "/public/src/state/chat-store.js",
+  "/public/src/storage/migrations.js",
   "/public/icons/action-copy.svg",
   "/public/icons/action-edit.svg",
   "/public/icons/action-heart.svg",
