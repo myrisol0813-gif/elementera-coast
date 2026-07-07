@@ -1890,26 +1890,18 @@
   }
   function memory() {
     panel(
-      "轨迹 / 记忆",
-      "Memory library · not connected yet",
-      '<section class="coast-room-card"><h2>记忆库</h2><button disabled>查看记忆 · Coming soon</button><button disabled>搜索记忆 · Coming soon</button><button disabled>保存新记忆 · Coming soon</button></section><section class="coast-room-card"><h2>草稿箱</h2><button disabled>memory-drafts · Coming soon</button><button disabled>待审核草稿 · Coming soon</button></section><section class="coast-room-card"><h2>管理</h2><button disabled>编辑记忆 · Coming soon</button><button disabled>删除记忆 · Coming soon</button><button disabled>标签 / 分类 · Coming soon</button></section>',
+      "轨迹记忆",
+      "记忆库暂未接入",
+      '<section class="coast-room-card"><h2>记忆库暂未接入</h2><p>这里会在接入正式记忆后显示可整理的轨迹。</p><p>当前不读取、不写入、不检索任何记忆数据。</p></section>',
     );
   }
   function daily() {
     let p = panel(
       "海岸日报",
-      "Daily coast · local rooms · fix3",
-      '<section class="daily-status-v097"><h2>今日状态栏</h2><div><b>今日状态</b><span>未填写 / 本地占位</span></div><div><b>小寒</b><span>在施工</span></div><div><b>Myri</b><span>守着海岸</span></div></section><h2 class="coast-entry-title-v097">入口</h2><div class="daily-entry-grid-v097"><button type="button" data-action="daily-room" data-daily-room="moments">朋友圈<small>Coming soon / Local only</small></button><button type="button" data-action="daily-room" data-daily-room="diary">日记<small>Coming soon / Local only</small></button><button type="button" data-action="daily-room" data-daily-room="album">相册<small>Coming soon / Local only</small></button><button type="button" data-action="daily-room" data-daily-room="widgets">小组件<small>Coming soon / Local only</small></button><button type="button" data-action="daily-room" data-daily-room="pet">宠物系统<small>Coming soon / Local only</small></button></div>',
+      "海岸日报暂未接入",
+      '<section class="coast-room-card"><h2>海岸日报暂未接入</h2><p>之后这里会承接日报、相册、日记和小组件。</p><p>当前只保留入口，不生成测试内容。</p></section>',
     );
     p.dataset.room = "daily";
-    p.querySelectorAll("[data-daily-room]").forEach(
-      (b) =>
-        (b.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          dailyRoom(b.dataset.dailyRoom);
-        }),
-    );
   }
   function dailyRoom(kind) {
     const m = {
@@ -1922,10 +1914,10 @@
     const title = m[kind] || "海岸日报";
     let p = panel(
       title,
-      "Coming soon · Local only",
+      "海岸日报暂未接入",
       '<section class="coast-room-card"><h2>' +
-        title +
-        '</h2><p>Coming soon / Local only。这里不会跳转旧 moments，也不会连接 API 或写入记忆。</p><button type="button" data-action="daily-back" data-daily-back="daily">返回海岸日报</button></section>',
+        esc(title) +
+        '</h2><p>这个入口暂未接入正式内容。</p><button type="button" data-action="daily-back" data-daily-back="daily">返回海岸日报</button></section>',
     );
     p.dataset.parent = "daily";
     p.querySelector(
@@ -2255,26 +2247,18 @@
   }
   function memV096() {
     simplePanel(
-      "轨迹 / 记忆",
-      "Memory library · not connected yet",
-      '<section class="coast-room-card"><h2>记忆库</h2><button disabled>查看记忆 · Coming soon</button><button disabled>搜索记忆 · Coming soon</button><button disabled>标签 / 分类 · Coming soon</button></section><section class="coast-room-card"><h2>管理</h2><button disabled>保存新记忆 · Coming soon</button><button disabled>删除记忆 · Coming soon</button></section>',
+      "轨迹记忆",
+      "记忆库暂未接入",
+      '<section class="coast-room-card"><h2>记忆库暂未接入</h2><p>这里会在接入正式记忆后显示可整理的轨迹。</p><p>当前不读取、不写入、不检索任何记忆数据。</p></section>',
     );
   }
   function dailyV096() {
     let p = simplePanel(
       "海岸日报",
-      "Daily coast · local rooms · fix3",
-      '<section class="daily-status-v097"><h2>今日状态栏</h2><div><b>今日状态</b><span>未填写 / 本地占位</span></div><div><b>小寒</b><span>在施工</span></div><div><b>Myri</b><span>守着海岸</span></div></section><h2 class="coast-entry-title-v097">入口</h2><div class="daily-entry-grid-v097"><button type="button" data-action="daily-room" data-daily-room="moments">朋友圈<small>Coming soon / Local only</small></button><button type="button" data-action="daily-room" data-daily-room="diary">日记<small>Coming soon / Local only</small></button><button type="button" data-action="daily-room" data-daily-room="album">相册<small>Coming soon / Local only</small></button><button type="button" data-action="daily-room" data-daily-room="widgets">小组件<small>Coming soon / Local only</small></button><button type="button" data-action="daily-room" data-daily-room="pet">宠物系统<small>Coming soon / Local only</small></button></div>',
+      "海岸日报暂未接入",
+      '<section class="coast-room-card"><h2>海岸日报暂未接入</h2><p>之后这里会承接日报、相册、日记和小组件。</p><p>当前只保留入口，不生成测试内容。</p></section>',
     );
     p.dataset.room = "daily";
-    p.querySelectorAll("[data-daily-room]").forEach(
-      (b) =>
-        (b.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          dailyRoomV096(b.dataset.dailyRoom);
-        }),
-    );
   }
   function dailyRoomV096(kind) {
     const m = {
@@ -2287,10 +2271,10 @@
     const title = m[kind] || "海岸日报";
     let p = simplePanel(
       title,
-      "Coming soon · Local only",
+      "海岸日报暂未接入",
       '<section class="coast-room-card"><h2>' +
-        title +
-        '</h2><p>Coming soon / Local only。这里不会跳转旧 moments，也不会连接 API 或写入记忆。</p><button type="button" data-action="daily-back" data-daily-back="daily">返回海岸日报</button></section>',
+        esc(title) +
+        '</h2><p>这个入口暂未接入正式内容。</p><button type="button" data-action="daily-back" data-daily-back="daily">返回海岸日报</button></section>',
     );
     p.dataset.parent = "daily";
     p.querySelector(
@@ -2506,26 +2490,18 @@
   }
   function memoryV097() {
     openLite(
-      "轨迹 / 记忆",
-      "Memory library · not connected yet",
-      '<section class="memory-read-v097"><header><h2>记忆库</h2><label>搜索 <input type="search" placeholder="搜索"></label></header><div class="memory-box-v097"><p>还没有接入记忆库。</p><p>未来这里会直接显示一条条记忆文字。<em>标签 / 分类</em></p><p>本轮不读取、不写入、不检索后端。</p></div></section><section class="coast-room-card"><h2>管理</h2><button disabled>添加新记忆 · Coming soon</button><button disabled>删除记忆 · Coming soon</button></section>',
+      "轨迹记忆",
+      "记忆库暂未接入",
+      '<section class="coast-room-card"><h2>记忆库暂未接入</h2><p>这里会在接入正式记忆后显示可整理的轨迹。</p><p>当前不读取、不写入、不检索任何记忆数据。</p></section>',
     );
   }
   function dailyV097() {
     let p = openLite(
       "海岸日报",
-      "Daily coast · local rooms · fix3",
-      '<section class="daily-status-v097"><h2>今日状态栏</h2><div><b>今日状态</b><span>未填写 / 本地占位</span></div><div><b>小寒</b><span>在施工</span></div><div><b>Myri</b><span>守着海岸</span></div></section><h2 class="coast-entry-title-v097">入口</h2><div class="daily-entry-grid-v097"><button type="button" data-action="daily-room" data-daily-room="moments">朋友圈<small>Coming soon / Local only</small></button><button type="button" data-action="daily-room" data-daily-room="diary">日记<small>Coming soon / Local only</small></button><button type="button" data-action="daily-room" data-daily-room="album">相册<small>Coming soon / Local only</small></button><button type="button" data-action="daily-room" data-daily-room="widgets">小组件<small>Coming soon / Local only</small></button><button type="button" data-action="daily-room" data-daily-room="pet">宠物系统<small>Coming soon / Local only</small></button></div>',
+      "海岸日报暂未接入",
+      '<section class="coast-room-card"><h2>海岸日报暂未接入</h2><p>之后这里会承接日报、相册、日记和小组件。</p><p>当前只保留入口，不生成测试内容。</p></section>',
     );
     p.dataset.room = "daily";
-    p.querySelectorAll("[data-daily-room]").forEach(
-      (b) =>
-        (b.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          dailyRoomV097(b.dataset.dailyRoom);
-        }),
-    );
   }
   function dailyRoomV097(kind) {
     const m = {
@@ -2538,10 +2514,10 @@
     const title = m[kind] || "海岸日报";
     let p = openLite(
       title,
-      "Coming soon · Local only",
+      "海岸日报暂未接入",
       '<section class="coast-room-card"><h2>' +
-        title +
-        '</h2><p>Coming soon / Local only。这里不会跳转旧 moments，也不会连接 API 或写入记忆。</p><button type="button" data-action="daily-back" data-daily-back="daily">返回海岸日报</button></section>',
+        esc(title) +
+        '</h2><p>这个入口暂未接入正式内容。</p><button type="button" data-action="daily-back" data-daily-back="daily">返回海岸日报</button></section>',
     );
     p.dataset.parent = "daily";
     const back = p.querySelector("#coastBackV097");
