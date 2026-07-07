@@ -6,15 +6,14 @@
  * Current runtime owner: public/app.js, window.__v106SiliconCarbonMoments IIFE.
  * This file is intentionally not imported or loaded yet.
  *
- * Future responsibilities:
- * - Centralize in-memory draft state for v106 daily features.
- * - Own posts, likes, comments, active comment target, diaries, selected diary date, and album items.
- * - Keep first extraction in memory only; do not add localStorage keys here.
+ * P3-STRUCT-03 stages runtime-only initial state factories here. These helpers
+ * intentionally do not read or write localStorage.
  */
 
-const dailyDraftStateSkeleton = Object.freeze({
-  moduleName: 'dailyDraftState',
-  runtimeOnlyState: [
+(function attachDailyDraftState(root) {
+  const modules = (root.ElementeraDailyModules = root.ElementeraDailyModules || {});
+
+  const DAILY_DRAFT_STATE_KEYS = Object.freeze([
     'scPosts',
     'scLikes',
     'scComments',
@@ -22,12 +21,24 @@ const dailyDraftStateSkeleton = Object.freeze({
     'diaries',
     'diaryDate',
     'albumItems',
-  ],
-  isRuntimeWired: false,
-});
+  ]);
 
-function createDailyDraftStateSkeleton() {
-  return dailyDraftStateSkeleton;
-}
+  function createDailyDraftState() {
+    return {
+      scPosts: [],
+      scLikes: {},
+      scComments: {},
+      scCommentTarget: '',
+      diaries: [],
+      diaryDate: '',
+      albumItems: [],
+    };
+  }
 
-void createDailyDraftStateSkeleton;
+  modules.dailyDraftState = Object.freeze({
+    moduleName: 'dailyDraftState',
+    isRuntimeWired: false,
+    DAILY_DRAFT_STATE_KEYS,
+    createDailyDraftState,
+  });
+})(globalThis);
