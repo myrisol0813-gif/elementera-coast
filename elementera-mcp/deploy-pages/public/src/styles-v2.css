@@ -1,0 +1,136 @@
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  background: #ffffff;
+  color: #171717;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.ec-v2-page {
+  overflow: hidden;
+}
+
+.ec-v2-shell {
+  width: 100vw;
+  min-height: 100dvh;
+  background: #ffffff;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.ec-v2-topbar {
+  min-height: calc(56px + env(safe-area-inset-top, 0px));
+  padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: #ffffff;
+}
+
+.ec-v2-icon-button,
+.ec-v2-send-button,
+.ec-v2-add-button {
+  border: 0;
+  border-radius: 999px;
+  background: #f1f1f1;
+  color: #171717;
+  min-width: 40px;
+  min-height: 40px;
+  font: inherit;
+}
+
+.ec-v2-title-block {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  text-align: center;
+}
+
+.ec-v2-title-block strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17px;
+  letter-spacing: -0.035em;
+}
+
+.ec-v2-title-block span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #8a8a8a;
+  font-size: 12px;
+}
+
+.ec-v2-main {
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  place-items: center;
+  padding: 28px 22px;
+}
+
+.ec-v2-empty-state {
+  max-width: 420px;
+  text-align: center;
+}
+
+.ec-v2-empty-state h1 {
+  margin: 0 0 10px;
+  font-size: 24px;
+  letter-spacing: -0.045em;
+}
+
+.ec-v2-empty-state p {
+  margin: 0;
+  color: #8a8a8a;
+  line-height: 1.7;
+  font-size: 14px;
+}
+
+.ec-v2-composer {
+  padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px));
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
+  gap: 10px;
+  align-items: end;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  background: #ffffff;
+}
+
+.ec-v2-composer textarea {
+  width: 100%;
+  min-height: 42px;
+  max-height: 120px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  border-radius: 999px;
+  background: #f1f1f1;
+  color: #171717;
+  padding: 10px 16px;
+  line-height: 22px;
+  font: inherit;
+}
+
+.ec-v2-composer textarea::placeholder {
+  color: #8a8a8a;
+}
+
+.ec-v2-composer button:disabled,
+.ec-v2-composer textarea:disabled {
+  opacity: 0.72;
+}
