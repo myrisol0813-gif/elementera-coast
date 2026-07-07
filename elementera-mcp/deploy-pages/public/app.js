@@ -36,35 +36,30 @@
       .map((p) => "<p>" + p.replace(/\n/g, "<br>") + "</p>")
       .join("");
   function starter() {
-    return [
-      {
-        id: id(),
-        role: "assistant",
-        content:
-          "这是唯一保留的 GPT-like 测试窗口。\n\n这个窗口会把对话保存在本机浏览器里；刷新页面、从侧边栏点回来，内容都会继续在这里。",
-      },
-      {
-        id: id(),
-        role: "user",
-        content: "我们先把这个壳调到像移动端 ChatGPT。",
-      },
-      {
-        id: id(),
-        role: "assistant",
-        content:
-          "好。接下来主要检查输入栏高度、按钮位置、消息是否保存，以及主题是否舒服。",
-      },
-    ];
+    // Deprecated compatibility wrapper: main chat no longer seeds test messages.
+    return [];
+  }
+  function isLegacyStarterMessage(m) {
+    const legacy = new Set([
+      "这是唯一保留的 GPT-like 测试窗口。\n\n这个窗口会把对话保存在本机浏览器里；刷新页面、从侧边栏点回来，内容都会继续在这里。",
+      "我们先把这个壳调到像移动端 ChatGPT。",
+      "好。接下来主要检查输入栏高度、按钮位置、消息是否保存，以及主题是否舒服。",
+    ]);
+    return (
+      m &&
+      (m.role === "assistant" || m.role === "user") &&
+      legacy.has(String(m.content || ""))
+    );
   }
   function load() {
     try {
       const v = JSON.parse(localStorage.getItem(K) || "null");
-      if (Array.isArray(v) && v.length) return v;
+      if (Array.isArray(v)) return v.filter((m) => !isLegacyStarterMessage(m));
     } catch {}
-    return starter();
+    return [];
   }
   function save() {
-    localStorage.setItem(K, JSON.stringify(items.length ? items : starter()));
+    localStorage.setItem(K, JSON.stringify(items));
   }
   function applyPrefs() {
     const th = localStorage.getItem(TK) || "light";
@@ -102,7 +97,14 @@
   }
   function render() {
     if (!box) return;
-    if (!items.length) items = starter();
+    if (!items.length) {
+      box.innerHTML =
+        '<div class="empty-state" role="status" style="padding:32px 16px;text-align:center;color:var(--muted);">这里还没有消息。</div><div class="thread-spacer"></div>';
+      requestAnimationFrame(() => {
+        if (scroller) scroller.scrollTop = scroller.scrollHeight;
+      });
+      return;
+    }
     box.innerHTML =
       items
         .map((m) =>
@@ -166,12 +168,27 @@
       if (mic) mic.hidden = false;
     }
   }
-  function mock(q) {
-    return (
-      "这是本地模拟回复，不会访问任何真实接口。\n\n你刚刚输入的是：“" +
-      q +
-      "”\n\n现在这版 app.js 已经被整理成单一干净入口，不再用多层补丁互相抢点击。"
-    );
+  function localNotice(message) {
+    if (!box) {
+      alert(message);
+      return;
+    }
+    let notice = $("#mainChatNoticeP303B");
+    if (!notice) {
+      notice = document.createElement("div");
+      notice.id = "mainChatNoticeP303B";
+      notice.setAttribute("role", "status");
+      notice.style.cssText =
+        "margin:12px auto 0;padding:10px 14px;max-width:min(86vw,560px);border-radius:16px;background:var(--panel);color:var(--muted);font-size:14px;line-height:1.5;text-align:center;";
+    }
+    notice.textContent = message;
+    box.appendChild(notice);
+    clearTimeout(notice._timer);
+    notice._timer = setTimeout(() => notice.remove(), 2600);
+  }
+  function mock() {
+    // Deprecated: local fake assistant replies are disabled in main chat.
+    return "";
   }
   function stop() {
     if (timer) clearInterval(timer);
@@ -180,19 +197,13 @@
     syncComposer();
     render();
   }
-  function stream(q) {
-    const a = { id: id(), role: "assistant", content: "" };
-    items.push(a);
-    loading = a.id;
-    let n = 0,
-      t = mock(q);
+  function stream() {
+    if (timer) clearInterval(timer);
+    timer = null;
+    loading = null;
     syncComposer();
     render();
-    timer = setInterval(() => {
-      a.content = t.slice(0, (n += 7));
-      render();
-      if (n >= t.length) stop();
-    }, 22);
+    localNotice("当前主聊天发送需要模型箱接管；没有生成本地回复。");
   }
   function openSide() {
     document.body.classList.add("sidebar-open");
@@ -824,8 +835,7 @@
           return;
         }
         if (a === "refresh") {
-          m.content = "这是重新生成的本地模拟回复，仍然不会访问任何真实接口。";
-          render();
+          localNotice("重新生成需要真实 API 接管，当前本地模拟已停用。");
           return;
         }
         if (a === "delete") {
@@ -2323,7 +2333,7 @@
       a = [
         {
           id: "main-1",
-          title: "测试窗口",
+          title: "新聊天",
           messages: currentMsgs(),
           updatedAt: Date.now(),
         },
