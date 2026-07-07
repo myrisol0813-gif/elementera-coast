@@ -1,20 +1,33 @@
 const COOKIE_NAME = "__Host-coast_session";
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
 const OPENROUTER_REFERER = "https://app.elementeracoast.com";
+const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models?output_modalities=text,image";
+const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MAX_LOGIN_BODY_BYTES = 1024;
-const MAX_API_BODY_BYTES = 16 * 1024;
+const MAX_API_BODY_BYTES = 128 * 1024;
 const MAX_TOKENS = 700;
+const MAX_FORMAL_TOKENS = 2000;
+const MAX_CHAT_MESSAGES = 20;
+const MAX_CHAT_CONTENT_CHARS = 12000;
 const DEFAULT_MODEL = "openai/gpt-4.1-nano";
 const MODEL_ALLOWLIST = new Set([
   "openai/gpt-4.1-nano",
   "openai/gpt-4.1-mini",
   "openai/gpt-4o-mini",
 ]);
+const FREE_TEST_MODEL_IDS = [
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
+];
+const MODEL_CATALOG_TTL_MS = 10 * 60 * 1000;
 const SECRET_NAME_PARTS = {
   passwordHash: ["COAST", "PASSWORD", "HASH"],
   sessionSecret: ["COAST", "SESSION", "SECRET"],
   openRouterKey: ["OPENROUTER", "API", "KEY"],
 };
+
+let modelCatalogCache = null;
+let modelCatalogExpiresAt = 0;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -410,10 +423,280 @@ function validateMessages(messages) {
   });
 }
 
+function validateFormalMessages(messages) {
+  if (!Array.isArray(messages) || messages.length < 1 || messages.length > MAX_CHAT_MESSAGES) {
+    throw new Error("invalid_messages");
+  }
+
+  return messages.map((message) => {
+    if (!message || !["user", "assistant"].includes(message.role)) {
+      throw new Error("invalid_role");
+    }
+    if (typeof message.content !== "string" || !message.content.trim() || message.content.length > MAX_CHAT_CONTENT_CHARS) {
+      throw new Error("invalid_content");
+    }
+    return { role: message.role, content: message.content };
+  });
+}
+
 function clampNumber(value, fallback, min, max) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
   return Math.min(max, Math.max(min, number));
+}
+
+function outputModalities(model) {
+  const value = model?.architecture?.output_modalities;
+  if (Array.isArray(value)) return value.map((item) => String(item).toLowerCase());
+  if (typeof value === "string") return [value.toLowerCase()];
+  return [];
+}
+
+function hasOutput(model, modality) {
+  return outputModalities(model).includes(modality);
+}
+
+function lowerModelText(model) {
+  return `${model?.id || ""} ${model?.name || ""}`.toLowerCase();
+}
+
+function priceIsZero(value) {
+  if (value === 0 || value === "0") return true;
+  const number = Number(value);
+  return Number.isFinite(number) && number === 0;
+}
+
+function isFreeModel(model) {
+  const pricing = model?.pricing || {};
+  return String(model?.id || "").includes(":free") || (priceIsZero(pricing.prompt) && priceIsZero(pricing.completion));
+}
+
+function isOpenAiChatModel(model) {
+  const id = String(model?.id || "");
+  if (!id.startsWith("openai/")) return false;
+  if (!hasOutput(model, "text")) return false;
+
+  const haystack = lowerModelText(model);
+  const excluded = ["embedding", "embed", "gpt-image", "dall-e", "tts", "whisper", "transcribe", "audio", "moderation"];
+  return !excluded.some((word) => haystack.includes(word));
+}
+
+function isOpenAiImageCandidate(model, version) {
+  const id = String(model?.id || "");
+  if (!id.startsWith("openai/")) return false;
+  if (!hasOutput(model, "image")) return false;
+  return lowerModelText(model).includes(`gpt-image-${version}`);
+}
+
+function isFreeTextModel(model) {
+  return hasOutput(model, "text") && isFreeModel(model);
+}
+
+function safeModel(model, extra = {}) {
+  return {
+    id: String(model?.id || extra.id || ""),
+    name: String(model?.name || extra.name || model?.id || ""),
+    context_length: model?.context_length ?? null,
+    pricing: model?.pricing || null,
+    supported_parameters: Array.isArray(model?.supported_parameters) ? model.supported_parameters : [],
+    architecture: model?.architecture || null,
+    top_provider: model?.top_provider || null,
+    created: model?.created ?? null,
+    is_free: Boolean(extra.is_free ?? isFreeModel(model)),
+    available: extra.available ?? true,
+  };
+}
+
+function sortModels(list) {
+  return list.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+}
+
+function chooseDefaultChat(openaiChat) {
+  const preferred = [
+    "openai/gpt-4.1-mini",
+    "openai/gpt-4.1-nano",
+    "openai/gpt-4o-mini",
+  ];
+  for (const id of preferred) {
+    if (openaiChat.some((model) => model.id === id)) return id;
+  }
+  return openaiChat[0]?.id || "";
+}
+
+function buildModelCatalog(raw) {
+  const list = Array.isArray(raw?.data) ? raw.data : [];
+  const byId = new Map(list.map((model) => [String(model?.id || ""), model]).filter(([id]) => id));
+
+  const openaiChat = sortModels(list.filter(isOpenAiChatModel).map((model) => safeModel(model, { is_free: isFreeModel(model) })));
+
+  const imageTwo = list.filter((model) => isOpenAiImageCandidate(model, 2)).map((model) => safeModel(model, { is_free: isFreeModel(model) }));
+  const imageOne = list.filter((model) => isOpenAiImageCandidate(model, 1)).map((model) => safeModel(model, { is_free: isFreeModel(model) }));
+  const openaiImage = sortModels(imageTwo.length ? imageTwo : imageOne);
+
+  const freeMap = new Map();
+  for (const model of list.filter(isFreeTextModel)) {
+    const safe = safeModel(model, { is_free: true });
+    freeMap.set(safe.id, safe);
+  }
+  for (const id of FREE_TEST_MODEL_IDS) {
+    if (!freeMap.has(id)) {
+      freeMap.set(id, safeModel(null, { id, name: id, is_free: true, available: false }));
+    }
+  }
+  const freeTest = sortModels([...freeMap.values()]);
+
+  return {
+    ok: true,
+    groups: {
+      openai_chat: openaiChat,
+      openai_image: openaiImage,
+      free_test: freeTest,
+    },
+    defaults: {
+      chat: chooseDefaultChat(openaiChat),
+      image: openaiImage[0]?.id || "",
+      free: FREE_TEST_MODEL_IDS[0],
+    },
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function fetchModelCatalog(env, force = false) {
+  const now = Date.now();
+  if (!force && modelCatalogCache && modelCatalogExpiresAt > now) return modelCatalogCache;
+
+  const headers = { "Accept": "application/json" };
+  const openRouterKey = getSecret(env, "openRouterKey");
+  if (openRouterKey) headers.Authorization = `Bearer ${openRouterKey}`;
+
+  let upstream;
+  try {
+    upstream = await fetch(OPENROUTER_MODELS_URL, { headers });
+  } catch {
+    throw new Error("models_fetch_failed");
+  }
+  if (!upstream.ok) throw new Error("models_fetch_failed");
+
+  let raw;
+  try {
+    raw = await upstream.json();
+  } catch {
+    throw new Error("models_parse_failed");
+  }
+
+  const catalog = buildModelCatalog(raw);
+  modelCatalogCache = catalog;
+  modelCatalogExpiresAt = now + MODEL_CATALOG_TTL_MS;
+  return catalog;
+}
+
+function isImageModelId(modelId, catalog) {
+  return catalog.groups.openai_image.some((model) => model.id === modelId) || /gpt-image-|dall-e|image/i.test(modelId);
+}
+
+function isAllowedFormalChatModel(modelId, catalog) {
+  if (catalog.groups.openai_chat.some((model) => model.id === modelId)) return true;
+  if (catalog.groups.free_test.some((model) => model.id === modelId)) return true;
+  return false;
+}
+
+async function handleModels(request, env) {
+  if (request.method !== "GET") {
+    return jsonResponse({ ok: false, error: "Method not allowed." }, 405, { Allow: "GET" });
+  }
+
+  const force = new URL(request.url).searchParams.get("refresh") === "1";
+  try {
+    const catalog = await fetchModelCatalog(env, force);
+    return jsonResponse(catalog);
+  } catch {
+    return jsonResponse({ ok: false, error: "Model catalog is unavailable." }, 502);
+  }
+}
+
+async function handleFormalChat(request, env) {
+  if (request.method !== "POST") {
+    return jsonResponse({ ok: false, error: "Method not allowed." }, 405, { Allow: "POST" });
+  }
+
+  const openRouterKey = getSecret(env, "openRouterKey");
+  if (!openRouterKey) {
+    return jsonResponse({ ok: false, error: "Chat API is not configured." }, 503);
+  }
+
+  let body;
+  try {
+    body = await readJsonWithLimit(request);
+  } catch (error) {
+    const status = error.message === "body_too_large" ? 413 : 400;
+    return jsonResponse({ ok: false, error: "Invalid request body." }, status);
+  }
+
+  let catalog;
+  try {
+    catalog = await fetchModelCatalog(env);
+  } catch {
+    return jsonResponse({ ok: false, error: "Model catalog is unavailable." }, 503);
+  }
+
+  const requestedModel = String(body.model || catalog.defaults.chat || DEFAULT_MODEL);
+  if (isImageModelId(requestedModel, catalog)) {
+    return jsonResponse({ ok: false, error: "Image model not supported by chat endpoint." }, 400);
+  }
+  if (!isAllowedFormalChatModel(requestedModel, catalog)) {
+    return jsonResponse({ ok: false, error: "Model not allowed." }, 400);
+  }
+
+  let messages;
+  try {
+    messages = validateFormalMessages(body.messages);
+  } catch {
+    return jsonResponse({ ok: false, error: "Invalid messages." }, 400);
+  }
+
+  const settings = body.settings || {};
+  const maxTokens = clampNumber(settings.max_tokens ?? body.max_tokens, 600, 1, MAX_FORMAL_TOKENS);
+  const temperature = clampNumber(settings.temperature ?? body.temperature, 0.7, 0, 2);
+
+  let upstream;
+  try {
+    upstream = await fetch(OPENROUTER_CHAT_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openRouterKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": OPENROUTER_REFERER,
+        "X-Title": "Elementera Coast Formal Chat",
+      },
+      body: JSON.stringify({ model: requestedModel, messages, max_tokens: maxTokens, temperature }),
+    });
+  } catch {
+    return jsonResponse({ ok: false, error: "Upstream request failed." }, 502);
+  }
+
+  if (!upstream.ok) {
+    return jsonResponse({ ok: false, error: "Upstream request failed.", upstream_status: upstream.status }, 502);
+  }
+
+  let upstreamData;
+  try {
+    upstreamData = await upstream.json();
+  } catch {
+    return jsonResponse({ ok: false, error: "Invalid upstream response." }, 502);
+  }
+
+  const choice = upstreamData?.choices?.[0] || {};
+  const answer = choice?.message?.content;
+  return jsonResponse({
+    ok: true,
+    model: upstreamData?.model || requestedModel,
+    message: {
+      role: "assistant",
+      content: typeof answer === "string" ? answer : "",
+    },
+    usage: upstreamData?.usage || null,
+    finish_reason: choice?.finish_reason || null,
+  });
 }
 
 async function handleApi(request, env, session) {
@@ -429,6 +712,14 @@ async function handleApi(request, env, session) {
 
   if (url.pathname === "/api/session" && request.method === "GET") {
     return jsonResponse({ ok: true, authenticated: true, expires_at: session.exp });
+  }
+
+  if (url.pathname === "/api/models") {
+    return handleModels(request, env);
+  }
+
+  if (url.pathname === "/api/chat") {
+    return handleFormalChat(request, env);
   }
 
   if (url.pathname === "/api/chat-sandbox" && request.method === "POST") {
@@ -462,7 +753,7 @@ async function handleApi(request, env, session) {
 
     let upstream;
     try {
-      upstream = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      upstream = await fetch(OPENROUTER_CHAT_URL, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${openRouterKey}`,
