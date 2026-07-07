@@ -525,7 +525,6 @@ function chooseDefaultChat(openaiChat) {
 
 function buildModelCatalog(raw) {
   const list = Array.isArray(raw?.data) ? raw.data : [];
-  const byId = new Map(list.map((model) => [String(model?.id || ""), model]).filter(([id]) => id));
 
   const openaiChat = sortModels(list.filter(isOpenAiChatModel).map((model) => safeModel(model, { is_free: isFreeModel(model) })));
 
@@ -600,6 +599,113 @@ function isAllowedFormalChatModel(modelId, catalog) {
   return false;
 }
 
+function findCatalogModel(modelId, catalog) {
+  return [
+    ...(catalog?.groups?.openai_chat || []),
+    ...(catalog?.groups?.free_test || []),
+    ...(catalog?.groups?.openai_image || []),
+  ].find((model) => model.id === modelId) || null;
+}
+
+function supportsParameter(model, name) {
+  return Array.isArray(model?.supported_parameters) && model.supported_parameters.includes(name);
+}
+
+function shouldSendTemperature(modelId, model) {
+  if (Array.isArray(model?.supported_parameters) && model.supported_parameters.length > 0) {
+    return supportsParameter(model, "temperature");
+  }
+
+  const id = String(modelId || "").toLowerCase();
+  if (id.startsWith("openai/o") || id.startsWith("openai/gpt-5") || id.startsWith("openai/o1") || id.startsWith("openai/o3") || id.startsWith("openai/o4")) {
+    return false;
+  }
+
+  return true;
+}
+
+function buildChatPayload(modelId, messages, maxTokens, temperature, model) {
+  const payload = {
+    model: modelId,
+    messages,
+    max_completion_tokens: maxTokens,
+  };
+
+  if (!String(modelId).startsWith("openai/")) {
+    payload.max_tokens = maxTokens;
+  }
+
+  if (shouldSendTemperature(modelId, model)) {
+    payload.temperature = temperature;
+  }
+
+  return payload;
+}
+
+function providerMessageFromValue(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value.message === "string") return value.message;
+  if (typeof value.error === "string") return value.error;
+  if (value.error && typeof value.error.message === "string") return value.error.message;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
+}
+
+function compactPreview(value, max = 160) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+async function readProviderErrorPreview(response) {
+  let text = "";
+  try {
+    text = await response.text();
+  } catch {
+    return "";
+  }
+
+  try {
+    const data = JSON.parse(text);
+    return compactPreview(providerMessageFromValue(data));
+  } catch {
+    return compactPreview(text);
+  }
+}
+
+function normalizeChatError(status, model, providerMessagePreview = "") {
+  const lower = providerMessagePreview.toLowerCase();
+  let type = "chat_error";
+  let message = "消息生成失败，请稍后重试。";
+
+  if (status === 401) {
+    type = "auth_error";
+    message = "API key 无效或未配置。";
+  } else if (status === 402) {
+    type = "insufficient_credits";
+    message = "OpenRouter 余额或 credits 不足。";
+  } else if (status === 403 && lower.includes("not available in your region")) {
+    type = "region_unavailable";
+    message = "该模型在当前网络地区不可用。可以切换网络出口，或换用其他模型。";
+  } else if (status === 403) {
+    type = "forbidden";
+    message = "当前 key 或账户没有权限使用该模型。";
+  } else if (status === 404) {
+    type = "model_not_found";
+    message = "模型不存在或已下架。";
+  } else if (status === 429) {
+    type = "rate_limited";
+    message = "请求过快或模型限速，请稍后再试。";
+  } else if ([502, 503, 504].includes(status)) {
+    type = "provider_unavailable";
+    message = "上游模型暂时不可用，或 provider 返回失败。可以稍后重试或换模型。";
+  }
+
+  return { type, status, message, model, providerMessagePreview };
+}
+
 async function handleModels(request, env) {
   if (request.method !== "GET") {
     return jsonResponse({ ok: false, error: "Method not allowed." }, 405, { Allow: "GET" });
@@ -621,7 +727,7 @@ async function handleFormalChat(request, env) {
 
   const openRouterKey = getSecret(env, "openRouterKey");
   if (!openRouterKey) {
-    return jsonResponse({ ok: false, error: "Chat API is not configured." }, 503);
+    return jsonResponse({ ok: false, error: normalizeChatError(401, "") }, 503);
   }
 
   let body;
@@ -629,34 +735,36 @@ async function handleFormalChat(request, env) {
     body = await readJsonWithLimit(request);
   } catch (error) {
     const status = error.message === "body_too_large" ? 413 : 400;
-    return jsonResponse({ ok: false, error: "Invalid request body." }, status);
+    return jsonResponse({ ok: false, error: { type: "invalid_request", status, message: "请求体无效或过大。", model: "" } }, status);
   }
 
   let catalog;
   try {
     catalog = await fetchModelCatalog(env);
   } catch {
-    return jsonResponse({ ok: false, error: "Model catalog is unavailable." }, 503);
+    return jsonResponse({ ok: false, error: normalizeChatError(503, String(body.model || "")) }, 503);
   }
 
   const requestedModel = String(body.model || catalog.defaults.chat || DEFAULT_MODEL);
   if (isImageModelId(requestedModel, catalog)) {
-    return jsonResponse({ ok: false, error: "Image model not supported by chat endpoint." }, 400);
+    return jsonResponse({ ok: false, error: { type: "image_model_not_supported", status: 400, message: "生图模型不能走聊天接口。请切换到聊天模型。", model: requestedModel } }, 400);
   }
   if (!isAllowedFormalChatModel(requestedModel, catalog)) {
-    return jsonResponse({ ok: false, error: "Model not allowed." }, 400);
+    return jsonResponse({ ok: false, error: { type: "model_not_allowed", status: 400, message: "该模型不在当前正式线允许范围内。请从模型箱选择 OpenAI chat 或 Free Test 模型。", model: requestedModel } }, 400);
   }
 
   let messages;
   try {
     messages = validateFormalMessages(body.messages);
   } catch {
-    return jsonResponse({ ok: false, error: "Invalid messages." }, 400);
+    return jsonResponse({ ok: false, error: { type: "invalid_messages", status: 400, message: "消息格式无效。当前只允许 user / assistant 最近上下文。", model: requestedModel } }, 400);
   }
 
+  const selectedModel = findCatalogModel(requestedModel, catalog);
   const settings = body.settings || {};
   const maxTokens = clampNumber(settings.max_tokens ?? body.max_tokens, 600, 1, MAX_FORMAL_TOKENS);
   const temperature = clampNumber(settings.temperature ?? body.temperature, 0.7, 0, 2);
+  const payload = buildChatPayload(requestedModel, messages, maxTokens, temperature, selectedModel);
 
   let upstream;
   try {
@@ -668,21 +776,24 @@ async function handleFormalChat(request, env) {
         "HTTP-Referer": OPENROUTER_REFERER,
         "X-Title": "Elementera Coast Formal Chat",
       },
-      body: JSON.stringify({ model: requestedModel, messages, max_tokens: maxTokens, temperature }),
+      body: JSON.stringify(payload),
     });
   } catch {
-    return jsonResponse({ ok: false, error: "Upstream request failed." }, 502);
+    return jsonResponse({ ok: false, error: normalizeChatError(502, requestedModel) }, 502);
   }
 
   if (!upstream.ok) {
-    return jsonResponse({ ok: false, error: "Upstream request failed.", upstream_status: upstream.status }, 502);
+    const providerMessagePreview = await readProviderErrorPreview(upstream);
+    const safeError = normalizeChatError(upstream.status, requestedModel, providerMessagePreview);
+    const responseStatus = [401, 402, 403, 404, 429].includes(upstream.status) ? upstream.status : 502;
+    return jsonResponse({ ok: false, error: safeError }, responseStatus);
   }
 
   let upstreamData;
   try {
     upstreamData = await upstream.json();
   } catch {
-    return jsonResponse({ ok: false, error: "Invalid upstream response." }, 502);
+    return jsonResponse({ ok: false, error: normalizeChatError(502, requestedModel) }, 502);
   }
 
   const choice = upstreamData?.choices?.[0] || {};
