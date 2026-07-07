@@ -1814,29 +1814,43 @@
     let data = load(LS.radio, {
       rooms: [
         {
-          id: "test",
-          title: "测试窗口",
-          messages: [
-            { from: "system", text: "本地测试窗口 · 未连接 MCP / API" },
-          ],
+          id: "radio-default",
+          title: "无线电波",
+          messages: [],
           updatedAt: Date.now(),
         },
       ],
-      active: "test",
+      active: "radio-default",
     });
+    if (!Array.isArray(data.rooms) || !data.rooms.length) {
+      data.rooms = [
+        {
+          id: "radio-default",
+          title: "无线电波",
+          messages: [],
+          updatedAt: Date.now(),
+        },
+      ];
+      data.active = "radio-default";
+    }
     let r = data.rooms.find((x) => x.id === data.active) || data.rooms[0];
-    let msgs = r.messages
-      .map((m) => "<p><b>" + esc(m.from) + ":</b> " + esc(m.text) + "</p>")
-      .join("");
+    let msgs = Array.isArray(r.messages)
+      ? r.messages
+          .map((m) => "<p><b>" + esc(m.from) + ":</b> " + esc(m.text) + "</p>")
+          .join("")
+      : "";
+    if (!msgs) msgs = '<p class="coast-empty-v096">无线电波暂未接入。</p>';
+
     let p = panel(
       "无线电波的两端",
-      "三人聊天室 · Local mock only",
+      "电波入口 · 暂未接入",
       '<section class="coast-room-card"><h2>会话列表</h2><button type="button" id="radioNewV095">新建窗口</button><p>' +
-        data.rooms.map((x) => esc(x.title)).join(" / ") +
+        data.rooms.map((x) => esc(x.title || "无线电波")).join(" / ") +
         '</p></section><section class="coast-room-card"><h2>当前窗口</h2><div class="coast-room-log">' +
         msgs +
-        '</div><textarea id="radioTextV095" rows="4" placeholder="写一条本地消息"></textarea><button type="button" id="radioSendV095">发送本地消息</button></section><section class="coast-room-card"><h2>状态说明</h2><p>MCP：未连接<br>API：未连接<br>自动回复：未连接</p></section>',
+        '</div><textarea id="radioTextV095" rows="4" placeholder="写一条消息草稿"></textarea><button type="button" id="radioSendV095">保存到当前窗口</button></section><section class="coast-room-card"><h2>状态说明</h2><p>无线电波入口已保留，正式通道待接入。</p></section>',
     );
+
     p.querySelector("#radioSendV095").onclick = () => {
       const t = p.querySelector("#radioTextV095").value.trim();
       if (!t) return;
@@ -1845,12 +1859,13 @@
       save(LS.radio, data);
       radio();
     };
+
     p.querySelector("#radioNewV095").onclick = () => {
       const n = data.rooms.length + 1;
-      const id = "local-" + Date.now();
+      const id = "radio-" + Date.now();
       data.rooms.push({
         id,
-        title: "本地窗口 " + n,
+        title: "电波窗口 " + n,
         messages: [],
         updatedAt: Date.now(),
       });
@@ -1863,14 +1878,14 @@
     const draft = load(LS.letter, { text: "" });
     let p = panel(
       "灯塔来信",
-      "MCP letters · Local mock only",
-      '<section class="coast-room-card"><h2>来信箱</h2><p>暂无来信 / 测试信号</p></section><section class="coast-room-card"><h2>MCP 通道状态</h2><p>未连接</p></section><section class="coast-room-card"><h2>来信草稿</h2><textarea id="letterDraftV095" rows="7" placeholder="写一段本地草稿">' +
+      "来信入口 · 暂未接入",
+      '<section class="coast-room-card"><h2>来信箱</h2><p>暂时还没有来信。</p></section><section class="coast-room-card"><h2>通道状态</h2><p>正式来信通道待接入。</p></section><section class="coast-room-card"><h2>来信草稿</h2><textarea id="letterDraftV095" rows="7" placeholder="写一段草稿">' +
         esc(draft.text) +
-        '</textarea><button type="button" id="letterSaveV095">保存本地草稿</button></section><section class="coast-room-card"><h2>未来说明</h2><p>未来可接 MCP 官端来信，也可转入无线电波的两端。</p></section>',
+        '</textarea><button type="button" id="letterSaveV095">保存草稿</button></section><section class="coast-room-card"><h2>未来说明</h2><p>未来可接入正式来信，也可转入无线电波的两端。</p></section>',
     );
     p.querySelector("#letterSaveV095").onclick = () => {
       save(LS.letter, { text: p.querySelector("#letterDraftV095").value });
-      alert("已保存到本机");
+      alert("草稿已保存");
     };
   }
   function memory() {
@@ -1962,17 +1977,26 @@
     let d = load(KR, {
       rooms: [
         {
-          id: "test",
-          title: "测试窗口",
-          messages: [
-            { from: "system", text: "本地测试窗口 · 未连接 MCP / API" },
-          ],
+          id: "radio-default",
+          title: "无线电波",
+          messages: [],
           updatedAt: Date.now(),
         },
       ],
-      active: "test",
+      active: "radio-default",
     });
     if (!d.rooms) d.rooms = [];
+    if (!d.rooms.length) {
+      d.rooms = [
+        {
+          id: "radio-default",
+          title: "无线电波",
+          messages: [],
+          updatedAt: Date.now(),
+        },
+      ];
+      d.active = "radio-default";
+    }
     if (!d.active && d.rooms[0]) d.active = d.rooms[0].id;
     return d;
   }
@@ -1980,14 +2004,27 @@
     let d = load(KL, {
       rooms: [
         {
-          id: "test",
-          title: "测试信号",
-          messages: [{ from: "灯塔", text: "暂无来信 · Local mock only" }],
+          id: "letter-default",
+          title: "灯塔来信",
+          messages: [],
           updatedAt: Date.now(),
         },
       ],
-      active: "test",
+      active: "letter-default",
     });
+    if (!d.rooms) d.rooms = [];
+    if (!d.rooms.length) {
+      d.rooms = [
+        {
+          id: "letter-default",
+          title: "灯塔来信",
+          messages: [],
+          updatedAt: Date.now(),
+        },
+      ];
+      d.active = "letter-default";
+    }
+    if (!d.active && d.rooms[0]) d.active = d.rooms[0].id;
     return d;
   }
   function ensureWindowList() {
@@ -2110,7 +2147,7 @@
           prefix: "【灯塔·】",
           who: "小寒",
           title: "灯塔来信",
-          sub: "MCP letters · Local mock only",
+          sub: "来信入口 · 暂未接入",
         }
       : {
           k: KR,
@@ -2118,7 +2155,7 @@
           prefix: "【电波·】",
           who: "小寒",
           title: "无线电波的两端",
-          sub: "三人聊天室 · Local mock only",
+          sub: "电波入口 · 暂未接入",
         };
   }
   function openChat(kind, id) {
@@ -2128,8 +2165,8 @@
     let r = d.rooms.find((x) => x.id === d.active) || d.rooms[0];
     if (!r) {
       r = {
-        id: "test",
-        title: "测试窗口",
+        id: kind === "letter" ? "letter-default" : "radio-default",
+        title: kind === "letter" ? "灯塔来信" : "无线电波",
         messages: [],
         updatedAt: Date.now(),
       };
@@ -2138,25 +2175,35 @@
     }
     save(c.k, d);
     ensureWindowList();
-    const msgs = r.messages
-      .map(
-        (m) =>
-          '<div class="coast-chat-msg ' +
-          (m.from === "小寒" ? "is-user" : "is-other") +
-          '"><div>' +
-          esc(m.text) +
-          "</div><small>" +
-          esc(m.from) +
-          "</small></div>",
-      )
-      .join("");
+
+    const msgs = Array.isArray(r.messages)
+      ? r.messages
+          .map(
+            (m) =>
+              '<div class="coast-chat-msg ' +
+              (m.from === "小寒" ? "is-user" : "is-other") +
+              '"><div>' +
+              esc(m.text) +
+              "</div><small>" +
+              esc(m.from) +
+              "</small></div>",
+          )
+          .join("")
+      : "";
+
+    const empty =
+      kind === "letter"
+        ? '<p class="coast-empty-v096">暂时还没有来信。</p>'
+        : '<p class="coast-empty-v096">无线电波暂未接入。</p>';
+
     const p = drawShell(
       c.title,
-      c.prefix + r.title + " · " + c.sub,
-      msgs || '<p class="coast-empty-v096">还没有本地消息</p>',
+      c.prefix + (r.title || c.title) + " · " + c.sub,
+      msgs || empty,
       kind,
       r.id,
     );
+
     p.querySelector("#coastChatSendV096").onclick = () => {
       const t = p.querySelector("#coastChatTextV096").value.trim();
       if (!t) return;
@@ -2173,7 +2220,7 @@
       id = kind + "-" + Date.now();
     d.rooms.push({
       id,
-      title: (kind === "letter" ? "来信窗口 " : "本地窗口 ") + n,
+      title: (kind === "letter" ? "来信窗口 " : "电波窗口 ") + n,
       messages: [],
       updatedAt: Date.now(),
     });
