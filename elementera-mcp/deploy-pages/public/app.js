@@ -1373,6 +1373,10 @@
     dailyModules.album && typeof dailyModules.album.albumLabel === "function"
       ? dailyModules.album.albumLabel
       : null;
+  const moduleAlbumBorderColor =
+    dailyModules.album && typeof dailyModules.album.albumBorderColor === "function"
+      ? dailyModules.album.albumBorderColor
+      : null;
   function albumLabel(cat) {
     if (moduleAlbumLabel) {
       try {
@@ -1381,7 +1385,12 @@
     }
     return cat === "myri" ? "Myri" : cat === "together" ? "蛇蛇狗合照" : "小寒";
   }
-  function albumCard(item, i) {
+  function albumBorderColor(index) {
+    if (moduleAlbumBorderColor) {
+      try {
+        return moduleAlbumBorderColor(index);
+      } catch (_) {}
+    }
     const colors = [
       "#d9a441",
       "#8fb0bd",
@@ -1392,9 +1401,12 @@
       "#7fb9a8",
       "#d0c269",
     ];
+    return colors[index % colors.length];
+  }
+  function albumCard(item, i) {
     return (
       '<figure class="album-card" style="--album-border:' +
-      colors[i % colors.length] +
+      albumBorderColor(i) +
       '"><img src="' +
       item.image +
       '" alt="海岸涂鸦"><figcaption><span>' +
