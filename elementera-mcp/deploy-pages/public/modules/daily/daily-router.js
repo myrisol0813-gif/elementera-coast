@@ -2,7 +2,7 @@
 
 (function attachDailyRouter(root) {
   const modules = (root.ElementeraDailyModules = root.ElementeraDailyModules || {});
-  const VERSION = 'P3-DAILY-REPAIR-03';
+  const VERSION = 'P3-DAILY-REPAIR-04';
 
   // Canonical ownership claim: app.js v106 Daily controller uses this guard name.
   // Setting it before app.js loads retires the old Daily controller instead of
@@ -17,11 +17,11 @@
   });
 
   const MODULE_SRC = Object.freeze({
-    dailyShell: '/public/modules/daily/daily-shell.js?v=p3-daily-repair-03',
-    dailyAssets: '/public/modules/daily/daily-assets.js?v=p3-daily-repair-03',
-    moments: '/public/modules/daily/moments.js?v=p3-daily-repair-03',
-    diary: '/public/modules/daily/diary.js?v=p3-daily-repair-03',
-    album: '/public/modules/daily/album.js?v=p3-daily-repair-03',
+    dailyShell: '/public/modules/daily/daily-shell.js?v=p3-daily-repair-04',
+    dailyAssets: '/public/modules/daily/daily-assets.js?v=p3-daily-repair-04',
+    moments: '/public/modules/daily/moments.js?v=p3-daily-repair-04',
+    diary: '/public/modules/daily/diary.js?v=p3-daily-repair-04',
+    album: '/public/modules/daily/album.js?v=p3-daily-repair-04',
   });
 
   const DAILY_ROUTES = Object.freeze({
@@ -325,7 +325,7 @@
     try {
       await runModuleAction('dailyShell', 'openDaily');
       markDailyRoute(DAILY_ROUTES.dailyHome, DAILY_ROUTES.main);
-      retireLegacyDailyInlineHandlers();
+      claimDailyEntryButtons();
     } catch (error) {
       showDiagnostic('海岸日报暂不可用', 'Daily shell diagnostic', DAILY_ROUTES.dailyHome, error?.message || String(error), 'dailyShell');
     }
@@ -478,11 +478,14 @@
 
   const topBack = localBack;
 
-  function retireLegacyDailyInlineHandlers() {
+  function claimDailyEntryButtons() {
     try {
       root.document?.querySelectorAll?.('[data-room="daily"],[data-room-v095="daily"]').forEach((node) => {
         if (node.dataset.dailyRouterOwner === VERSION) return;
-        node.onclick = null;
+        node.onclick = (event) => {
+          event?.preventDefault?.();
+          openDaily();
+        };
         node.dataset.dailyRouterOwner = VERSION;
       });
     } catch (_) {}
@@ -542,9 +545,10 @@
   }
 
   root.document.addEventListener('click', handle, false);
-  root.document.addEventListener('DOMContentLoaded', retireLegacyDailyInlineHandlers);
-  root.setTimeout(retireLegacyDailyInlineHandlers, 0);
-  root.setTimeout(retireLegacyDailyInlineHandlers, 500);
+  root.document.addEventListener('DOMContentLoaded', claimDailyEntryButtons);
+  root.setTimeout(claimDailyEntryButtons, 0);
+  root.setTimeout(claimDailyEntryButtons, 500);
+  root.setTimeout(claimDailyEntryButtons, 1200);
 
   modules.dailyRouter = Object.freeze({
     moduleName: 'dailyRouter',
@@ -570,7 +574,7 @@
     topBack,
     updateAvatarImage,
     updateCoverImage,
-    retireLegacyDailyInlineHandlers,
+    claimDailyEntryButtons,
   });
 
   root.ElementeraDailyRouterP3Entry01R2 = modules.dailyRouter;
