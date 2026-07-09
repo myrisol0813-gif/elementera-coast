@@ -7,9 +7,12 @@
   const API = '/api/chat/history';
   const AK = 'gpt_like_assistant_avatar_dataurl_v1';
   const MK = 'ec.currentChatModel';
+  const IK = 'ec.currentImageModel';
+  const BK = 'ec.modelBox.v1';
   const ML = 'wolf_model_v092';
   const DM = 'openai/gpt-4.1-nano';
   const MAX = 12000;
+  const PROFILE_KEYS = new Set([AK, MK, IK, BK]);
   const $ = (s, r = document) => r.querySelector(s);
   const E = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const ID = () => crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
@@ -20,6 +23,7 @@
   let chatAbort = null;
   let loading = null;
   let longTimer = null;
+  let applyingProfile = false;
 
   function J(k, d) {
     try { return JSON.parse(localStorage.getItem(k) || 'null') ?? d; }
@@ -79,6 +83,40 @@
     }
     return out;
   }
+  function cleanList(value) {
+    return Array.isArray(value) ? value.filter((item) => typeof item === 'string').slice(0, 60) : [];
+  }
+  function cleanModelBox(box) {
+    return box && typeof box === 'object' ? { chat: cleanList(box.chat), free: cleanList(box.free), image: cleanList(box.image) } : { chat: [], free: [], image: [] };
+  }
+  function localProfile() {
+    return {
+      assistant_avatar_dataurl: localStorage.getItem(AK) || '',
+      current_chat_model: localStorage.getItem(MK) || '',
+      current_image_model: localStorage.getItem(IK) || '',
+      model_box: cleanModelBox(J(BK, { chat: [], free: [], image: [] })),
+    };
+  }
+  function refreshModelLabel() {
+    const model = localStorage.getItem(MK) || DM;
+    localStorage.setItem(MK, model);
+    localStorage.setItem(ML, `${model} ›`);
+    const label = $('.model-name');
+    if (label) { label.textContent = `${model} ›`; label.title = model; }
+  }
+  function applyProfile(profile = {}) {
+    if (!profile || typeof profile !== 'object') return;
+    applyingProfile = true;
+    try {
+      if (typeof profile.assistant_avatar_dataurl === 'string' && profile.assistant_avatar_dataurl) localStorage.setItem(AK, profile.assistant_avatar_dataurl);
+      if (typeof profile.current_chat_model === 'string' && profile.current_chat_model) localStorage.setItem(MK, profile.current_chat_model);
+      if (typeof profile.current_image_model === 'string' && profile.current_image_model) localStorage.setItem(IK, profile.current_image_model);
+      if (profile.model_box && typeof profile.model_box === 'object') W(BK, cleanModelBox(profile.model_box));
+    } finally {
+      applyingProfile = false;
+    }
+    refreshModelLabel();
+  }
   function SS(s, sync = true) {
     const next = NS({ ...s, updated_at: NO() });
     W(TK, next);
@@ -90,26 +128,32 @@
     const res = await fetch(API, { credentials: 'same-origin', cache: 'no-store' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.ok === false) throw Error(data?.error?.message || `history ${res.status}`);
-    return NS(data.history || data);
+    const history = data.history || data;
+    applyProfile(history.profile || {});
+    return NS(history);
   }
   async function PH(s) {
-    const res = await fetch(API, { method: 'PUT', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(NS(s)) });
+    const body = { ...NS(s), profile: localProfile() };
+    const res = await fetch(API, { method: 'PUT', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.ok === false) throw Error(data?.error?.message || `put ${res.status}`);
   }
   function SY(s) {
     const state = NS(s);
     clearTimeout(syncTimer);
-    syncTimer = setTimeout(() => PH(state).catch((error) => console.warn('[P3-MODELBOX-RESTORE-03]', error)), 800);
+    syncTimer = setTimeout(() => PH(state).catch((error) => console.warn('[P3-CHAT-D1-00]', error)), 800);
+  }
+  function syncProfileSoon() {
+    SY(LS());
   }
   async function BO() {
     const local = LS();
     try {
       const server = await GH();
       if (server.turns.length) { SS(server, false); R(server); }
-      else { R(local); if (local.turns.length) SY(local); }
+      else { R(local); if (local.turns.length) SY(local); else syncProfileSoon(); }
     } catch (error) {
-      console.warn('[P3-MODELBOX-RESTORE-03] history fetch failed', error);
+      console.warn('[P3-CHAT-D1-00] history fetch failed', error);
       R(local);
     }
   }
@@ -152,9 +196,7 @@
   function currentModel() {
     const model = localStorage.getItem(MK) || DM;
     localStorage.setItem(MK, model);
-    localStorage.setItem(ML, `${model} ›`);
-    const label = $('.model-name');
-    if (label) { label.textContent = `${model} ›`; label.title = model; }
+    refreshModelLabel();
     return model;
   }
   function setBusy(on) {
@@ -296,8 +338,21 @@
     }
     R(state); SY(state);
   }
+  function installProfileWatch() {
+    if (window.__ecChatProfileWatchD100) return;
+    window.__ecChatProfileWatchD100 = true;
+    const originalSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function patchedSetItem(key, value) {
+      const result = originalSetItem.apply(this, arguments);
+      if (this === localStorage && PROFILE_KEYS.has(String(key)) && !applyingProfile) {
+        if (String(key) === AK) R(LS());
+        syncProfileSoon();
+      }
+      return result;
+    };
+  }
   function installCanonicalOwner() {
-    CSS(); currentModel(); R(LS()); BO();
+    CSS(); installProfileWatch(); currentModel(); R(LS()); BO();
     const input = $('#promptInput');
     const form = $('#composer');
     const call = $('#callButton');
@@ -355,8 +410,8 @@
     }, 700);
   }, true);
   ['pointerup', 'pointercancel', 'pointermove', 'scroll'].forEach((name) => document.addEventListener(name, () => clearTimeout(longTimer), true));
-  window.addEventListener('storage', (event) => { if (event.key === AK) R(LS()); });
+  window.addEventListener('storage', (event) => { if (PROFILE_KEYS.has(event.key)) { if (event.key === AK) R(LS()); syncProfileSoon(); } });
   const start = () => installCanonicalOwner();
   document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', start) : start();
-  window.elementeraChatHistorySyncP301 = { fetchServerHistory: GH, putServerHistory: PH, syncHistorySoon: SY, bootstrapChatHistory: BO, loadState: LS, saveState: SS, renderChat: R };
+  window.elementeraChatHistorySyncP301 = { fetchServerHistory: GH, putServerHistory: PH, syncHistorySoon: SY, syncProfileSoon, bootstrapChatHistory: BO, loadState: LS, saveState: SS, renderChat: R, readProfile: localProfile };
 })();
