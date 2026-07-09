@@ -2,6 +2,7 @@
 
 (function attachMoments(root) {
   const modules = (root.ElementeraDailyModules = root.ElementeraDailyModules || {});
+  const VERSION = 'P3-DAILY-REPAIR-03';
   const MOMENTS_COPY = Object.freeze({
     title: '硅碳圈',
     subtitle: '本地草稿原型，暂未同步服务器',
@@ -206,24 +207,9 @@
     return true;
   }
 
-  function readFileToEnv(env = {}, selector, setter, after) {
-    if (typeof env.q !== 'function' || typeof env.readImageFile !== 'function') return false;
-    const input = env.q(selector);
-    if (!input) return false;
-    const file = input.files && input.files[0];
-    env.readImageFile(file).then((image) => {
-      if (!image) return;
-      setter(image);
-      if (typeof after === 'function') after();
-    }).catch(() => undefined);
-    return true;
-  }
-
-  const uploadAvatar = (env = {}) => readFileToEnv(env, '#scAvatarInput', (value) => env.setMomentAvatar?.(value), () => openMoments(env));
-  const uploadCover = (env = {}) => readFileToEnv(env, '#scCoverInput', (value) => env.setMomentCover?.(value), () => openMoments(env));
-
   modules.moments = Object.freeze({
     moduleName: 'moments',
+    VERSION,
     isRuntimeWired: true,
     MOMENTS_COPY,
     MOMENTS_FORBIDDEN_DEFAULTS,
@@ -239,7 +225,5 @@
     toggleLike,
     toggleComment,
     sendComment,
-    uploadAvatar,
-    uploadCover,
   });
 })(globalThis);
