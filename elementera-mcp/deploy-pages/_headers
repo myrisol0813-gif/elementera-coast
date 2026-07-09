@@ -1,3 +1,23 @@
+/
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+/index.html
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+/app.html
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+/service-worker.js
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+/manifest.json
+  Cache-Control: no-cache, must-revalidate, max-age=0
+/public/modules/daily/*
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+/public/app.js
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+/public/run-control-p301c.js
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+/public/api-sandbox-p302c.js
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+/public/model-box-p303a.js
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
 /cleanroom.html
   Cache-Control: no-store, no-cache, must-revalidate, max-age=0
 /cleanroom
