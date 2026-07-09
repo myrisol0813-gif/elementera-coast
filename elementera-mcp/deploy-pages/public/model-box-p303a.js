@@ -18,6 +18,9 @@
 
   let catalogState = null;
 
+  function syncProfileSoon() {
+    window.elementeraChatHistorySyncP301?.syncProfileSoon?.();
+  }
   function installCss() {
     if (q('#modelBoxP303AStyle')) return;
     const style = document.createElement('style');
@@ -34,7 +37,7 @@
     const box = loadJson(MODEL_BOX_KEY, null);
     return box && Array.isArray(box.chat) ? box : { chat: [], free: [...DEFAULT_FREE], image: [] };
   }
-  function saveBox(box) { saveJson(MODEL_BOX_KEY, box); }
+  function saveBox(box) { saveJson(MODEL_BOX_KEY, box); syncProfileSoon(); }
   function allModels(catalog = catalogState) {
     const groups = catalog?.groups || {};
     return [...(groups.openai_chat || []), ...(groups.openai_image || []), ...(groups.free_test || [])];
@@ -141,7 +144,7 @@
   }
   function panelHtml(search = '') {
     const updated = catalogState?.updated_at || '未刷新';
-    return `<header class="clean-head"><button class="clean-back" type="button" data-mb-back>←</button><div><h1>模型箱</h1><p>OpenAI chat · Free test · GPT Image</p></div></header><main class="clean-body"><p class="mb-note">模型目录来自 Cloudflare /api/models。常驻模型箱只保存模型 id 和轻量目录缓存；不会保存 API key。</p><p class="mb-version">Panel version: p3-modelbox-restore-03</p><p class="mb-status">updated_at: ${esc(updated)} · 当前 chat: ${esc(localStorage.getItem(CURRENT_CHAT_KEY) || '未选择')}</p><div class="mb-toolbar"><input id="modelBoxSearchP303A" type="search" placeholder="搜索 OpenAI chat 模型" value="${esc(search)}"><button class="mb-refresh" type="button" data-mb-refresh>刷新目录</button></div>${currentBoxHtml()}${catalogHtml(search)}</main>`;
+    return `<header class="clean-head"><button class="clean-back" type="button" data-mb-back>←</button><div><h1>模型箱</h1><p>OpenAI chat · Free test · GPT Image</p></div></header><main class="clean-body"><p class="mb-note">模型目录来自 Cloudflare /api/models。常驻模型箱只保存模型 id 和轻量目录缓存；不会保存 API key。</p><p class="mb-version">Panel version: p3-chat-d1-00</p><p class="mb-status">updated_at: ${esc(updated)} · 当前 chat: ${esc(localStorage.getItem(CURRENT_CHAT_KEY) || '未选择')}</p><div class="mb-toolbar"><input id="modelBoxSearchP303A" type="search" placeholder="搜索 OpenAI chat 模型" value="${esc(search)}"><button class="mb-refresh" type="button" data-mb-refresh>刷新目录</button></div>${currentBoxHtml()}${catalogHtml(search)}</main>`;
   }
   function openModelBox(search = '') {
     installCss();
@@ -193,6 +196,7 @@
     if (!modelId) return;
     localStorage.setItem(CURRENT_CHAT_KEY, modelId);
     updateTopModelLabel();
+    syncProfileSoon();
     openModelBox(q('#modelBoxSearchP303A')?.value || '');
   }
   function addToBox(modelId, kind) {
@@ -200,6 +204,7 @@
     const key = kind === 'free' ? 'free' : kind === 'image' ? 'image' : 'chat';
     box[key] = Array.from(new Set([...(box[key] || []), modelId]));
     saveBox(box);
+    syncProfileSoon();
     if (key === 'chat' && !localStorage.getItem(CURRENT_CHAT_KEY)) setCurrentModel(modelId);
     else openModelBox(q('#modelBoxSearchP303A')?.value || '');
   }
@@ -211,6 +216,7 @@
     if (localStorage.getItem(CURRENT_CHAT_KEY) === modelId) localStorage.setItem(CURRENT_CHAT_KEY, box.chat[0] || DEFAULT_FREE[0]);
     saveBox(box);
     updateTopModelLabel();
+    syncProfileSoon();
     openModelBox(q('#modelBoxSearchP303A')?.value || '');
   }
 
@@ -243,7 +249,7 @@
   const start = () => {
     installCss();
     ensureEntries();
-    fetchCatalog(false).catch(() => undefined).finally(updateTopModelLabel);
+    fetchCatalog(false).catch(() => undefined).finally(() => { updateTopModelLabel(); syncProfileSoon(); });
     new MutationObserver(() => ensureEntries()).observe(document.body, { childList: true, subtree: true });
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
