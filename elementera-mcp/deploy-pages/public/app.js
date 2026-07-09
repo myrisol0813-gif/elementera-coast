@@ -1251,9 +1251,15 @@
   }
 
   const dailyModules = globalThis.ElementeraDailyModules || {};
-  const diaryModule = dailyModules.diary || {};
+  function getDiaryModule() {
+    try {
+      return (globalThis.ElementeraDailyModules || {}).diary || {};
+    } catch (_) {}
+    return {};
+  }
   function diaryModuleCopy(key, fallback) {
     try {
+      const diaryModule = getDiaryModule();
       const copy = diaryModule.DIARY_COPY;
       const value = copy && copy[key];
       if (typeof value === "string" && value) return value;
@@ -1285,6 +1291,7 @@
       "</p></section>";
   }
   function openDiary() {
+    const diaryModule = getDiaryModule();
     if (typeof diaryModule.openDiary === "function") {
       try {
         if (diaryModule.openDiary(diaryEnv())) return;
@@ -1293,6 +1300,7 @@
     panel(diaryModuleCopy("title", "日记"), diaryModuleCopy("subtitle", "本地草稿原型，暂未同步服务器"), emergencyDiaryHome(), "diary");
   }
   function openDiaryCompose() {
+    const diaryModule = getDiaryModule();
     if (typeof diaryModule.openDiaryCompose === "function") {
       try {
         if (diaryModule.openDiaryCompose(diaryEnv())) return;
@@ -1301,6 +1309,7 @@
     panel(diaryModuleCopy("composeTitle", "写日记"), diaryModuleCopy("subtitle", "本地草稿原型，暂未同步服务器"), '<section class="diary-empty"><h2>写日记暂不可用</h2></section>', "diary-compose");
   }
   function finishDiary() {
+    const diaryModule = getDiaryModule();
     if (typeof diaryModule.finishDiary === "function") {
       try {
         if (diaryModule.finishDiary(diaryEnv())) return;
