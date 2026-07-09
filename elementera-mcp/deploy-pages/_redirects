@@ -1,2 +1,7 @@
+/cleanroom.html /public/cleanroom/index.html 200
+/cleanroom /public/cleanroom/index.html 200
+/cleanroom/ /public/cleanroom/index.html 200
+/public/cleanroom /public/cleanroom/index.html 200
+/public/cleanroom/ /public/cleanroom/index.html 200
 /gptlike /index.html 200
 /app.html /index.html 200
