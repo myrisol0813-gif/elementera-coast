@@ -116,10 +116,10 @@
       '<button type="button" class="sc-plus" data-fresh-daily-action="moments-compose">＋</button>' +
       '<button type="button" class="sc-cover sc-cover-static" data-fresh-daily-action="cover-upload"' +
       coverStyle(env) +
-      '><span>上传封面</span><input id="scCoverInput" type="file" accept="image/*" hidden></button>' +
+      '><span>上传封面</span></button>' +
       '<section class="sc-profile"><button type="button" class="sc-profile-avatar" data-fresh-daily-action="avatar-upload">' +
       avatar(env, '寒', 'xiaohan') +
-      '<input id="scAvatarInput" type="file" accept="image/*" hidden></button><h2>小寒</h2><p>' +
+      '</button><h2>小寒</h2><p>' +
       esc(MOMENTS_COPY.subtitle) +
       '</p></section><section class="sc-feed">' +
       feed +
@@ -138,20 +138,17 @@
   }
 
   function bindImagePreview(env = {}) {
-    if (typeof env.q !== 'function') return false;
+    if (typeof env.q !== 'function' || typeof env.readImageFile !== 'function') return false;
     const input = env.q('#scComposeInput');
     const preview = env.q('#scComposePreview');
-    const Reader = env.FileReader || root.FileReader;
-    if (!input || !preview || typeof Reader !== 'function') return false;
+    if (!input || !preview) return false;
     input.onchange = () => {
       const file = input.files && input.files[0];
-      if (!file) return;
-      const reader = new Reader();
-      reader.onload = () => {
-        preview.dataset.image = reader.result;
-        preview.innerHTML = '<img src="' + reader.result + '" alt="preview">';
-      };
-      reader.readAsDataURL(file);
+      env.readImageFile(file).then((image) => {
+        if (!image) return;
+        preview.dataset.image = image;
+        preview.innerHTML = '<img src="' + image + '" alt="preview">';
+      }).catch(() => undefined);
     };
     return true;
   }
@@ -210,18 +207,15 @@
   }
 
   function readFileToEnv(env = {}, selector, setter, after) {
-    if (typeof env.q !== 'function') return false;
+    if (typeof env.q !== 'function' || typeof env.readImageFile !== 'function') return false;
     const input = env.q(selector);
-    const Reader = env.FileReader || root.FileReader;
-    if (!input || typeof Reader !== 'function') return false;
+    if (!input) return false;
     const file = input.files && input.files[0];
-    if (!file) return false;
-    const reader = new Reader();
-    reader.onload = () => {
-      setter(String(reader.result || ''));
+    env.readImageFile(file).then((image) => {
+      if (!image) return;
+      setter(image);
       if (typeof after === 'function') after();
-    };
-    reader.readAsDataURL(file);
+    }).catch(() => undefined);
     return true;
   }
 
