@@ -541,7 +541,7 @@
     activate(hit).catch((error) => toast(error?.message || String(error)));
   }
 
-  root.document.addEventListener('click', handle, true);
+  root.document.addEventListener('click', handle, false);
   root.document.addEventListener('DOMContentLoaded', retireLegacyDailyInlineHandlers);
   root.setTimeout(retireLegacyDailyInlineHandlers, 0);
   root.setTimeout(retireLegacyDailyInlineHandlers, 500);
