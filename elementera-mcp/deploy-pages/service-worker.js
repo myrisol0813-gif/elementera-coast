@@ -1,4 +1,4 @@
-const CACHE_NAME = "elementera-coast-pages-p3-entry-01r2";
+const CACHE_NAME = "elementera-coast-pages-p3-cleanroom-00s";
 const CORE = [
   "/",
   "/index.html",
@@ -30,6 +30,17 @@ const CORE = [
   "/public/icons/serpent-desk-icon.svg",
   "/public/icons/wolf-den-icon.svg"
 ];
+const CLEANROOM_PATHS = new Set([
+  "/cleanroom.html",
+  "/cleanroom",
+  "/cleanroom/",
+  "/public/cleanroom",
+  "/public/cleanroom/",
+  "/public/cleanroom/index.html"
+]);
+function isCleanroomRequest(url) {
+  return CLEANROOM_PATHS.has(url.pathname);
+}
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => Promise.all(CORE.map(url => cache.add(url).catch(() => undefined)))));
   self.skipWaiting();
@@ -43,6 +54,15 @@ self.addEventListener("fetch", event => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
+  if (isCleanroomRequest(url)) {
+    event.respondWith(
+      fetch(req, { cache: "no-store" }).then(res => {
+        if (res.ok && res.headers.get("content-type")?.includes("text/html")) return res;
+        return fetch("/public/cleanroom/index.html", { cache: "no-store" });
+      }).catch(() => caches.match("/public/cleanroom/index.html"))
+    );
+    return;
+  }
   event.respondWith(
     fetch(req).then(res => {
       const copy = res.clone();
