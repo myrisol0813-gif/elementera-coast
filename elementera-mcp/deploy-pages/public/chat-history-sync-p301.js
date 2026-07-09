@@ -18,6 +18,7 @@
   const MAX = 12000;
   const PROFILE_KEYS = new Set([AK, MK, IK, BK]);
   const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
   const E = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const ID = () => crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
   const NO = () => new Date().toISOString();
@@ -29,6 +30,7 @@
   let conversationLongTimer = null;
   let suppressConversationClick = false;
   let applyingProfile = false;
+  let profileHydrated = false;
   const syncTimers = new Map();
 
   function J(k, d) { try { return JSON.parse(localStorage.getItem(k) || 'null') ?? d; } catch { return d; } }
@@ -103,14 +105,14 @@
     if (label) { label.textContent = `${model} ›`; label.title = model; }
   }
   function applyProfile(profile = {}) {
-    if (!profile || typeof profile !== 'object') return;
+    if (!profile || typeof profile !== 'object') { profileHydrated = true; return; }
     applyingProfile = true;
     try {
       if (typeof profile.assistant_avatar_dataurl === 'string' && profile.assistant_avatar_dataurl) localStorage.setItem(AK, profile.assistant_avatar_dataurl);
       if (typeof profile.current_chat_model === 'string' && profile.current_chat_model) localStorage.setItem(MK, profile.current_chat_model);
       if (typeof profile.current_image_model === 'string' && profile.current_image_model) localStorage.setItem(IK, profile.current_image_model);
       if (profile.model_box && typeof profile.model_box === 'object') W(BK, cleanModelBox(profile.model_box));
-    } finally { applyingProfile = false; }
+    } finally { applyingProfile = false; profileHydrated = true; }
     refreshModelLabel();
   }
   function SS(s, sync = true, id = currentConversationId()) {
@@ -130,9 +132,48 @@
     if (!res.ok || data.ok === false) throw Error(data?.error?.message || `${url} ${res.status}`);
     return data;
   }
+  function ensureConversationSection() {
+    const nav = $('.history-list');
+    if (!nav) return null;
+    let section = $('#conversationSectionP3', nav);
+    if (!section) {
+      section = $$('.history-list section').find((item) => (item.querySelector('h2')?.textContent || '').includes('主聊天窗口')) || document.createElement('section');
+      section.id = 'conversationSectionP3';
+      section.dataset.owner = 'chat-conversations';
+      if (!section.isConnected) {
+        const firstSection = $('.history-list section');
+        if (firstSection?.nextSibling) nav.insertBefore(section, firstSection.nextSibling);
+        else nav.appendChild(section);
+      }
+    }
+    let heading = section.querySelector('h2');
+    if (!heading) { heading = document.createElement('h2'); section.prepend(heading); }
+    heading.textContent = '主聊天窗口';
+    let list = $('#conversationListP3', section);
+    if (!list) {
+      list = document.createElement('div');
+      list.id = 'conversationListP3';
+      const oldButtons = Array.from(section.querySelectorAll('[data-conversation-id]'));
+      section.appendChild(list);
+      oldButtons.forEach((button) => list.appendChild(button));
+    }
+    return list;
+  }
+  function renderConversations(list = J(CLK, [])) {
+    const node = ensureConversationSection();
+    if (!node) return;
+    const current = currentConversationId();
+    node.innerHTML = (Array.isArray(list) ? list : []).map((item) => `<button class="history-item ${item.id === current ? 'is-active' : ''}" type="button" data-conversation-id="${E(item.id)}">${E(item.title || '新聊天')}</button>`).join('') || '<p class="history-empty">还没有聊天窗口</p>';
+  }
   async function fetchConversations() {
     const data = await apiJson(CONV_API);
-    const list = Array.isArray(data.conversations) ? data.conversations : [];
+    let list = Array.isArray(data.conversations) ? data.conversations : [];
+    if (!list.some((item) => item.id === 'main')) {
+      try {
+        const mainState = await GH('main', { skipProfile: true });
+        if (mainState.turns.length) list = [{ id: 'main', title: '主聊天', created_at: NO(), updated_at: NO(), deleted_at: null }, ...list];
+      } catch {}
+    }
     W(CLK, list);
     renderConversations(list);
     return list;
@@ -147,21 +188,15 @@
   }
   function defaultTitle(title) { return ['', '新聊天', '未命名海岸', '主聊天'].includes(String(title || '').trim()); }
   function currentConversation(list = J(CLK, [])) { return list.find((item) => item.id === currentConversationId()); }
-  function renderConversations(list = J(CLK, [])) {
-    const nav = $('.history-list');
-    if (!nav) return;
-    const current = currentConversationId();
-    const rows = (Array.isArray(list) ? list : []).map((item) => `<button class="history-item ${item.id === current ? 'is-active' : ''}" type="button" data-conversation-id="${E(item.id)}">${E(item.title || '新聊天')}</button>`).join('') || '<p class="history-empty">还没有聊天窗口</p>';
-    nav.innerHTML = `<section><h2>已保存</h2>${rows}</section>`;
-  }
-  async function GH(id = currentConversationId()) {
+  async function GH(id = currentConversationId(), options = {}) {
     const convId = cleanId(id);
     const data = await apiJson(`${API}?conversation_id=${encodeURIComponent(convId)}`);
     const history = data.history || data;
-    applyProfile(history.profile || {});
+    if (!options.skipProfile) applyProfile(history.profile || {});
     return NS(history);
   }
   async function PH(s, id = currentConversationId()) {
+    if (!profileHydrated) return;
     const convId = cleanId(id);
     const body = { ...NS(s), conversation_id: convId, profile: localProfile() };
     await apiJson(`${API}?conversation_id=${encodeURIComponent(convId)}`, { method: 'PUT', body: JSON.stringify(body) });
@@ -170,9 +205,9 @@
     const convId = cleanId(id);
     const state = NS(s);
     clearTimeout(syncTimers.get(convId));
-    syncTimers.set(convId, setTimeout(() => PH(state, convId).catch((error) => console.warn('[P3-CHAT-CONV-01]', error)), 800));
+    syncTimers.set(convId, setTimeout(() => PH(state, convId).catch((error) => console.warn('[P3-CHAT-CONV-STABILIZE-02]', error)), 800));
   }
-  function syncProfileSoon() { SY(LS(), currentConversationId()); }
+  function syncProfileSoon() { if (profileHydrated) SY(LS(), currentConversationId()); }
   async function loadConversation(id) {
     const convId = setCurrentConversationId(id);
     renderConversations();
@@ -182,19 +217,37 @@
       if (server.turns.length) { SS(server, false, convId); R(server); }
       else { SS(local, false, convId); R(local); if (local.turns.length) SY(local, convId); }
     } catch (error) {
-      console.warn('[P3-CHAT-CONV-01] history fetch failed', error);
+      console.warn('[P3-CHAT-CONV-STABILIZE-02] history fetch failed', error);
       R(local);
     }
+  }
+  async function readableState(id) {
+    try { return await GH(id, { skipProfile: true }); } catch { return null; }
   }
   async function BO() {
     let list = J(CLK, []);
     renderConversations(list);
-    try { list = await fetchConversations(); } catch (error) { console.warn('[P3-CHAT-CONV-01] conversations fetch failed', error); }
-    let target = localStorage.getItem(CIDK) && list.find((item) => item.id === localStorage.getItem(CIDK));
+    try { list = await fetchConversations(); } catch (error) { console.warn('[P3-CHAT-CONV-STABILIZE-02] conversations fetch failed', error); }
+    let target = null;
+    const localId = localStorage.getItem(CIDK);
+    if (localId && list.some((item) => item.id === localId)) {
+      const state = await readableState(localId);
+      if (state?.turns?.length || list.length === 1) target = list.find((item) => item.id === localId);
+    }
+    if (!target) {
+      for (const item of list) {
+        const state = await readableState(item.id);
+        if (state?.turns?.length) { target = item; break; }
+      }
+    }
+    if (!target) {
+      const mainState = await readableState('main');
+      if (mainState?.turns?.length) target = list.find((item) => item.id === 'main') || { id: 'main', title: '主聊天' };
+    }
     if (!target) target = list[0];
     if (!target) {
       try { target = await createConversation('新聊天'); }
-      catch (error) { console.warn('[P3-CHAT-CONV-01] conversation create failed', error); target = { id: 'main', title: '主聊天' }; }
+      catch (error) { console.warn('[P3-CHAT-CONV-STABILIZE-02] conversation create failed', error); target = { id: 'main', title: '主聊天' }; }
     }
     await loadConversation(target.id);
   }
@@ -205,7 +258,7 @@
     SS(empty, false, conversation.id);
     R(empty);
     renderConversations();
-    SY(empty, conversation.id);
+    if (profileHydrated) SY(empty, conversation.id);
   }
   async function renameConversation(id) {
     const list = J(CLK, []);
@@ -250,8 +303,8 @@
         const next = J(CLK, []).map((item) => item.id === data.conversation.id ? data.conversation : item);
         W(CLK, next);
         renderConversations(next);
-      } else await fetchConversations();
-    } catch (error) { console.warn('[P3-CHAT-CONV-01] title skipped', error); }
+      }
+    } catch (error) { console.warn('[P3-CHAT-CONV-STABILIZE-02] title skipped', error); }
   }
   function AV() {
     const url = localStorage.getItem(AK) || '';
@@ -263,7 +316,7 @@
     if ($('#canon02css')) return;
     const style = document.createElement('style');
     style.id = 'canon02css';
-    style.textContent = '.variant-switch-p303a{display:inline-flex;gap:6px;margin-left:6px;color:var(--muted);font-size:12px}.variant-switch-p303a button{width:26px;height:24px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--text)}.assistant-text .chat-error-detail{display:block;margin-top:8px;color:var(--muted);font-size:12px;line-height:1.55}.message[data-turn]{touch-action:pan-y}.history-empty{padding:10px 14px;color:var(--muted);font-size:13px}';
+    style.textContent = '.variant-switch-p303a{display:inline-flex;gap:6px;margin-left:6px;color:var(--muted);font-size:12px}.variant-switch-p303a button{width:26px;height:24px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--text)}.assistant-text .chat-error-detail{display:block;margin-top:8px;color:var(--muted);font-size:12px;line-height:1.55}.message[data-turn]{touch-action:pan-y}.history-empty{padding:10px 14px;color:var(--muted);font-size:13px}#conversationListP3{display:grid;gap:2px}';
     document.head.appendChild(style);
   }
   function R(s = LS()) {
@@ -414,7 +467,7 @@
     };
   }
   function installCanonicalOwner() {
-    CSS(); installProfileWatch(); currentModel(); renderConversations(); R(LS()); BO();
+    CSS(); installProfileWatch(); refreshModelLabel(); renderConversations(); R(LS()); BO();
     const input = $('#promptInput'); const form = $('#composer'); const call = $('#callButton');
     if (input && !input.dataset.cc2) { input.dataset.cc2 = '1'; input.addEventListener('keydown', (event) => { if (event.key === 'Enter') event.stopImmediatePropagation(); }, true); }
     if (form && !form.dataset.cc2) { form.dataset.cc2 = '1'; form.addEventListener('submit', (event) => { event.preventDefault(); event.stopImmediatePropagation(); const text = (input?.value || '').trim(); if (chatAbort) return chatAbort.abort(); if (text) send(text); }, true); }
