@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex" />
+  <title>CLEANROOM-00 static shell</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #ffffff;
+      --panel: #f1f1f1;
+      --panel-2: #f8f8f8;
+      --text: #171717;
+      --muted: #7e7e7e;
+      --line: rgba(0, 0, 0, 0.12);
+      --ok: #137333;
+      --bad: #b3261e;
+      --top: 52px;
+      --composer-h: 62px;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; min-height: 100%; margin: 0; background: var(--bg); color: var(--text); }
+    body { -webkit-font-smoothing: antialiased; }
+    button { font: inherit; border: 0; color: inherit; background: transparent; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .badge {
+      position: fixed;
+      right: max(10px, env(safe-area-inset-right, 0px));
+      bottom: max(10px, env(safe-area-inset-bottom, 0px));
+      z-index: 20;
+      width: min(220px, calc(100vw - 20px));
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.94);
+      box-shadow: 0 14px 38px rgba(0, 0, 0, 0.14);
+      backdrop-filter: blur(10px);
+      font-size: 12px;
+      line-height: 1.32;
+    }
+    .badge strong { display: block; font-size: 14px; letter-spacing: 0.03em; }
+    .badge span { display: block; color: var(--muted); }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      height: calc(var(--top) + env(safe-area-inset-top, 0px));
+      padding: env(safe-area-inset-top, 0px) 8px 0;
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr) 86px;
+      align-items: center;
+      background: var(--bg);
+      border-bottom: 1px solid var(--line);
+    }
+    .icon {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+    }
+    .hamburger {
+      width: 24px;
+      height: 18px;
+      background:
+        linear-gradient(currentColor, currentColor) 0 0/24px 2.3px no-repeat,
+        linear-gradient(currentColor, currentColor) 0 8px/24px 2.3px no-repeat,
+        linear-gradient(currentColor, currentColor) 0 16px/24px 2.3px no-repeat;
+    }
+    .model { justify-self: start; display: flex; gap: 6px; align-items: baseline; margin-left: 6px; padding: 6px 7px; border-radius: 12px; font-size: 17px; letter-spacing: -0.035em; }
+    .model small { color: var(--muted); font-size: 17px; }
+    .actions { display: flex; justify-content: flex-end; gap: 3px; }
+    .shell { min-height: 100dvh; padding-bottom: calc(var(--composer-h) + 28px + env(safe-area-inset-bottom, 0px)); }
+    .messages { padding: 18px 14px 24px; }
+    .message { display: flex; gap: 12px; margin-bottom: 22px; }
+    .avatar { width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; background: var(--panel-2); border: 1px solid var(--line); font-size: 13px; font-weight: 700; margin-top: 3px; }
+    .assistant { max-width: min(86vw, 760px); padding-right: 18px; line-height: 1.72; font-size: 16px; }
+    .assistant p { margin: 0 0 14px; }
+    .user { justify-content: flex-end; }
+    .bubble { max-width: min(82vw, 620px); padding: 10px 14px; border-radius: 20px; border-bottom-right-radius: 6px; background: var(--panel); line-height: 1.55; font-size: 15.5px; }
+    .composer {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 9;
+      height: calc(var(--composer-h) + env(safe-area-inset-bottom, 0px));
+      padding: 7px 20px calc(7px + env(safe-area-inset-bottom, 0px));
+      display: grid;
+      grid-template-columns: 40px minmax(0, 1fr) 40px;
+      gap: 8px;
+      align-items: end;
+      background: var(--bg);
+      border-top: 1px solid var(--line);
+    }
+    .round { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 999px; background: var(--panel); font-size: 28px; font-weight: 300; }
+    .send { background: #ff6a21; color: #fff; font-size: 0; }
+    .send::before { content: ""; width: 0; height: 0; border-top: 7px solid transparent; border-bottom: 7px solid transparent; border-left: 11px solid #fff; transform: translateX(2px); }
+    .input { height: 42px; display: flex; align-items: center; padding: 0 15px; border-radius: 999px; background: var(--panel); color: #929292; font-size: 16px; }
+    .panel { margin: 0 14px 18px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 22px; background: var(--panel); }
+    .panel h1, .panel h2 { margin: 0 0 8px; letter-spacing: -0.035em; }
+    .panel p { margin: 0 0 10px; color: var(--muted); line-height: 1.58; }
+    .check { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .check:last-child { border-bottom: 0; }
+    .check strong { font-size: 14px; }
+    code { overflow-wrap: anywhere; word-break: break-word; color: var(--muted); font-size: 12px; }
+    .pill { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; padding: 4px 8px; border-radius: 999px; background: rgba(19, 115, 51, 0.1); color: var(--ok); font-size: 12px; font-weight: 700; }
+    .pill.bad { background: rgba(179, 38, 30, 0.12); color: var(--bad); }
+    .script-list, .globals-list { padding: 0; margin: 0; list-style: none; }
+    .script-list li, .globals-list li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .script-list li:last-child, .globals-list li:last-child { border-bottom: 0; }
+  </style>
+</head>
+<body>
+  <div class="badge" aria-label="cleanroom proof badge">
+    <strong>CLEANROOM-00</strong>
+    <span>static shell</span>
+    <span>no public/app.js</span>
+    <span>no app-next compat</span>
+    <span>router stub only</span>
+  </div>
+  <main class="shell">
+    <header class="topbar">
+      <button class="icon" type="button" aria-label="sidebar stub"><span class="hamburger" aria-hidden="true"></span></button>
+      <button class="model" type="button">ChatGPT <small>5.5 Thinking ›</small></button>
+      <div class="actions"><button class="icon" type="button">✎</button><button class="icon" type="button">⋯</button></div>
+    </header>
+    <section class="messages" aria-label="static chat shell">
+      <article class="message">
+        <div class="avatar">⌁</div>
+        <div class="assistant">
+          <p>这是 P3-CLEANROOM-00S 的正式域名静态验收页。它放在 <code>/public/cleanroom/index.html</code>，并由 <code>_redirects</code> 把 <code>/cleanroom.html</code> 显式喂到这里。</p>
+          <p>这个页面不加载 <code>/public/app.js</code>，不加载 <code>/public/app-next/*</code>，不加载 daily modules，不接真实功能。</p>
+        </div>
+      </article>
+      <article class="message user"><div class="bubble">CLEANROOM-00 static shell no public/app.js</div></article>
+    </section>
+    <section class="panel">
+      <h1>Self-check</h1>
+      <p>当前页面运行时自检。手机验收时这里必须能看到 document.scripts，并且 loaded /public/app.js 必须是 NO。</p>
+      <div id="selfCheck"></div>
+    </section>
+    <section class="panel">
+      <h2>document.scripts</h2>
+      <ul id="scriptList" class="script-list"></ul>
+    </section>
+    <section class="panel">
+      <h2>旧 app.js 常见全局对象/函数</h2>
+      <ul id="globalList" class="globals-list"></ul>
+    </section>
+  </main>
+  <form class="composer">
+    <button class="round" type="button" aria-label="image stub">+</button>
+    <div class="input">询问任何问题</div>
+    <button class="round send" type="submit" aria-label="send stub"></button>
+  </form>
+  <script>
+    (() => {
+      const $ = (selector) => document.querySelector(selector);
+      const oldMarkers = [
+        'ElementeraDailyModules',
+        'ElementeraDailyRouterP3Struct13A',
+        'ElementeraDailyRouterP3Entry01R2',
+        'ElementeraDailyRouterP3Struct13',
+        'modelPickerV093',
+        'cleanWolfV093',
+        'cleanDeskV093',
+        'cleanDetailV093',
+        'mainChatNoticeP303B',
+        'wolfRowV093',
+        'serpentDeskRowV093'
+      ];
+      const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+      const scripts = Array.from(document.scripts).map((script, index) => ({
+        index,
+        id: script.id || '',
+        type: script.type || 'text/javascript',
+        src: script.getAttribute('src') || ''
+      }));
+      const srcs = scripts.map((script) => script.src).filter(Boolean);
+      const checks = [
+        ['当前页面路径', location.pathname + location.search + location.hash, false],
+        ['window.ElementeraDailyModules exists', 'ElementeraDailyModules' in window, true],
+        ['window.ElementeraDailyRouterP3Struct13A exists', 'ElementeraDailyRouterP3Struct13A' in window, true],
+        ['loaded /public/app.js', srcs.some((src) => src.includes('/public/app.js')), true],
+        ['loaded /public/app-next/*', srcs.some((src) => src.includes('/public/app-next/')), true],
+        ['loaded /public/modules/daily/*', srcs.some((src) => src.includes('/public/modules/daily/')), true],
+        ['service worker controls current page', !!navigator.serviceWorker?.controller, false]
+      ];
+      $('#selfCheck').innerHTML = checks.map(([label, value, badWhenTruthy]) => {
+        const isBad = badWhenTruthy && Boolean(value);
+        const shown = typeof value === 'boolean' ? (value ? 'YES' : 'NO') : value;
+        return '<div class="check"><strong>' + esc(label) + '<br><code>' + esc(shown) + '</code></strong><span class="pill ' + (isBad ? 'bad' : '') + '">' + (typeof value === 'boolean' ? (value ? 'YES' : 'NO') : 'PATH') + '</span></div>';
+      }).join('');
+      $('#scriptList').innerHTML = scripts.length
+        ? scripts.map((script) => '<li><code>#' + script.index + ' id=' + (script.id || 'none') + ' type=' + script.type + ' src=' + (script.src || 'INLINE') + '</code></li>').join('')
+        : '<li><code>NO SCRIPT TAGS</code></li>';
+      $('#globalList').innerHTML = oldMarkers.map((name) => '<li><code>' + esc(name) + ' → ' + (name in window ? 'present / ' + typeof window[name] : 'absent') + '</code></li>').join('');
+      document.querySelector('.composer').addEventListener('submit', (event) => event.preventDefault());
+    })();
+  </script>
+</body>
+</html>
