@@ -1257,14 +1257,12 @@
     } catch (_) {}
     return {};
   }
-  function diaryModuleCopy(key, fallback) {
-    try {
-      const diaryModule = getDiaryModule();
-      const copy = diaryModule.DIARY_COPY;
-      const value = copy && copy[key];
-      if (typeof value === "string" && value) return value;
-    } catch (_) {}
-    return fallback;
+  function diaryDiagnosticHtml(title, reason) {
+    return '<section class="diary-empty"><h2>' +
+      esc(title) +
+      '</h2><p>[P3-STRUCT-12R4] ' +
+      esc(reason || "UNKNOWN") +
+      '</p></section>';
   }
   function diaryEnv() {
     return {
@@ -1283,64 +1281,33 @@
       FileReader: globalThis.FileReader,
     };
   }
-  function emergencyDiaryHome() {
-    return '<button type="button" class="diary-plus" data-fresh-daily-action="diary-compose">＋</button><section class="diary-empty"><h2>' +
-      esc(diaryModuleCopy("emptyTitle", "暂无日记。")) +
-      "</h2><p>" +
-      esc(diaryModuleCopy("emptyDescription", "这里是本地草稿原型，暂未同步服务器。今天可以留下小寒、✦Myrisol、≋Myrisol 的纸页。")) +
-      "</p></section>";
+  function diaryDoor(action, fallbackTitle, fallbackPanel) {
+    const diaryModule = getDiaryModule();
+    if (!diaryModule || !Object.keys(diaryModule).length) return "DIARY_MODULE_MISSING";
+    if (typeof diaryModule[action] !== "function") return action + " missing";
+    try {
+      const ok = diaryModule[action](diaryEnv());
+      if (ok) return "";
+      return action + " returned false";
+    } catch (error) {
+      console.warn("[P3-STRUCT-12R4] diary action failed", action, error);
+      return action + " threw: " + (error && (error.message || String(error)));
+    }
   }
   function openDiary() {
-    const diaryModule = getDiaryModule();
-    if (typeof diaryModule.openDiary === "function") {
-      try {
-        if (diaryModule.openDiary(diaryEnv())) return;
-      } catch (_) {}
-    }
-    panel(diaryModuleCopy("title", "日记"), diaryModuleCopy("subtitle", "本地草稿原型，暂未同步服务器"), emergencyDiaryHome(), "diary");
-  }
-  function diaryDiagnosticHtml(title, reason) {
-    return '<section class="diary-empty"><h2>' +
-      esc(title) +
-      '</h2><p>[P3-STRUCT-12R3] ' +
-      esc(reason || "UNKNOWN") +
-      '</p></section>';
+    const reason = diaryDoor("openDiary", "日记", "diary");
+    if (!reason) return;
+    panel("日记", "本地草稿原型，暂未同步服务器", diaryDiagnosticHtml("日记暂不可用", reason), "diary");
   }
   function openDiaryCompose() {
-    const diaryModule = getDiaryModule();
-    let reason = "";
-    if (!diaryModule || !Object.keys(diaryModule).length) {
-      reason = "DIARY_MODULE_MISSING";
-      console.warn("[P3-STRUCT-12R3] diary module missing", globalThis.ElementeraDailyModules);
-    } else if (typeof diaryModule.openDiaryCompose !== "function") {
-      reason = "openDiaryCompose missing";
-      console.warn("[P3-STRUCT-12R3] diary open compose missing", diaryModule);
-    } else {
-      try {
-        const ok = diaryModule.openDiaryCompose(diaryEnv());
-        if (ok) return;
-        reason = "openDiaryCompose returned false";
-        console.warn("[P3-STRUCT-12R3] diary open compose returned false", diaryModule);
-      } catch (error) {
-        reason = "openDiaryCompose threw: " + (error && (error.message || String(error)));
-        console.warn("[P3-STRUCT-12R3] diary open compose failed", error);
-      }
-    }
-    panel(
-      diaryModuleCopy("composeTitle", "写日记"),
-      diaryModuleCopy("subtitle", "本地草稿原型，暂未同步服务器"),
-      diaryDiagnosticHtml("写日记暂不可用", reason),
-      "diary-compose",
-    );
+    const reason = diaryDoor("openDiaryCompose", "写日记", "diary-compose");
+    if (!reason) return;
+    panel("写日记", "本地草稿原型，暂未同步服务器", diaryDiagnosticHtml("写日记暂不可用", reason), "diary-compose");
   }
   function finishDiary() {
-    const diaryModule = getDiaryModule();
-    if (typeof diaryModule.finishDiary === "function") {
-      try {
-        if (diaryModule.finishDiary(diaryEnv())) return;
-      } catch (_) {}
-    }
-    openDiary();
+    const reason = diaryDoor("finishDiary", "日记", "diary");
+    if (reason) console.warn("[P3-STRUCT-12R4] diary finish fallback", reason);
+    if (reason) openDiary();
   }
   const albumModule = dailyModules.album || {};
   function albumModuleCopy(key, fallback) {

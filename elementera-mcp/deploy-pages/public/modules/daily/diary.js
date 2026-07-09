@@ -39,34 +39,37 @@
   }
 
   function escapeHtml(value) {
-    return String(value ?? '').replace(/[&<>]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[char]);
+    return String(value ?? '').replace(
+      /[&<>"']/g,
+      (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char],
+    );
   }
 
   function envAvatar(env, label, key) {
-    return typeof env.avatar === 'function' ? env.avatar(label, key) : '<div>' + escapeHtml(label) + '</div>';
+    return typeof env.avatar === 'function'
+      ? env.avatar(label, key)
+      : '<div>' + escapeHtml(label) + '</div>';
   }
 
   function diaryEntry(entry = {}, env = {}) {
     const mine = entry.author === 'xiaohan';
     const img = entry.image ? '<img class="diary-image" src="' + entry.image + '" alt="日记配图">' : '';
-    const av = mine
+    const avatar = mine
       ? '<button type="button" class="diary-entry-avatar is-avatar-button" data-fresh-daily-action="avatar-upload">' + envAvatar(env, '寒', 'xiaohan') + '</button>'
       : '<div class="diary-entry-avatar">' + (entry.author === 'api' ? envAvatar(env, '✦', 'api') : envAvatar(env, '≋', 'mcp')) + '</div>';
-    return (
-      '<article class="diary-entry ' + (mine ? 'is-mine' : 'is-myri') + '">' +
-      av +
+    return '<article class="diary-entry ' + (mine ? 'is-mine' : 'is-myri') + '">' +
+      avatar +
       '<div class="diary-paper"><header><b>' +
       escapeHtml(authorName(entry.author)) +
       '</b><span>' +
-      escapeHtml(entry.weather) +
+      escapeHtml(entry.weather || '未标注') +
       ' · ' +
-      escapeHtml(entry.mood) +
+      escapeHtml(entry.mood || '未标注') +
       '</span></header><p>' +
       escapeHtml(entry.text || '今天也在海岸留下一张纸。') +
       '</p>' +
       img +
-      '</div></article>'
-    );
+      '</div></article>';
   }
 
   function diaryDates(entries = [], activeDate) {
@@ -80,7 +83,11 @@
       .join('');
     const dayEntries = entries.filter((entry) => entry.date === date).slice(0, 3);
     const empty = '<section class="diary-empty"><h2>' + escapeHtml(DIARY_COPY.emptyTitle) + '</h2><p>' + escapeHtml(DIARY_COPY.emptyDescription) + '</p></section>';
-    return '<button type="button" class="diary-plus" data-fresh-daily-action="diary-compose">＋</button><section class="diary-filter">' + chips + '</section><section class="diary-stack">' + (dayEntries.length ? dayEntries.map((entry) => diaryEntry(entry, env)).join('') : empty) + '</section>';
+    return '<button type="button" class="diary-plus" data-fresh-daily-action="diary-compose">＋</button><section class="diary-filter">' +
+      chips +
+      '</section><section class="diary-stack">' +
+      (dayEntries.length ? dayEntries.map((entry) => diaryEntry(entry, env)).join('') : empty) +
+      '</section>';
   }
 
   function renderDiaryCompose() {
@@ -155,7 +162,7 @@
 
   modules.diary = Object.freeze({
     moduleName: 'diary',
-    isRuntimeWired: false,
+    isRuntimeWired: true,
     DIARY_COPY,
     dateKey,
     dateLabel,
