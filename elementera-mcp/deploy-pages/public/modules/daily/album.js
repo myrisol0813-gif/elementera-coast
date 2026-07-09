@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * P3-DAILY-REPAIR-02 canonical album module.
+ * P3-DAILY-REPAIR-03 canonical album module.
  *
  * Album rendering, compose preview, finish/save-preview, categories and download
  * are owned here. app.js must not carry a second album fallback after the
@@ -10,7 +10,7 @@
 
 (function attachAlbum(root) {
   const modules = (root.ElementeraDailyModules = root.ElementeraDailyModules || {});
-  const VERSION = 'P3-DAILY-REPAIR-02';
+  const VERSION = 'P3-DAILY-REPAIR-03';
 
   const ALBUM_COPY = Object.freeze({
     title: '相册',
