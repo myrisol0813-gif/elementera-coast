@@ -2,13 +2,20 @@
 
 (function attachDailyRouter(root) {
   const modules = (root.ElementeraDailyModules = root.ElementeraDailyModules || {});
-  const VERSION = 'P3-STRUCT-13';
-  const MODULE_SRC = Object.freeze({
-    dailyShell: '/public/modules/daily/daily-shell.js?v=p3-struct-13',
-    moments: '/public/modules/daily/moments.js?v=p3-struct-13',
-    diary: '/public/modules/daily/diary.js?v=p3-struct-13',
-    album: '/public/modules/daily/album.js?v=p3-struct-13',
+  const VERSION = 'P3-STRUCT-13A';
+  const TEMPORARY_TAKEOVER = Object.freeze({
+    enabled: true,
+    reason: 'app.js still contains the v106 daily cluster; capture blocking remains only until physical purge.',
+    next: 'P3-STRUCT-13R-shell will remove the old app.js handler and allow this router to become a normal daily route listener.',
   });
+
+  const MODULE_SRC = Object.freeze({
+    dailyShell: '/public/modules/daily/daily-shell.js?v=p3-struct-13a',
+    moments: '/public/modules/daily/moments.js?v=p3-struct-13a',
+    diary: '/public/modules/daily/diary.js?v=p3-struct-13a',
+    album: '/public/modules/daily/album.js?v=p3-struct-13a',
+  });
+
   const ROUTER_SELECTORS = Object.freeze([
     '[data-room="daily"]',
     '[data-room-v095="daily"]',
@@ -20,6 +27,7 @@
     '[data-diary-date]',
     '[data-album-download]',
   ]);
+
   const DAILY_CAPTURE_EVENTS = Object.freeze([
     'pointerdown',
     'pointerup',
@@ -29,6 +37,7 @@
     'touchcancel',
     'click',
   ]);
+
   const DAILY_ACTIONS = Object.freeze({
     topBack: 'top-back',
     backDaily: 'back-daily',
@@ -45,6 +54,7 @@
 
   const q = (selector, scope = root.document) => scope?.querySelector?.(selector) || null;
   const loadPromises = Object.create(null);
+
   let moments = [];
   let diaries = [];
   let diaryDate = '';
@@ -68,6 +78,17 @@
     }
   }
 
+  function scriptListForDebug() {
+    try {
+      const scripts = Array.from(root.document?.scripts || [])
+        .map((script) => script.getAttribute('src') || '')
+        .filter((src) => src.includes('/modules/daily/') || src.includes('/public/app.js'));
+      return scripts.length ? scripts.join(' | ') : 'NO_DAILY_SCRIPT_TAGS';
+    } catch (error) {
+      return 'SCRIPT_SCAN_ERROR:' + (error?.message || String(error));
+    }
+  }
+
   function getModule(name) {
     return (root.ElementeraDailyModules || {})[name] || null;
   }
@@ -76,31 +97,51 @@
     const loaded = getModule(name);
     if (loaded && Object.keys(loaded).length) return Promise.resolve(loaded);
     if (loadPromises[name]) return loadPromises[name];
+
     const src = MODULE_SRC[name];
     if (!src) return Promise.reject(new Error('DAILY_MODULE_SRC_MISSING:' + name));
+
     loadPromises[name] = new Promise((resolve, reject) => {
-      const script = root.document.createElement('script');
-      script.src = src;
-      script.async = false;
-      script.onload = () => {
+      const existing = Array.from(root.document?.scripts || []).find((script) => {
+        const scriptSrc = script.getAttribute('src') || '';
+        return scriptSrc === src || scriptSrc.startsWith(src.split('?')[0] + '?');
+      });
+
+      const script = existing || root.document.createElement('script');
+      const finish = () => {
         const next = getModule(name);
         if (next && Object.keys(next).length) resolve(next);
         else reject(new Error('DAILY_SCRIPT_LOADED_BUT_MODULE_MISSING:' + name));
       };
+
+      if (existing && getModule(name)) {
+        finish();
+        return;
+      }
+
+      script.onload = finish;
       script.onerror = () => reject(new Error('DAILY_SCRIPT_LOAD_ERROR:' + src));
-      root.document.head.appendChild(script);
+
+      if (!existing) {
+        script.src = src;
+        script.async = false;
+        root.document.head.appendChild(script);
+      } else {
+        setTimeout(finish, 0);
+      }
     });
+
     return loadPromises[name];
   }
 
   function hideSide() {
-    root.document.body.classList.remove('sidebar-open');
+    root.document?.body?.classList.remove('sidebar-open');
     const scrim = q('#scrim');
     if (scrim) scrim.hidden = true;
   }
 
   function showSide() {
-    root.document.body.classList.add('sidebar-open');
+    root.document?.body?.classList.add('sidebar-open');
     const scrim = q('#scrim');
     if (scrim) scrim.hidden = false;
   }
@@ -110,17 +151,19 @@
       const node = q(selector);
       if (node) node.hidden = true;
     });
-    let panel = q('#freshDailyPanelV101');
-    if (!panel) {
-      panel = root.document.createElement('section');
-      panel.id = 'freshDailyPanelV101';
-      panel.className = 'coast-room-panel-v095 fresh-daily-panel-v101';
-      root.document.body.appendChild(panel);
+
+    let panelNode = q('#freshDailyPanelV101');
+    if (!panelNode) {
+      panelNode = root.document.createElement('section');
+      panelNode.id = 'freshDailyPanelV101';
+      panelNode.className = 'coast-room-panel-v095 fresh-daily-panel-v101';
+      root.document.body.appendChild(panelNode);
     }
-    panel.hidden = false;
-    panel.dataset.state = state;
+
+    panelNode.hidden = false;
+    panelNode.dataset.state = state || 'daily';
     hideSide();
-    panel.innerHTML =
+    panelNode.innerHTML =
       '<div class="coast-room-shell"><header class="coast-room-head"><button type="button" class="coast-room-back" data-fresh-daily-action="top-back">←</button><div><h1>' +
       esc(title) +
       '</h1><p>' +
@@ -128,7 +171,7 @@
       '</p></div></header><main class="coast-room-body">' +
       body +
       '</main></div>';
-    return panel;
+    return panelNode;
   }
 
   function panel(title, subtitle, body, state) {
@@ -137,18 +180,28 @@
     return fallbackPanel(title, subtitle, body, state);
   }
 
-  function diagnostic(title, reason) {
+  function diagnostic(title, reason, moduleName = '') {
     return (
       '<section class="diary-empty"><h2>' +
       esc(title) +
       '</h2><p>[' +
-      VERSION +
+      esc(VERSION) +
       '] ' +
       esc(reason || 'UNKNOWN') +
+      '</p><p>module: ' +
+      esc(moduleName || 'dailyRouter') +
       '</p><p>module keys: ' +
       esc(moduleKeysForDebug()) +
+      '</p><p>scripts: ' +
+      esc(scriptListForDebug()) +
+      '</p><p>temporary takeover: ' +
+      esc(TEMPORARY_TAKEOVER.reason) +
       '</p></section>'
     );
+  }
+
+  function showDiagnostic(title, subtitle, state, reason, moduleName) {
+    panel(title, subtitle, diagnostic(title, reason, moduleName), state);
   }
 
   function toast(message) {
@@ -185,31 +238,53 @@
   function dailyEnv() {
     return {
       version: VERSION,
+      temporaryTakeover: TEMPORARY_TAKEOVER,
       panel,
       q,
       toast,
       avatar,
       FileReader: root.FileReader,
+
       getMoments: () => moments,
-      setMoments: (next) => { moments = Array.isArray(next) ? next : moments; },
+      setMoments: (next) => {
+        moments = Array.isArray(next) ? next : moments;
+      },
       openMoments,
       getMomentLikes: () => momentLikes,
-      setMomentLikes: (next) => { momentLikes = next && typeof next === 'object' ? next : momentLikes; },
+      setMomentLikes: (next) => {
+        momentLikes = next && typeof next === 'object' ? next : momentLikes;
+      },
       getMomentComments: () => momentComments,
-      setMomentComments: (next) => { momentComments = next && typeof next === 'object' ? next : momentComments; },
+      setMomentComments: (next) => {
+        momentComments = next && typeof next === 'object' ? next : momentComments;
+      },
       getMomentCommentTarget: () => momentCommentTarget,
-      setMomentCommentTarget: (next) => { momentCommentTarget = next || ''; },
+      setMomentCommentTarget: (next) => {
+        momentCommentTarget = next || '';
+      },
       getMomentCover: () => momentCover,
-      setMomentCover: (next) => { momentCover = next || ''; },
+      setMomentCover: (next) => {
+        momentCover = next || '';
+      },
       getMomentAvatar: () => momentAvatar,
-      setMomentAvatar: (next) => { momentAvatar = next || ''; },
+      setMomentAvatar: (next) => {
+        momentAvatar = next || '';
+      },
+
       getDiaries: () => diaries,
-      setDiaries: (next) => { diaries = Array.isArray(next) ? next : diaries; },
+      setDiaries: (next) => {
+        diaries = Array.isArray(next) ? next : diaries;
+      },
       getDiaryDate: () => diaryDate,
-      setDiaryDate: (next) => { diaryDate = next || ''; },
+      setDiaryDate: (next) => {
+        diaryDate = next || '';
+      },
       openDiary,
+
       getAlbumItems: () => albumItems,
-      addAlbumItem: (item) => { if (item) albumItems.unshift(item); },
+      addAlbumItem: (item) => {
+        if (item) albumItems.unshift(item);
+      },
       openAlbum,
     };
   }
@@ -226,7 +301,7 @@
     try {
       await runModuleAction('dailyShell', 'openDaily');
     } catch (error) {
-      panel('海岸日报', 'Daily shell diagnostic', diagnostic('海岸日报暂不可用', error?.message || String(error)), 'daily');
+      showDiagnostic('海岸日报暂不可用', 'Daily shell diagnostic', 'daily', error?.message || String(error), 'dailyShell');
     }
   }
 
@@ -234,7 +309,7 @@
     try {
       await runModuleAction('dailyShell', 'openChild', kind, reason);
     } catch (error) {
-      panel(kind || '海岸日报', 'Daily child diagnostic', diagnostic('入口暂不可用', error?.message || String(error)), 'child');
+      showDiagnostic(kind || '入口暂不可用', 'Daily child diagnostic', 'child', error?.message || String(error), 'dailyShell');
     }
   }
 
@@ -242,7 +317,7 @@
     try {
       await runModuleAction('moments', 'openMoments');
     } catch (error) {
-      panel('硅碳圈', 'Moments diagnostic', diagnostic('硅碳圈暂不可用', error?.message || String(error)), 'moments');
+      showDiagnostic('硅碳圈暂不可用', 'Moments diagnostic', 'moments', error?.message || String(error), 'moments');
     }
   }
 
@@ -250,7 +325,7 @@
     try {
       await runModuleAction('moments', 'openMomentsCompose');
     } catch (error) {
-      panel('发表硅碳圈', 'Moments compose diagnostic', diagnostic('发表入口暂不可用', error?.message || String(error)), 'compose');
+      showDiagnostic('发表入口暂不可用', 'Moments compose diagnostic', 'compose', error?.message || String(error), 'moments');
     }
   }
 
@@ -258,7 +333,7 @@
     try {
       await runModuleAction('moments', 'finishMoment');
     } catch (error) {
-      panel('硅碳圈', 'Moments publish diagnostic', diagnostic('发布暂不可用', error?.message || String(error)), 'moments');
+      showDiagnostic('发布暂不可用', 'Moments publish diagnostic', 'moments', error?.message || String(error), 'moments');
     }
   }
 
@@ -266,7 +341,7 @@
     try {
       await runModuleAction('diary', 'openDiary');
     } catch (error) {
-      panel('日记', 'Diary diagnostic', diagnostic('日记暂不可用', error?.message || String(error)), 'diary');
+      showDiagnostic('日记暂不可用', 'Diary diagnostic', 'diary', error?.message || String(error), 'diary');
     }
   }
 
@@ -274,7 +349,7 @@
     try {
       await runModuleAction('diary', 'openDiaryCompose');
     } catch (error) {
-      panel('写日记', 'Diary compose diagnostic', diagnostic('写日记暂不可用', error?.message || String(error)), 'diary-compose');
+      showDiagnostic('写日记暂不可用', 'Diary compose diagnostic', 'diary-compose', error?.message || String(error), 'diary');
     }
   }
 
@@ -282,7 +357,7 @@
     try {
       await runModuleAction('diary', 'finishDiary');
     } catch (error) {
-      panel('日记', 'Diary finish diagnostic', diagnostic('保存日记暂不可用', error?.message || String(error)), 'diary');
+      showDiagnostic('保存日记暂不可用', 'Diary finish diagnostic', 'diary', error?.message || String(error), 'diary');
     }
   }
 
@@ -290,7 +365,7 @@
     try {
       await runModuleAction('album', 'openAlbum');
     } catch (error) {
-      panel('相册', 'Album diagnostic', diagnostic('相册暂不可用', error?.message || String(error)), 'album');
+      showDiagnostic('相册暂不可用', 'Album diagnostic', 'album', error?.message || String(error), 'album');
     }
   }
 
@@ -298,7 +373,7 @@
     try {
       await runModuleAction('album', 'openAlbumCompose');
     } catch (error) {
-      panel('上传相册', 'Album compose diagnostic', diagnostic('上传相册暂不可用', error?.message || String(error)), 'album-compose');
+      showDiagnostic('上传相册暂不可用', 'Album compose diagnostic', 'album-compose', error?.message || String(error), 'album');
     }
   }
 
@@ -306,13 +381,13 @@
     try {
       await runModuleAction('album', 'finishAlbum');
     } catch (error) {
-      panel('相册', 'Album finish diagnostic', diagnostic('保存相册暂不可用', error?.message || String(error)), 'album');
+      showDiagnostic('保存相册暂不可用', 'Album finish diagnostic', 'album', error?.message || String(error), 'album');
     }
   }
 
   function downloadAlbum(id) {
     const item = albumItems.find((entry) => entry.id === id);
-    if (!item || !item.image) return;
+    if (!item || !item.image) return false;
     const anchor = root.document.createElement('a');
     const ext = (item.image.match(/^data:image\/([^;]+)/) || [])[1] || 'png';
     anchor.href = item.image;
@@ -320,6 +395,7 @@
     root.document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
+    return true;
   }
 
   async function routeRoom(kind) {
@@ -335,11 +411,14 @@
     if (state === 'diary-compose') return openDiary();
     if (state === 'album-compose') return openAlbum();
     if (state === 'moments' || state === 'diary' || state === 'album' || state === 'child') return openDaily();
+
     const shell = getModule('dailyShell');
     if (shell && typeof shell.closeDaily === 'function') return shell.closeDaily();
+
     const panelNode = q('#freshDailyPanelV101');
     if (panelNode) panelNode.hidden = true;
     showSide();
+    return true;
   }
 
   function targetOf(event) {
@@ -370,14 +449,17 @@
 
     if (open) return openDaily();
     if (room) return routeRoom(room.dataset.freshDailyRoom);
+
     if (diaryDay) {
       diaryDate = diaryDay;
       return openDiary();
     }
+
     if (albumDownload) return downloadAlbum(albumDownload);
     if (like) return runModuleAction('moments', 'toggleLike', like).catch((error) => toast(error?.message || String(error)));
     if (comment) return runModuleAction('moments', 'toggleComment', comment).catch((error) => toast(error?.message || String(error)));
     if (sendComment) return runModuleAction('moments', 'sendComment', sendComment).catch((error) => toast(error?.message || String(error)));
+
     if (action === DAILY_ACTIONS.backDaily) return openDaily();
     if (action === DAILY_ACTIONS.momentsCompose) return openMomentsCompose();
     if (action === DAILY_ACTIONS.publishMoment) return finishMoment();
@@ -386,20 +468,29 @@
     if (action === DAILY_ACTIONS.albumCompose) return openAlbumCompose();
     if (action === DAILY_ACTIONS.albumFinish) return finishAlbum();
     if (action === DAILY_ACTIONS.topBack) return topBack();
+
     if (action === DAILY_ACTIONS.avatarUpload) {
       const input = q('#scAvatarInput');
-      if (!input) return false;
+      if (!input) {
+        showDiagnostic('头像上传暂不可用', 'Moments diagnostic', 'moments', 'scAvatarInput missing', 'moments');
+        return false;
+      }
       input.onchange = () => runModuleAction('moments', 'uploadAvatar').catch((error) => toast(error?.message || String(error)));
       input.click();
       return true;
     }
+
     if (action === DAILY_ACTIONS.coverUpload) {
       const input = q('#scCoverInput');
-      if (!input) return false;
+      if (!input) {
+        showDiagnostic('封面上传暂不可用', 'Moments diagnostic', 'moments', 'scCoverInput missing', 'moments');
+        return false;
+      }
       input.onchange = () => runModuleAction('moments', 'uploadCover').catch((error) => toast(error?.message || String(error)));
       input.click();
       return true;
     }
+
     if (action === DAILY_ACTIONS.locationPlaceholder) return true;
     return false;
   }
@@ -407,32 +498,39 @@
   function handle(event) {
     const hit = targetOf(event);
     if (!hit) return;
+
     if (event.type === 'pointerdown' || event.type === 'touchstart') {
       press(hit, true);
       block(event);
       return;
     }
+
     if (event.type === 'pointerup' || event.type === 'pointercancel' || event.type === 'touchend' || event.type === 'touchcancel') {
       press(hit, false);
       block(event);
       return;
     }
+
     if (event.type !== 'click') return;
     press(hit, false);
     block(event);
     activate(hit);
   }
 
+  // Temporary takeover: this capture listener only fences off app.js v106 daily handlers until physical purge.
   DAILY_CAPTURE_EVENTS.forEach((eventName) => root.document.addEventListener(eventName, handle, true));
 
   modules.dailyRouter = Object.freeze({
     moduleName: 'dailyRouter',
     isRuntimeWired: true,
     VERSION,
+    TEMPORARY_TAKEOVER,
     ROUTER_SELECTORS,
     DAILY_CAPTURE_EVENTS,
     DAILY_ACTIONS,
+    MODULE_SRC,
     ensureDailyModule,
+    runModuleAction,
     openDaily,
     openMoments,
     openDiary,
@@ -440,5 +538,7 @@
     routeRoom,
     topBack,
   });
+
+  root.ElementeraDailyRouterP3Struct13A = modules.dailyRouter;
   root.ElementeraDailyRouterP3Struct13 = modules.dailyRouter;
 })(globalThis);
