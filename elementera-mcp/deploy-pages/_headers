@@ -1,0 +1,8 @@
+/cleanroom.html
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+/cleanroom
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+/cleanroom/
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+/public/cleanroom/*
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
