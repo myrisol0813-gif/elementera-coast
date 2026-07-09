@@ -1377,6 +1377,35 @@
     dailyModules.album && typeof dailyModules.album.albumBorderColor === "function"
       ? dailyModules.album.albumBorderColor
       : null;
+  const moduleAlbumCopy =
+    dailyModules.album && dailyModules.album.ALBUM_COPY && typeof dailyModules.album.ALBUM_COPY === "object"
+      ? dailyModules.album.ALBUM_COPY
+      : null;
+  const moduleCreateAlbumDraft =
+    dailyModules.album && typeof dailyModules.album.createAlbumDraft === "function"
+      ? dailyModules.album.createAlbumDraft
+      : null;
+  function albumCopy(key, fallback) {
+    if (moduleAlbumCopy) {
+      try {
+        const value = moduleAlbumCopy[key];
+        if (typeof value === "string" && value) return value;
+      } catch (_) {}
+    }
+    return fallback;
+  }
+  function createAlbumDraft(data = {}) {
+    if (moduleCreateAlbumDraft) {
+      try {
+        return moduleCreateAlbumDraft(data);
+      } catch (_) {}
+    }
+    return {
+      id: "album-" + Date.now(),
+      image: data.image || "",
+      cat: data.cat || "xiaohan",
+    };
+  }
   function albumLabel(cat) {
     if (moduleAlbumLabel) {
       try {
@@ -1424,14 +1453,16 @@
       '</h2><div class="album-grid">' +
       (list.length
         ? list.map(albumCard).join("")
-        : '<div class="album-empty">暂无图片。这里是本地草稿原型，暂未同步服务器。</div>') +
+        : '<div class="album-empty">' +
+          esc(albumCopy("emptyText", "暂无图片。这里是本地草稿原型，暂未同步服务器。")) +
+          "</div>") +
       "</div></section>"
     );
   }
   function openAlbum() {
     panel(
-      "相册",
-      "本地草稿原型，暂未同步服务器",
+      albumCopy("title", "相册"),
+      albumCopy("subtitle", "本地草稿原型，暂未同步服务器"),
       '<button type="button" class="album-plus" data-fresh-daily-action="album-compose">＋</button><p class="coast-room-card">本地草稿原型，暂未同步服务器。刷新后可能消失。</p><section class="album-wall">' +
         albumSection("xiaohan") +
         albumSection("myri") +
@@ -1443,7 +1474,7 @@
   function openAlbumCompose() {
     const body =
       '<section class="album-compose"><p class="coast-room-card">本地草稿原型，暂未同步服务器。刷新后可能消失。</p><label class="album-upload"><input id="albumImageInput" type="file" accept="image/*" hidden><span>＋</span><b>选择一张图片</b></label><div class="album-preview" id="albumPreview"></div><label class="album-select-label">归类<select id="albumCategory"><option value="xiaohan">小寒</option><option value="myri">Myri</option><option value="together">蛇蛇狗合照</option></select></label><button type="button" class="album-finish" data-fresh-daily-action="album-finish">保存本地相册预览</button></section>';
-    panel("上传相册", "本地草稿原型，暂未同步服务器", body, "album-compose");
+    panel(albumCopy("composeTitle", "上传相册"), albumCopy("subtitle", "本地草稿原型，暂未同步服务器"), body, "album-compose");
     const inp = q("#albumImageInput"),
       prev = q("#albumPreview");
     if (inp && prev)
@@ -1461,11 +1492,10 @@
   function finishAlbum() {
     const image = q("#albumPreview")?.dataset.image || "";
     if (image) {
-      albumItems.unshift({
-        id: "album-" + Date.now(),
+      albumItems.unshift(createAlbumDraft({
         image,
         cat: q("#albumCategory")?.value || "xiaohan",
-      });
+      }));
     }
     openAlbum();
   }
