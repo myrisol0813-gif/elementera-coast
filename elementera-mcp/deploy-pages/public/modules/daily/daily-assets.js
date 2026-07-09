@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * P3-DAILY-REPAIR-02 canonical Daily asset helpers.
+ * P3-DAILY-REPAIR-03 canonical Daily asset helpers.
  *
  * Daily image reads and one-shot image picking are owned here. Feature modules
  * may render their own input positions, but file-to-data-url conversion should
@@ -12,7 +12,7 @@
 (function attachDailyAssets(root) {
   const modules = (root.ElementeraDailyModules = root.ElementeraDailyModules || {});
 
-  const VERSION = 'P3-DAILY-REPAIR-02';
+  const VERSION = 'P3-DAILY-REPAIR-03';
   const SC_XIAOHAN_AVATAR_KEY = 'coast_avatar_xiaohan_v099';
   const RUNTIME_ONLY_ASSET_KEYS = Object.freeze([
     'scCoverData',
