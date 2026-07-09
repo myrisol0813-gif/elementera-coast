@@ -1,4 +1,4 @@
-const CACHE_NAME = "elementera-coast-pages-v8-orig-only";
+const CACHE_NAME = "elementera-coast-pages-p3-entry-01";
 const CORE = [
   "/",
   "/index.html",
@@ -6,6 +6,13 @@ const CORE = [
   "/gptlike",
   "/manifest.json",
   "/service-worker.js",
+  "/public/modules/daily/daily-shell.js",
+  "/public/modules/daily/daily-draft-state.js",
+  "/public/modules/daily/daily-assets.js",
+  "/public/modules/daily/moments.js",
+  "/public/modules/daily/diary.js",
+  "/public/modules/daily/album.js",
+  "/public/modules/daily/daily-router.js",
   "/public/app.js",
   "/public/styles.css",
   "/public/run-control-p301c.js",
