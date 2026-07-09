@@ -1369,185 +1369,48 @@
   }
 
   const dailyModules = globalThis.ElementeraDailyModules || {};
-  const moduleAlbumLabel =
-    dailyModules.album && typeof dailyModules.album.albumLabel === "function"
-      ? dailyModules.album.albumLabel
-      : null;
-  const moduleAlbumBorderColor =
-    dailyModules.album && typeof dailyModules.album.albumBorderColor === "function"
-      ? dailyModules.album.albumBorderColor
-      : null;
-  const moduleAlbumCopy =
-    dailyModules.album && dailyModules.album.ALBUM_COPY && typeof dailyModules.album.ALBUM_COPY === "object"
-      ? dailyModules.album.ALBUM_COPY
-      : null;
-  const moduleAlbumCategories =
-    dailyModules.album && dailyModules.album.ALBUM_CATEGORIES && typeof dailyModules.album.ALBUM_CATEGORIES === "object"
-      ? dailyModules.album.ALBUM_CATEGORIES
-      : null;
-  const moduleCreateAlbumDraft =
-    dailyModules.album && typeof dailyModules.album.createAlbumDraft === "function"
-      ? dailyModules.album.createAlbumDraft
-      : null;
-  const moduleAlbumCard =
-    dailyModules.album && typeof dailyModules.album.albumCard === "function"
-      ? dailyModules.album.albumCard
-      : null;
-  const moduleAlbumSection =
-    dailyModules.album && typeof dailyModules.album.albumSection === "function"
-      ? dailyModules.album.albumSection
-      : null;
-  const moduleRenderAlbumHome =
-    dailyModules.album && typeof dailyModules.album.renderAlbumHome === "function"
-      ? dailyModules.album.renderAlbumHome
-      : null;
-  const moduleRenderAlbumCompose =
-    dailyModules.album && typeof dailyModules.album.renderAlbumCompose === "function"
-      ? dailyModules.album.renderAlbumCompose
-      : null;
-  function albumCategories() {
-    if (moduleAlbumCategories) {
-      try {
-        const keys = Object.keys(moduleAlbumCategories).filter((key) => typeof moduleAlbumCategories[key] === "string");
-        if (keys.length) return keys;
-      } catch (_) {}
-    }
-    return ["xiaohan", "myri", "together"];
-  }
-  function albumCategoryOptions() {
-    return albumCategories()
-      .map((cat) => '<option value="' + esc(cat) + '">' + esc(albumLabel(cat)) + "</option>")
-      .join("");
-  }
-  function albumCopy(key, fallback) {
-    if (moduleAlbumCopy) {
-      try {
-        const value = moduleAlbumCopy[key];
-        if (typeof value === "string" && value) return value;
-      } catch (_) {}
-    }
+  const albumModule = dailyModules.album || {};
+  function albumModuleCopy(key, fallback) {
+    try {
+      const copy = albumModule.ALBUM_COPY;
+      const value = copy && copy[key];
+      if (typeof value === "string" && value) return value;
+    } catch (_) {}
     return fallback;
   }
-  function createAlbumDraft(data = {}) {
-    if (moduleCreateAlbumDraft) {
+  function albumDownloadLabel(cat) {
+    if (typeof albumModule.albumLabel === "function") {
       try {
-        return moduleCreateAlbumDraft(data);
-      } catch (_) {}
-    }
-    return {
-      id: "album-" + Date.now(),
-      image: data.image || "",
-      cat: data.cat || "xiaohan",
-    };
-  }
-  function albumLabel(cat) {
-    if (moduleAlbumLabel) {
-      try {
-        return moduleAlbumLabel(cat);
+        return albumModule.albumLabel(cat);
       } catch (_) {}
     }
     return cat === "myri" ? "Myri" : cat === "together" ? "蛇蛇狗合照" : "小寒";
   }
-  function albumBorderColor(index) {
-    if (moduleAlbumBorderColor) {
-      try {
-        return moduleAlbumBorderColor(index);
-      } catch (_) {}
-    }
-    const colors = [
-      "#d9a441",
-      "#8fb0bd",
-      "#d78fb1",
-      "#88b86a",
-      "#b49bdf",
-      "#ef9c74",
-      "#7fb9a8",
-      "#d0c269",
-    ];
-    return colors[index % colors.length];
+  function albumEnv() {
+    return {
+      panel,
+      q: (selector) => q(selector),
+      getAlbumItems: () => albumItems,
+      addAlbumItem: (item) => albumItems.unshift(item),
+      openAlbum,
+      FileReader: globalThis.FileReader,
+    };
   }
-  function albumCard(item, i) {
-    if (moduleAlbumCard) {
-      try {
-        return moduleAlbumCard(item, i);
-      } catch (_) {}
-    }
-    return (
-      '<figure class="album-card" style="--album-border:' +
-      albumBorderColor(i) +
-      '"><img src="' +
-      item.image +
-      '" alt="海岸涂鸦"><figcaption><span>' +
-      esc(albumLabel(item.cat)) +
-      '</span><button type="button" data-album-download="' +
-      esc(item.id) +
-      '">下载</button></figcaption></figure>'
-    );
+  function emergencyAlbumHome() {
+    return '<button type="button" class="album-plus" data-fresh-daily-action="album-compose">＋</button><p class="coast-room-card">' +
+      albumModuleCopy("composeNotice", "本地草稿原型，暂未同步服务器。刷新后可能消失。") +
+      '</p><section class="album-wall"><div class="album-empty">' +
+      albumModuleCopy("emptyText", "暂无图片。这里是本地草稿原型，暂未同步服务器。") +
+      "</div></section>";
   }
-  function albumSection(cat) {
-    if (moduleAlbumSection) {
-      try {
-        return moduleAlbumSection(cat, albumItems);
-      } catch (_) {}
-    }
-    const list = albumItems.filter((x) => x.cat === cat);
-    return (
-      '<section class="album-section"><h2>' +
-      esc(albumLabel(cat)) +
-      '</h2><div class="album-grid">' +
-      (list.length
-        ? list.map(albumCard).join("")
-        : '<div class="album-empty">' +
-          esc(albumCopy("emptyText", "暂无图片。这里是本地草稿原型，暂未同步服务器。")) +
-          "</div>") +
-      "</div></section>"
-    );
+  function emergencyAlbumCompose() {
+    return '<section class="album-compose"><p class="coast-room-card">' +
+      albumModuleCopy("composeNotice", "本地草稿原型，暂未同步服务器。刷新后可能消失。") +
+      '</p><label class="album-upload"><input id="albumImageInput" type="file" accept="image/*" hidden><span>＋</span><b>选择一张图片</b></label><div class="album-preview" id="albumPreview"></div><label class="album-select-label">归类<select id="albumCategory"><option value="xiaohan">小寒</option><option value="myri">Myri</option><option value="together">蛇蛇狗合照</option></select></label><button type="button" class="album-finish" data-fresh-daily-action="album-finish">' +
+      albumModuleCopy("composeButton", "保存本地相册预览") +
+      "</button></section>";
   }
-  function renderAlbumHome() {
-    if (moduleRenderAlbumHome) {
-      try {
-        return moduleRenderAlbumHome(albumItems);
-      } catch (_) {}
-    }
-    return (
-      '<button type="button" class="album-plus" data-fresh-daily-action="album-compose">＋</button><p class="coast-room-card">' +
-      esc(albumCopy("composeNotice", "本地草稿原型，暂未同步服务器。刷新后可能消失。")) +
-      '</p><section class="album-wall">' +
-      albumCategories().map(albumSection).join("") +
-      "</section>"
-    );
-  }
-  function renderAlbumCompose() {
-    if (moduleRenderAlbumCompose) {
-      try {
-        return moduleRenderAlbumCompose();
-      } catch (_) {}
-    }
-    return (
-      '<section class="album-compose"><p class="coast-room-card">' +
-      esc(albumCopy("composeNotice", "本地草稿原型，暂未同步服务器。刷新后可能消失。")) +
-      '</p><label class="album-upload"><input id="albumImageInput" type="file" accept="image/*" hidden><span>＋</span><b>选择一张图片</b></label><div class="album-preview" id="albumPreview"></div><label class="album-select-label">归类<select id="albumCategory">' +
-      albumCategoryOptions() +
-      '</select></label><button type="button" class="album-finish" data-fresh-daily-action="album-finish">' +
-      esc(albumCopy("composeButton", "保存本地相册预览")) +
-      "</button></section>"
-    );
-  }
-  function openAlbum() {
-    panel(
-      albumCopy("title", "相册"),
-      albumCopy("subtitle", "本地草稿原型，暂未同步服务器"),
-      renderAlbumHome(),
-      "album",
-    );
-  }
-  function openAlbumCompose() {
-    panel(
-      albumCopy("composeTitle", "上传相册"),
-      albumCopy("subtitle", "本地草稿原型，暂未同步服务器"),
-      renderAlbumCompose(),
-      "album-compose",
-    );
+  function bindEmergencyAlbumPreview() {
     const inp = q("#albumImageInput"),
       prev = q("#albumPreview");
     if (inp && prev)
@@ -1562,14 +1425,36 @@
         r.readAsDataURL(f);
       };
   }
-
+  function openAlbum() {
+    if (typeof albumModule.openAlbum === "function") {
+      try {
+        if (albumModule.openAlbum(albumEnv())) return;
+      } catch (_) {}
+    }
+    panel(albumModuleCopy("title", "相册"), albumModuleCopy("subtitle", "本地草稿原型，暂未同步服务器"), emergencyAlbumHome(), "album");
+  }
+  function openAlbumCompose() {
+    if (typeof albumModule.openAlbumCompose === "function") {
+      try {
+        if (albumModule.openAlbumCompose(albumEnv())) return;
+      } catch (_) {}
+    }
+    panel(albumModuleCopy("composeTitle", "上传相册"), albumModuleCopy("subtitle", "本地草稿原型，暂未同步服务器"), emergencyAlbumCompose(), "album-compose");
+    bindEmergencyAlbumPreview();
+  }
   function finishAlbum() {
+    if (typeof albumModule.finishAlbum === "function") {
+      try {
+        if (albumModule.finishAlbum(albumEnv())) return;
+      } catch (_) {}
+    }
     const image = q("#albumPreview")?.dataset.image || "";
     if (image) {
-      albumItems.unshift(createAlbumDraft({
+      albumItems.unshift({
+        id: "album-" + Date.now(),
         image,
         cat: q("#albumCategory")?.value || "xiaohan",
-      }));
+      });
     }
     openAlbum();
   }
@@ -1581,7 +1466,7 @@
     a.href = item.image;
     a.download =
       "coast-doodle-" +
-      albumLabel(item.cat) +
+      albumDownloadLabel(item.cat) +
       "-" +
       id +
       "." +

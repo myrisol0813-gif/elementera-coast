@@ -127,6 +127,62 @@
     );
   }
 
+  function albumItemsFrom(env = {}) {
+    if (typeof env.getAlbumItems === 'function') {
+      const items = env.getAlbumItems();
+      if (Array.isArray(items)) return items;
+    }
+    return Array.isArray(env.albumItems) ? env.albumItems : [];
+  }
+
+  function bindAlbumPreview(env = {}) {
+    if (typeof env.q !== 'function') return false;
+    const input = env.q('#albumImageInput');
+    const preview = env.q('#albumPreview');
+    const Reader = env.FileReader || root.FileReader;
+    if (!input || !preview || typeof Reader !== 'function') return false;
+    input.onchange = () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      const reader = new Reader();
+      reader.onload = () => {
+        preview.dataset.image = reader.result;
+        preview.innerHTML = '<img src="' + reader.result + '" alt="album preview">';
+      };
+      reader.readAsDataURL(file);
+    };
+    return true;
+  }
+
+  function openAlbum(env = {}) {
+    if (typeof env.panel !== 'function') return false;
+    env.panel(ALBUM_COPY.title, ALBUM_COPY.subtitle, renderAlbumHome(albumItemsFrom(env)), 'album');
+    return true;
+  }
+
+  function openAlbumCompose(env = {}) {
+    if (typeof env.panel !== 'function') return false;
+    env.panel(ALBUM_COPY.composeTitle, ALBUM_COPY.subtitle, renderAlbumCompose(), 'album-compose');
+    bindAlbumPreview(env);
+    return true;
+  }
+
+  function finishAlbum(env = {}) {
+    const image = typeof env.q === 'function' ? env.q('#albumPreview')?.dataset.image || '' : '';
+    if (image) {
+      const item = createAlbumDraft({
+        image,
+        cat: typeof env.q === 'function' ? env.q('#albumCategory')?.value || 'xiaohan' : 'xiaohan',
+      });
+      if (typeof env.addAlbumItem === 'function') {
+        env.addAlbumItem(item);
+      } else {
+        albumItemsFrom(env).unshift(item);
+      }
+    }
+    if (typeof env.openAlbum === 'function') env.openAlbum();
+    return true;
+  }
 
   modules.album = Object.freeze({
     moduleName: 'album',
@@ -142,5 +198,9 @@
     albumCategoryOptions,
     renderAlbumHome,
     renderAlbumCompose,
+    bindAlbumPreview,
+    openAlbum,
+    openAlbumCompose,
+    finishAlbum,
   });
-})(globalThis);
+})(globalThis);})(globalThis);
