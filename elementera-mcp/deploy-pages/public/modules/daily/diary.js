@@ -99,20 +99,17 @@
   }
 
   function bindDiaryPreview(env = {}) {
-    if (typeof env.q !== 'function') return false;
+    if (typeof env.q !== 'function' || typeof env.readImageFile !== 'function') return false;
     const input = env.q('#diaryImageInput');
     const preview = env.q('#diaryPreview');
-    const Reader = env.FileReader || root.FileReader;
-    if (!input || !preview || typeof Reader !== 'function') return false;
+    if (!input || !preview) return false;
     input.onchange = () => {
       const file = input.files && input.files[0];
-      if (!file) return;
-      const reader = new Reader();
-      reader.onload = () => {
-        preview.dataset.image = reader.result;
-        preview.innerHTML = '<img src="' + reader.result + '" alt="diary preview">';
-      };
-      reader.readAsDataURL(file);
+      env.readImageFile(file).then((image) => {
+        if (!image) return;
+        preview.dataset.image = image;
+        preview.innerHTML = '<img src="' + image + '" alt="diary preview">';
+      }).catch(() => undefined);
     };
     return true;
   }
