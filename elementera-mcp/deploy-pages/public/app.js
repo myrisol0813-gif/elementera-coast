@@ -1257,11 +1257,34 @@
     } catch (_) {}
     return {};
   }
+  function diaryModuleKeysForDebug() {
+    try {
+      const modules = globalThis.ElementeraDailyModules || {};
+      const keys = Object.keys(modules);
+      return keys.length ? keys.join(",") : "NO_MODULE_KEYS";
+    } catch (error) {
+      return "MODULE_KEYS_ERROR:" + (error && (error.message || String(error)));
+    }
+  }
+  function diaryScriptsForDebug() {
+    try {
+      const scripts = Array.from(document.scripts || [])
+        .map((script) => script.getAttribute("src") || "")
+        .filter((src) => src.includes("diary.js"));
+      return scripts.length ? scripts.join(" | ") : "NO_DIARY_SCRIPT_TAG";
+    } catch (error) {
+      return "SCRIPT_SCAN_ERROR:" + (error && (error.message || String(error)));
+    }
+  }
   function diaryDiagnosticHtml(title, reason) {
     return '<section class="diary-empty"><h2>' +
       esc(title) +
-      '</h2><p>[P3-STRUCT-12R4] ' +
+      '</h2><p>[P3-STRUCT-12R5] ' +
       esc(reason || "UNKNOWN") +
+      '</p><p>module keys: ' +
+      esc(diaryModuleKeysForDebug()) +
+      '</p><p>diary scripts: ' +
+      esc(diaryScriptsForDebug()) +
       '</p></section>';
   }
   function diaryEnv() {
@@ -1290,7 +1313,7 @@
       if (ok) return "";
       return action + " returned false";
     } catch (error) {
-      console.warn("[P3-STRUCT-12R4] diary action failed", action, error);
+      console.warn("[P3-STRUCT-12R5] diary action failed", action, error);
       return action + " threw: " + (error && (error.message || String(error)));
     }
   }
@@ -1306,7 +1329,7 @@
   }
   function finishDiary() {
     const reason = diaryDoor("finishDiary", "日记", "diary");
-    if (reason) console.warn("[P3-STRUCT-12R4] diary finish fallback", reason);
+    if (reason) console.warn("[P3-STRUCT-12R5] diary finish fallback", reason);
     if (reason) openDiary();
   }
   const albumModule = dailyModules.album || {};
