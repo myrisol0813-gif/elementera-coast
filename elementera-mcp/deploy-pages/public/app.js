@@ -1266,6 +1266,8 @@
       return "MODULE_KEYS_ERROR:" + (error && (error.message || String(error)));
     }
   }
+  const DIARY_MODULE_SRC = "/public/modules/daily/diary.js?v=p3-struct-12r6";
+  let diaryModuleLoadPromise = null;
   function diaryScriptsForDebug() {
     try {
       const scripts = Array.from(document.scripts || [])
@@ -1276,10 +1278,28 @@
       return "SCRIPT_SCAN_ERROR:" + (error && (error.message || String(error)));
     }
   }
+  function loadDiaryModule() {
+    const current = getDiaryModule();
+    if (current && Object.keys(current).length) return Promise.resolve(current);
+    if (diaryModuleLoadPromise) return diaryModuleLoadPromise;
+    diaryModuleLoadPromise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = DIARY_MODULE_SRC;
+      script.async = false;
+      script.onload = () => {
+        const loaded = getDiaryModule();
+        if (loaded && Object.keys(loaded).length) resolve(loaded);
+        else reject(new Error("DIARY_SCRIPT_LOADED_BUT_MODULE_MISSING"));
+      };
+      script.onerror = () => reject(new Error("DIARY_SCRIPT_LOAD_ERROR:" + script.src));
+      document.head.appendChild(script);
+    });
+    return diaryModuleLoadPromise;
+  }
   function diaryDiagnosticHtml(title, reason) {
     return '<section class="diary-empty"><h2>' +
       esc(title) +
-      '</h2><p>[P3-STRUCT-12R5] ' +
+      '</h2><p>[P3-STRUCT-12R6] ' +
       esc(reason || "UNKNOWN") +
       '</p><p>module keys: ' +
       esc(diaryModuleKeysForDebug()) +
@@ -1313,23 +1333,41 @@
       if (ok) return "";
       return action + " returned false";
     } catch (error) {
-      console.warn("[P3-STRUCT-12R5] diary action failed", action, error);
+      console.warn("[P3-STRUCT-12R6] diary action failed", action, error);
       return action + " threw: " + (error && (error.message || String(error)));
     }
   }
   function openDiary() {
     const reason = diaryDoor("openDiary", "日记", "diary");
     if (!reason) return;
+    if (reason === "DIARY_MODULE_MISSING") {
+      panel("日记", "本地草稿原型，暂未同步服务器", diaryDiagnosticHtml("日记模块加载中", reason), "diary");
+      loadDiaryModule().then(() => openDiary()).catch((error) => {
+        panel("日记", "本地草稿原型，暂未同步服务器", diaryDiagnosticHtml("日记暂不可用", error.message || String(error)), "diary");
+      });
+      return;
+    }
     panel("日记", "本地草稿原型，暂未同步服务器", diaryDiagnosticHtml("日记暂不可用", reason), "diary");
   }
   function openDiaryCompose() {
     const reason = diaryDoor("openDiaryCompose", "写日记", "diary-compose");
     if (!reason) return;
+    if (reason === "DIARY_MODULE_MISSING") {
+      panel("写日记", "本地草稿原型，暂未同步服务器", diaryDiagnosticHtml("日记模块加载中", reason), "diary-compose");
+      loadDiaryModule().then(() => openDiaryCompose()).catch((error) => {
+        panel("写日记", "本地草稿原型，暂未同步服务器", diaryDiagnosticHtml("写日记暂不可用", error.message || String(error)), "diary-compose");
+      });
+      return;
+    }
     panel("写日记", "本地草稿原型，暂未同步服务器", diaryDiagnosticHtml("写日记暂不可用", reason), "diary-compose");
   }
   function finishDiary() {
     const reason = diaryDoor("finishDiary", "日记", "diary");
-    if (reason) console.warn("[P3-STRUCT-12R5] diary finish fallback", reason);
+    if (reason) console.warn("[P3-STRUCT-12R6] diary finish fallback", reason);
+    if (reason === "DIARY_MODULE_MISSING") {
+      loadDiaryModule().then(() => finishDiary()).catch(() => openDiary());
+      return;
+    }
     if (reason) openDiary();
   }
   const albumModule = dailyModules.album || {};
