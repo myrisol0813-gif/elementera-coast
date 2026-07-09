@@ -2,7 +2,7 @@
 
 (function attachDailyShell(root) {
   const modules = (root.ElementeraDailyModules = root.ElementeraDailyModules || {});
-  const VERSION = 'P3-DAILY-REPAIR-03';
+  const VERSION = 'P3-DAILY-REPAIR-04';
   const PANEL_ID = 'freshDailyPanelV101';
   const DAILY_ROOM_NAMES = Object.freeze({
     moments: '硅碳圈',
