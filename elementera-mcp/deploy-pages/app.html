@@ -48,16 +48,56 @@
       </form>
     </main>
   </div>
-  <script src="/public/modules/daily/daily-shell.js?v=p3-entry-01" defer></script>
-  <script src="/public/modules/daily/daily-draft-state.js?v=p3-entry-01" defer></script>
-  <script src="/public/modules/daily/daily-assets.js?v=p3-entry-01" defer></script>
-  <script src="/public/modules/daily/moments.js?v=p3-entry-01" defer></script>
-  <script src="/public/modules/daily/diary.js?v=p3-entry-01" defer></script>
-  <script src="/public/modules/daily/album.js?v=p3-entry-01" defer></script>
-  <script src="/public/modules/daily/daily-router.js?v=p3-entry-01" defer></script>
-  <script src="/public/app.js?v=p3-entry-01" defer></script>
-  <script src="/public/run-control-p301c.js?v=p3-entry-01" defer></script>
-  <script src="/public/api-sandbox-p302c.js?v=p3-entry-01" defer></script>
-  <script src="/public/model-box-p303a.js?v=p3-entry-01" defer></script>
+  <script>
+    (() => {
+      if (window.__p3Entry01RDailySidebarBridge) return;
+      window.__p3Entry01RDailySidebarBridge = true;
+      const DAILY_SELECTOR = '[data-room="daily"],[data-room-v095="daily"]';
+      let lastHit = null;
+      let lastAt = 0;
+      function hitOf(event) {
+        const target = event.target;
+        return target && target.closest ? target.closest(DAILY_SELECTOR) : null;
+      }
+      function block(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+      }
+      function sameRecent(hit) {
+        return hit === lastHit && Date.now() - lastAt < 800;
+      }
+      function mark(hit) {
+        lastHit = hit;
+        lastAt = Date.now();
+      }
+      function openDaily() {
+        const router = window.ElementeraDailyRouterP3Struct13A || window.ElementeraDailyRouterP3Struct13 || window.ElementeraDailyModules?.dailyRouter;
+        if (router && typeof router.openDaily === 'function') router.openDaily();
+      }
+      function handle(event) {
+        const hit = hitOf(event);
+        if (!hit) return;
+        block(event);
+        if (sameRecent(hit)) return;
+        mark(hit);
+        openDaily();
+      }
+      document.addEventListener('pointerup', handle, true);
+      document.addEventListener('touchend', handle, true);
+      document.addEventListener('click', handle, true);
+    })();
+  </script>
+  <script src="/public/modules/daily/daily-shell.js?v=p3-entry-01r" defer></script>
+  <script src="/public/modules/daily/daily-draft-state.js?v=p3-entry-01r" defer></script>
+  <script src="/public/modules/daily/daily-assets.js?v=p3-entry-01r" defer></script>
+  <script src="/public/modules/daily/moments.js?v=p3-entry-01r" defer></script>
+  <script src="/public/modules/daily/diary.js?v=p3-entry-01r" defer></script>
+  <script src="/public/modules/daily/album.js?v=p3-entry-01r" defer></script>
+  <script src="/public/modules/daily/daily-router.js?v=p3-entry-01r" defer></script>
+  <script src="/public/app.js?v=p3-entry-01r" defer></script>
+  <script src="/public/run-control-p301c.js?v=p3-entry-01r" defer></script>
+  <script src="/public/api-sandbox-p302c.js?v=p3-entry-01r" defer></script>
+  <script src="/public/model-box-p303a.js?v=p3-entry-01r" defer></script>
 </body>
 </html>
