@@ -1389,6 +1389,14 @@
     dailyModules.album && typeof dailyModules.album.createAlbumDraft === "function"
       ? dailyModules.album.createAlbumDraft
       : null;
+  const moduleAlbumCard =
+    dailyModules.album && typeof dailyModules.album.albumCard === "function"
+      ? dailyModules.album.albumCard
+      : null;
+  const moduleAlbumSection =
+    dailyModules.album && typeof dailyModules.album.albumSection === "function"
+      ? dailyModules.album.albumSection
+      : null;
   function albumCategories() {
     if (moduleAlbumCategories) {
       try {
@@ -1451,6 +1459,11 @@
     return colors[index % colors.length];
   }
   function albumCard(item, i) {
+    if (moduleAlbumCard) {
+      try {
+        return moduleAlbumCard(item, i);
+      } catch (_) {}
+    }
     return (
       '<figure class="album-card" style="--album-border:' +
       albumBorderColor(i) +
@@ -1464,6 +1477,11 @@
     );
   }
   function albumSection(cat) {
+    if (moduleAlbumSection) {
+      try {
+        return moduleAlbumSection(cat, albumItems);
+      } catch (_) {}
+    }
     const list = albumItems.filter((x) => x.cat === cat);
     return (
       '<section class="album-section"><h2>' +

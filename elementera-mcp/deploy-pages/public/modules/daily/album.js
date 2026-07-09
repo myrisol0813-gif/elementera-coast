@@ -55,6 +55,49 @@
     };
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '').replace(
+      /[&<>"']/g,
+      (char) =>
+        ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        })[char],
+    );
+  }
+
+  function albumCard(item = {}, index = 0) {
+    const image = item.image || '';
+    const id = item.id || '';
+    return (
+      '<figure class="album-card" style="--album-border:' +
+      albumBorderColor(index) +
+      '"><img src="' +
+      image +
+      '" alt="海岸涂鸦"><figcaption><span>' +
+      escapeHtml(albumLabel(item.cat)) +
+      '</span><button type="button" data-album-download="' +
+      escapeHtml(id) +
+      '">下载</button></figcaption></figure>'
+    );
+  }
+
+  function albumSection(category, items = []) {
+    const list = Array.isArray(items) ? items.filter((item) => item.cat === category) : [];
+    return (
+      '<section class="album-section"><h2>' +
+      escapeHtml(albumLabel(category)) +
+      '</h2><div class="album-grid">' +
+      (list.length
+        ? list.map(albumCard).join('')
+        : '<div class="album-empty">' + escapeHtml(ALBUM_COPY.emptyText) + '</div>') +
+      '</div></section>'
+    );
+  }
+
   modules.album = Object.freeze({
     moduleName: 'album',
     isRuntimeWired: false,
@@ -64,5 +107,7 @@
     albumLabel,
     albumBorderColor,
     createAlbumDraft,
+    albumCard,
+    albumSection,
   });
 })(globalThis);
