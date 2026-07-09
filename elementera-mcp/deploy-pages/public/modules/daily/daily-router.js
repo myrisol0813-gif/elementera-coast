@@ -2,7 +2,7 @@
 
 (function attachDailyRouter(root) {
   const modules = (root.ElementeraDailyModules = root.ElementeraDailyModules || {});
-  const VERSION = 'P3-DAILY-REPAIR-01';
+  const VERSION = 'P3-DAILY-REPAIR-02';
   const TEMPORARY_TAKEOVER = Object.freeze({
     enabled: true,
     reason: 'app.js still contains the v106 daily cluster; capture blocking remains only until physical purge.',
@@ -10,10 +10,11 @@
   });
 
   const MODULE_SRC = Object.freeze({
-    dailyShell: '/public/modules/daily/daily-shell.js?v=p3-entry-01r2',
-    moments: '/public/modules/daily/moments.js?v=p3-entry-01r2',
-    diary: '/public/modules/daily/diary.js?v=p3-entry-01r2',
-    album: '/public/modules/daily/album.js?v=p3-entry-01r2',
+    dailyShell: '/public/modules/daily/daily-shell.js?v=p3-daily-repair-02',
+    dailyAssets: '/public/modules/daily/daily-assets.js?v=p3-daily-repair-02',
+    moments: '/public/modules/daily/moments.js?v=p3-daily-repair-02',
+    diary: '/public/modules/daily/diary.js?v=p3-daily-repair-02',
+    album: '/public/modules/daily/album.js?v=p3-daily-repair-02',
   });
 
   const DAILY_ROUTES = Object.freeze({
@@ -274,6 +275,30 @@
     }, 1600);
   }
 
+  function dailyAssets() {
+    return getModule('dailyAssets') || {};
+  }
+
+  async function pickDailyImage(unavailableMessage = '图片上传暂不可用') {
+    try {
+      const assets = dailyAssets();
+      if (!assets || typeof assets.pickImageDataUrl !== 'function') {
+        toast(unavailableMessage);
+        return '';
+      }
+      return await assets.pickImageDataUrl({ accept: 'image/*' });
+    } catch (error) {
+      toast(error?.message || unavailableMessage);
+      return '';
+    }
+  }
+
+  function readImageFile(file) {
+    const assets = dailyAssets();
+    if (assets && typeof assets.readImageFile === 'function') return assets.readImageFile(file);
+    return Promise.resolve('');
+  }
+
   function avatar(label = '寒', account = 'xiaohan') {
     const src = account === 'xiaohan' ? momentAvatar : '';
     return (
@@ -297,6 +322,7 @@
       q,
       toast,
       avatar,
+      readImageFile,
       FileReader: root.FileReader,
 
       getMoments: () => moments,
@@ -495,6 +521,22 @@
     return openDaily();
   }
 
+  async function updateAvatarImage() {
+    const image = await pickDailyImage('头像上传暂不可用');
+    if (!image) return false;
+    momentAvatar = image;
+    const route = currentDailyRoute();
+    if (route === DAILY_ROUTES.diary || route === DAILY_ROUTES.diaryCompose) return openDiary();
+    return openMoments();
+  }
+
+  async function updateCoverImage() {
+    const image = await pickDailyImage('封面上传暂不可用');
+    if (!image) return false;
+    momentCover = image;
+    return openMoments();
+  }
+
   const topBack = localBack;
 
   function targetOf(event) {
@@ -558,29 +600,8 @@
     if (action === DAILY_ACTIONS.albumCompose) return openAlbumCompose();
     if (action === DAILY_ACTIONS.albumFinish) return finishAlbum();
     if (action === DAILY_ACTIONS.topBack) return localBack();
-
-    if (action === DAILY_ACTIONS.avatarUpload) {
-      const input = q('#scAvatarInput');
-      if (!input) {
-        showDiagnostic('头像上传暂不可用', 'Moments diagnostic', DAILY_ROUTES.moments, 'scAvatarInput missing', 'moments');
-        return false;
-      }
-      input.onchange = () => runModuleAction('moments', 'uploadAvatar').catch((error) => toast(error?.message || String(error)));
-      input.click();
-      return true;
-    }
-
-    if (action === DAILY_ACTIONS.coverUpload) {
-      const input = q('#scCoverInput');
-      if (!input) {
-        showDiagnostic('封面上传暂不可用', 'Moments diagnostic', DAILY_ROUTES.moments, 'scCoverInput missing', 'moments');
-        return false;
-      }
-      input.onchange = () => runModuleAction('moments', 'uploadCover').catch((error) => toast(error?.message || String(error)));
-      input.click();
-      return true;
-    }
-
+    if (action === DAILY_ACTIONS.avatarUpload) return updateAvatarImage();
+    if (action === DAILY_ACTIONS.coverUpload) return updateCoverImage();
     if (action === DAILY_ACTIONS.locationPlaceholder) return true;
     return false;
   }
@@ -620,8 +641,8 @@
     activateOnce(hit);
   }
 
-  // Temporary takeover: this capture listener fences off app.js v106 daily handlers until physical purge.
-  // P3-ENTRY-01R2 activates on pointerup/touchend as well as click because mobile preventDefault can suppress click.
+  // Temporary takeover: this pre-existing capture listener fences off app.js v106 daily handlers until physical purge.
+  // P3-DAILY-REPAIR-02 keeps it unchanged while the router becomes the sole Daily owner loaded by the formal entry.
   DAILY_CAPTURE_EVENTS.forEach((eventName) => root.document.addEventListener(eventName, handle, true));
 
   modules.dailyRouter = Object.freeze({
@@ -647,6 +668,8 @@
     currentParentRoute,
     localBack,
     topBack,
+    updateAvatarImage,
+    updateCoverImage,
   });
 
   root.ElementeraDailyRouterP3Entry01R2 = modules.dailyRouter;
