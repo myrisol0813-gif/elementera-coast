@@ -2,25 +2,29 @@
 
 (function attachDailyRouter(root) {
   const modules = (root.ElementeraDailyModules = root.ElementeraDailyModules || {});
-  const VERSION = 'P3-STRUCT-13A';
+  const VERSION = 'P3-ENTRY-01R2';
   const TEMPORARY_TAKEOVER = Object.freeze({
     enabled: true,
     reason: 'app.js still contains the v106 daily cluster; capture blocking remains only until physical purge.',
-    next: 'P3-STRUCT-13R-shell will remove the old app.js handler and allow this router to become a normal daily route listener.',
+    next: 'After app.js daily cluster purge, this router can drop capture fencing and become a normal daily route listener.',
   });
 
   const MODULE_SRC = Object.freeze({
-    dailyShell: '/public/modules/daily/daily-shell.js?v=p3-struct-13a',
-    moments: '/public/modules/daily/moments.js?v=p3-struct-13a',
-    diary: '/public/modules/daily/diary.js?v=p3-struct-13a',
-    album: '/public/modules/daily/album.js?v=p3-struct-13a',
+    dailyShell: '/public/modules/daily/daily-shell.js?v=p3-entry-01r2',
+    moments: '/public/modules/daily/moments.js?v=p3-entry-01r2',
+    diary: '/public/modules/daily/diary.js?v=p3-entry-01r2',
+    album: '/public/modules/daily/album.js?v=p3-entry-01r2',
   });
 
   const ROUTER_SELECTORS = Object.freeze([
     '[data-room="daily"]',
     '[data-room-v095="daily"]',
     '[data-fresh-daily-room]',
+    '[data-daily-room]',
     '[data-fresh-daily-action]',
+    '[data-daily-action]',
+    '[data-daily-back]',
+    '[data-action="daily-back"]',
     '[data-sc-like]',
     '[data-sc-comment]',
     '[data-sc-send-comment]',
@@ -41,6 +45,7 @@
   const DAILY_ACTIONS = Object.freeze({
     topBack: 'top-back',
     backDaily: 'back-daily',
+    legacyBackDaily: 'daily-back',
     momentsCompose: 'moments-compose',
     publishMoment: 'publish-placeholder',
     avatarUpload: 'avatar-upload',
@@ -64,6 +69,8 @@
   let momentCommentTarget = '';
   let momentCover = '';
   let momentAvatar = '';
+  let lastActivatedHit = null;
+  let lastActivatedAt = 0;
 
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]
@@ -205,10 +212,10 @@
   }
 
   function toast(message) {
-    let node = q('#dailyToastP3Struct13');
+    let node = q('#dailyToastP3Entry01R2');
     if (!node) {
       node = root.document.createElement('div');
-      node.id = 'dailyToastP3Struct13';
+      node.id = 'dailyToastP3Entry01R2';
       node.className = 'island-toast-v118';
       root.document.body.appendChild(node);
     }
@@ -437,18 +444,32 @@
     if (event.stopImmediatePropagation) event.stopImmediatePropagation();
   }
 
+  function getAction(hit) {
+    return hit?.dataset?.freshDailyAction || hit?.dataset?.dailyAction || hit?.dataset?.action || '';
+  }
+
+  function markActivated(hit) {
+    lastActivatedHit = hit;
+    lastActivatedAt = Date.now();
+  }
+
+  function wasRecentlyActivated(hit) {
+    return hit === lastActivatedHit && Date.now() - lastActivatedAt < 800;
+  }
+
   async function activate(hit) {
     const open = hit.closest('[data-room="daily"],[data-room-v095="daily"]');
-    const room = hit.closest('[data-fresh-daily-room]');
-    const action = hit.dataset.freshDailyAction;
+    const room = hit.closest('[data-fresh-daily-room],[data-daily-room]');
+    const action = getAction(hit);
     const like = hit.dataset.scLike;
     const comment = hit.dataset.scComment;
     const sendComment = hit.dataset.scSendComment;
     const diaryDay = hit.dataset.diaryDate;
     const albumDownload = hit.dataset.albumDownload;
+    const backDaily = hit.dataset.dailyBack;
 
     if (open) return openDaily();
-    if (room) return routeRoom(room.dataset.freshDailyRoom);
+    if (room) return routeRoom(room.dataset.freshDailyRoom || room.dataset.dailyRoom);
 
     if (diaryDay) {
       diaryDate = diaryDay;
@@ -460,7 +481,7 @@
     if (comment) return runModuleAction('moments', 'toggleComment', comment).catch((error) => toast(error?.message || String(error)));
     if (sendComment) return runModuleAction('moments', 'sendComment', sendComment).catch((error) => toast(error?.message || String(error)));
 
-    if (action === DAILY_ACTIONS.backDaily) return openDaily();
+    if (backDaily || action === DAILY_ACTIONS.backDaily || action === DAILY_ACTIONS.legacyBackDaily) return openDaily();
     if (action === DAILY_ACTIONS.momentsCompose) return openMomentsCompose();
     if (action === DAILY_ACTIONS.publishMoment) return finishMoment();
     if (action === DAILY_ACTIONS.diaryCompose) return openDiaryCompose();
@@ -495,6 +516,12 @@
     return false;
   }
 
+  function activateOnce(hit) {
+    if (wasRecentlyActivated(hit)) return;
+    markActivated(hit);
+    activate(hit).catch((error) => toast(error?.message || String(error)));
+  }
+
   function handle(event) {
     const hit = targetOf(event);
     if (!hit) return;
@@ -505,19 +532,27 @@
       return;
     }
 
-    if (event.type === 'pointerup' || event.type === 'pointercancel' || event.type === 'touchend' || event.type === 'touchcancel') {
+    if (event.type === 'pointercancel' || event.type === 'touchcancel') {
       press(hit, false);
       block(event);
+      return;
+    }
+
+    if (event.type === 'pointerup' || event.type === 'touchend') {
+      press(hit, false);
+      block(event);
+      activateOnce(hit);
       return;
     }
 
     if (event.type !== 'click') return;
     press(hit, false);
     block(event);
-    activate(hit);
+    activateOnce(hit);
   }
 
-  // Temporary takeover: this capture listener only fences off app.js v106 daily handlers until physical purge.
+  // Temporary takeover: this capture listener fences off app.js v106 daily handlers until physical purge.
+  // P3-ENTRY-01R2 activates on pointerup/touchend as well as click because mobile preventDefault can suppress click.
   DAILY_CAPTURE_EVENTS.forEach((eventName) => root.document.addEventListener(eventName, handle, true));
 
   modules.dailyRouter = Object.freeze({
@@ -531,6 +566,7 @@
     MODULE_SRC,
     ensureDailyModule,
     runModuleAction,
+    activate,
     openDaily,
     openMoments,
     openDiary,
@@ -539,6 +575,7 @@
     topBack,
   });
 
+  root.ElementeraDailyRouterP3Entry01R2 = modules.dailyRouter;
   root.ElementeraDailyRouterP3Struct13A = modules.dailyRouter;
   root.ElementeraDailyRouterP3Struct13 = modules.dailyRouter;
 })(globalThis);
