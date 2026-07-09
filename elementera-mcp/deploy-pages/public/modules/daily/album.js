@@ -203,4 +203,4 @@
     openAlbumCompose,
     finishAlbum,
   });
-})(globalThis);})(globalThis);
+})(globalThis);
