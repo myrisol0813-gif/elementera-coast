@@ -1299,14 +1299,39 @@
     }
     panel(diaryModuleCopy("title", "日记"), diaryModuleCopy("subtitle", "本地草稿原型，暂未同步服务器"), emergencyDiaryHome(), "diary");
   }
+  function diaryDiagnosticHtml(title, reason) {
+    return '<section class="diary-empty"><h2>' +
+      esc(title) +
+      '</h2><p>[P3-STRUCT-12R3] ' +
+      esc(reason || "UNKNOWN") +
+      '</p></section>';
+  }
   function openDiaryCompose() {
     const diaryModule = getDiaryModule();
-    if (typeof diaryModule.openDiaryCompose === "function") {
+    let reason = "";
+    if (!diaryModule || !Object.keys(diaryModule).length) {
+      reason = "DIARY_MODULE_MISSING";
+      console.warn("[P3-STRUCT-12R3] diary module missing", globalThis.ElementeraDailyModules);
+    } else if (typeof diaryModule.openDiaryCompose !== "function") {
+      reason = "openDiaryCompose missing";
+      console.warn("[P3-STRUCT-12R3] diary open compose missing", diaryModule);
+    } else {
       try {
-        if (diaryModule.openDiaryCompose(diaryEnv())) return;
-      } catch (_) {}
+        const ok = diaryModule.openDiaryCompose(diaryEnv());
+        if (ok) return;
+        reason = "openDiaryCompose returned false";
+        console.warn("[P3-STRUCT-12R3] diary open compose returned false", diaryModule);
+      } catch (error) {
+        reason = "openDiaryCompose threw: " + (error && (error.message || String(error)));
+        console.warn("[P3-STRUCT-12R3] diary open compose failed", error);
+      }
     }
-    panel(diaryModuleCopy("composeTitle", "写日记"), diaryModuleCopy("subtitle", "本地草稿原型，暂未同步服务器"), '<section class="diary-empty"><h2>写日记暂不可用</h2></section>', "diary-compose");
+    panel(
+      diaryModuleCopy("composeTitle", "写日记"),
+      diaryModuleCopy("subtitle", "本地草稿原型，暂未同步服务器"),
+      diaryDiagnosticHtml("写日记暂不可用", reason),
+      "diary-compose",
+    );
   }
   function finishDiary() {
     const diaryModule = getDiaryModule();
