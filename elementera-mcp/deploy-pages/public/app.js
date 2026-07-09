@@ -1368,7 +1368,17 @@
     openDiary();
   }
 
+  const dailyModules = globalThis.ElementeraDailyModules || {};
+  const moduleAlbumLabel =
+    dailyModules.album && typeof dailyModules.album.albumLabel === "function"
+      ? dailyModules.album.albumLabel
+      : null;
   function albumLabel(cat) {
+    if (moduleAlbumLabel) {
+      try {
+        return moduleAlbumLabel(cat);
+      } catch (_) {}
+    }
     return cat === "myri" ? "Myri" : cat === "together" ? "蛇蛇狗合照" : "小寒";
   }
   function albumCard(item, i) {
