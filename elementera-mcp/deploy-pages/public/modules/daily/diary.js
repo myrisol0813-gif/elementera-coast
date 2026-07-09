@@ -2,6 +2,7 @@
 
 (function attachDiary(root) {
   const modules = (root.ElementeraDailyModules = root.ElementeraDailyModules || {});
+  const VERSION = 'P3-DAILY-REPAIR-03';
 
   const DIARY_COPY = Object.freeze({
     title: '日记',
@@ -159,6 +160,7 @@
 
   modules.diary = Object.freeze({
     moduleName: 'diary',
+    VERSION,
     isRuntimeWired: true,
     DIARY_COPY,
     dateKey,
