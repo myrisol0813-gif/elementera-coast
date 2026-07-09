@@ -1250,125 +1250,64 @@
       };
   }
 
-  function dateKey(d = new Date()) {
-    return (
-      d.getFullYear() +
-      "-" +
-      String(d.getMonth() + 1).padStart(2, "0") +
-      "-" +
-      String(d.getDate()).padStart(2, "0")
-    );
+  const dailyModules = globalThis.ElementeraDailyModules || {};
+  const diaryModule = dailyModules.diary || {};
+  function diaryModuleCopy(key, fallback) {
+    try {
+      const copy = diaryModule.DIARY_COPY;
+      const value = copy && copy[key];
+      if (typeof value === "string" && value) return value;
+    } catch (_) {}
+    return fallback;
   }
-  function dateLabel(k) {
-    const a = String(k || dateKey()).split("-");
-    return (a[1] || "--") + "月" + (a[2] || "--") + "日";
+  function diaryEnv() {
+    return {
+      panel,
+      q: (selector) => q(selector),
+      avatar,
+      getDiaries: () => diaries,
+      setDiaries: (next) => {
+        diaries = Array.isArray(next) ? next : diaries;
+      },
+      getDiaryDate: () => diaryDate,
+      setDiaryDate: (date) => {
+        diaryDate = date;
+      },
+      openDiary,
+      FileReader: globalThis.FileReader,
+    };
   }
-  function authorName(a) {
-    return a === "api" ? "✦Myrisol" : a === "mcp" ? "≋Myrisol" : "小寒";
-  }
-  function diaryPaper(e) {
-    const mine = e.author === "xiaohan";
-    const img = e.image
-      ? '<img class="diary-image" src="' + e.image + '" alt="日记配图">'
-      : "";
-    const av = mine
-      ? '<button type="button" class="diary-entry-avatar is-avatar-button" data-fresh-daily-action="avatar-upload">' +
-        avatar("寒", "xiaohan") +
-        "</button>"
-      : '<div class="diary-entry-avatar">' +
-        (e.author === "api" ? avatar("✦", "api") : avatar("≋", "mcp")) +
-        "</div>";
-    return (
-      '<article class="diary-entry ' +
-      (mine ? "is-mine" : "is-myri") +
-      '">' +
-      av +
-      '<div class="diary-paper"><header><b>' +
-      esc(authorName(e.author)) +
-      "</b><span>" +
-      esc(e.weather) +
-      " · " +
-      esc(e.mood) +
-      "</span></header><p>" +
-      esc(e.text || "今天也在海岸留下一张纸。") +
-      "</p>" +
-      img +
-      "</div></article>"
-    );
+  function emergencyDiaryHome() {
+    return '<button type="button" class="diary-plus" data-fresh-daily-action="diary-compose">＋</button><section class="diary-empty"><h2>' +
+      esc(diaryModuleCopy("emptyTitle", "暂无日记。")) +
+      "</h2><p>" +
+      esc(diaryModuleCopy("emptyDescription", "这里是本地草稿原型，暂未同步服务器。今天可以留下小寒、✦Myrisol、≋Myrisol 的纸页。")) +
+      "</p></section>";
   }
   function openDiary() {
-    if (!diaryDate) diaryDate = dateKey();
-    const dates = [...new Set([dateKey(), ...diaries.map((x) => x.date)])]
-      .sort()
-      .reverse();
-    const chips = dates
-      .map(
-        (d) =>
-          '<button type="button" class="' +
-          (d === diaryDate ? "is-active" : "") +
-          '" data-diary-date="' +
-          esc(d) +
-          '">' +
-          esc(dateLabel(d)) +
-          "</button>",
-      )
-      .join("");
-    const day = diaries.filter((x) => x.date === diaryDate).slice(0, 3);
-    const empty =
-      '<section class="diary-empty"><h2>暂无日记。</h2><p>这里是本地草稿原型，暂未同步服务器。今天可以留下小寒、✦Myrisol、≋Myrisol 的纸页。</p></section>';
-    panel(
-      "日记",
-      "本地草稿原型，暂未同步服务器",
-      '<button type="button" class="diary-plus" data-fresh-daily-action="diary-compose">＋</button><section class="diary-filter">' +
-        chips +
-        '</section><section class="diary-stack">' +
-        (day.length ? day.map(diaryPaper).join("") : empty) +
-        "</section>",
-      "diary",
-    );
+    if (typeof diaryModule.openDiary === "function") {
+      try {
+        if (diaryModule.openDiary(diaryEnv())) return;
+      } catch (_) {}
+    }
+    panel(diaryModuleCopy("title", "日记"), diaryModuleCopy("subtitle", "本地草稿原型，暂未同步服务器"), emergencyDiaryHome(), "diary");
   }
   function openDiaryCompose() {
-    const body =
-      '<section class="diary-compose"><p class="coast-room-card">本地草稿原型，暂未同步服务器。刷新后可能消失。</p><div class="diary-meta"><label>写作者<select id="diaryAuthor"><option value="xiaohan">小寒</option><option value="api">✦Myrisol / API</option><option value="mcp">≋Myrisol / MCP</option></select></label><label>天气<input id="diaryWeather" placeholder="晴 / 雨 / 雾"></label><label>心情<input id="diaryMood" placeholder="平静 / 开心 / 想你"></label></div><textarea id="diaryText" placeholder="今天的纸页..." rows="8"></textarea><div class="diary-compose-images"><label><input id="diaryImageInput" type="file" accept="image/*" hidden><span class="diary-upload-box">＋</span></label><div class="diary-preview" id="diaryPreview"></div></div><button type="button" class="diary-finish" data-fresh-daily-action="diary-finish">保存本地日记预览</button></section>';
-    panel("写日记", "本地草稿原型，暂未同步服务器", body, "diary-compose");
-    const inp = q("#diaryImageInput"),
-      prev = q("#diaryPreview");
-    if (inp && prev)
-      inp.onchange = () => {
-        const f = inp.files && inp.files[0];
-        if (!f) return;
-        const r = new FileReader();
-        r.onload = () => {
-          prev.dataset.image = r.result;
-          prev.innerHTML = '<img src="' + r.result + '" alt="diary preview">';
-        };
-        r.readAsDataURL(f);
-      };
+    if (typeof diaryModule.openDiaryCompose === "function") {
+      try {
+        if (diaryModule.openDiaryCompose(diaryEnv())) return;
+      } catch (_) {}
+    }
+    panel(diaryModuleCopy("composeTitle", "写日记"), diaryModuleCopy("subtitle", "本地草稿原型，暂未同步服务器"), '<section class="diary-empty"><h2>写日记暂不可用</h2></section>', "diary-compose");
   }
   function finishDiary() {
-    const author = q("#diaryAuthor")?.value || "xiaohan";
-    const date = diaryDate || dateKey();
-    const text = (q("#diaryText")?.value || "").trim();
-    const image = q("#diaryPreview")?.dataset.image || "";
-    if (!text && !image) {
-      openDiary();
-      return;
+    if (typeof diaryModule.finishDiary === "function") {
+      try {
+        if (diaryModule.finishDiary(diaryEnv())) return;
+      } catch (_) {}
     }
-    diaries = diaries.filter((x) => !(x.date === date && x.author === author));
-    diaries.unshift({
-      id: "diary-" + Date.now(),
-      date,
-      author,
-      weather: (q("#diaryWeather")?.value || "未标注").trim(),
-      mood: (q("#diaryMood")?.value || "未标注").trim(),
-      text,
-      image,
-    });
-    diaryDate = date;
     openDiary();
   }
-
-  const dailyModules = globalThis.ElementeraDailyModules || {};
   const albumModule = dailyModules.album || {};
   function albumModuleCopy(key, fallback) {
     try {
