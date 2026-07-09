@@ -2,19 +2,26 @@
 
 (function attachDailyRouter(root) {
   const modules = (root.ElementeraDailyModules = root.ElementeraDailyModules || {});
-  const VERSION = 'P3-DAILY-REPAIR-02';
-  const TEMPORARY_TAKEOVER = Object.freeze({
-    enabled: true,
-    reason: 'app.js still contains the v106 daily cluster; capture blocking remains only until physical purge.',
-    next: 'After app.js daily cluster purge, this router can drop capture fencing and become a normal daily route listener.',
+  const VERSION = 'P3-DAILY-REPAIR-03';
+
+  // Canonical ownership claim: app.js v106 Daily controller uses this guard name.
+  // Setting it before app.js loads retires the old Daily controller instead of
+  // letting two controllers process the same buttons/back actions.
+  root.__v106SiliconCarbonMoments = true;
+  root.__p3DailyCanonicalOwner = VERSION;
+
+  const LEGACY_DAILY_RETIREMENT = Object.freeze({
+    owner: 'public/modules/daily/daily-router.js',
+    retired: ['app.js __v106SiliconCarbonMoments Daily controller', 'inline daily onclick handlers on [data-room="daily"] buttons'],
+    removalCondition: 'After public/app.js Daily v106 cluster and daily inline ownership are physically purged, remove the guard and legacy handler cleanup.',
   });
 
   const MODULE_SRC = Object.freeze({
-    dailyShell: '/public/modules/daily/daily-shell.js?v=p3-daily-repair-02',
-    dailyAssets: '/public/modules/daily/daily-assets.js?v=p3-daily-repair-02',
-    moments: '/public/modules/daily/moments.js?v=p3-daily-repair-02',
-    diary: '/public/modules/daily/diary.js?v=p3-daily-repair-02',
-    album: '/public/modules/daily/album.js?v=p3-daily-repair-02',
+    dailyShell: '/public/modules/daily/daily-shell.js?v=p3-daily-repair-03',
+    dailyAssets: '/public/modules/daily/daily-assets.js?v=p3-daily-repair-03',
+    moments: '/public/modules/daily/moments.js?v=p3-daily-repair-03',
+    diary: '/public/modules/daily/diary.js?v=p3-daily-repair-03',
+    album: '/public/modules/daily/album.js?v=p3-daily-repair-03',
   });
 
   const DAILY_ROUTES = Object.freeze({
@@ -45,16 +52,6 @@
     '[data-album-download]',
   ]);
 
-  const DAILY_CAPTURE_EVENTS = Object.freeze([
-    'pointerdown',
-    'pointerup',
-    'pointercancel',
-    'touchstart',
-    'touchend',
-    'touchcancel',
-    'click',
-  ]);
-
   const DAILY_ACTIONS = Object.freeze({
     topBack: 'top-back',
     backDaily: 'back-daily',
@@ -82,13 +79,7 @@
   let momentCommentTarget = '';
   let momentCover = '';
   let momentAvatar = '';
-  let lastActivatedHit = null;
-  let lastActivatedAt = 0;
-  let dailyNav = {
-    route: DAILY_ROUTES.main,
-    parent: '',
-    openedFrom: '',
-  };
+  let dailyNav = { route: DAILY_ROUTES.main, parent: '', openedFrom: '' };
 
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]
@@ -99,11 +90,7 @@
   }
 
   function markDailyRoute(route, parent = '') {
-    dailyNav = {
-      route: route || DAILY_ROUTES.main,
-      parent: parent || '',
-      openedFrom: parent || '',
-    };
+    dailyNav = { route: route || DAILY_ROUTES.main, parent: parent || '', openedFrom: parent || '' };
     const node = panelNode();
     if (node) {
       node.dataset.dailyRoute = dailyNav.route;
@@ -206,18 +193,18 @@
       if (node) node.hidden = true;
     });
 
-    let panelNode = q('#freshDailyPanelV101');
-    if (!panelNode) {
-      panelNode = root.document.createElement('section');
-      panelNode.id = 'freshDailyPanelV101';
-      panelNode.className = 'coast-room-panel-v095 fresh-daily-panel-v101';
-      root.document.body.appendChild(panelNode);
+    let panel = q('#freshDailyPanelV101');
+    if (!panel) {
+      panel = root.document.createElement('section');
+      panel.id = 'freshDailyPanelV101';
+      panel.className = 'coast-room-panel-v095 fresh-daily-panel-v101';
+      root.document.body.appendChild(panel);
     }
 
-    panelNode.hidden = false;
-    panelNode.dataset.state = state || 'daily';
+    panel.hidden = false;
+    panel.dataset.state = state || 'daily';
     hideSide();
-    panelNode.innerHTML =
+    panel.innerHTML =
       '<div class="coast-room-shell"><header class="coast-room-head"><button type="button" class="coast-room-back" data-fresh-daily-action="top-back">←</button><div><h1>' +
       esc(title) +
       '</h1><p>' +
@@ -225,7 +212,7 @@
       '</p></div></header><main class="coast-room-body">' +
       body +
       '</main></div>';
-    return panelNode;
+    return panel;
   }
 
   function panel(title, subtitle, body, state) {
@@ -236,21 +223,9 @@
 
   function diagnostic(title, reason, moduleName = '') {
     return (
-      '<section class="diary-empty"><h2>' +
-      esc(title) +
-      '</h2><p>[' +
-      esc(VERSION) +
-      '] ' +
-      esc(reason || 'UNKNOWN') +
-      '</p><p>module: ' +
-      esc(moduleName || 'dailyRouter') +
-      '</p><p>module keys: ' +
-      esc(moduleKeysForDebug()) +
-      '</p><p>scripts: ' +
-      esc(scriptListForDebug()) +
-      '</p><p>temporary takeover: ' +
-      esc(TEMPORARY_TAKEOVER.reason) +
-      '</p></section>'
+      '<section class="diary-empty"><h2>' + esc(title) + '</h2><p>[' + esc(VERSION) + '] ' + esc(reason || 'UNKNOWN') +
+      '</p><p>module: ' + esc(moduleName || 'dailyRouter') + '</p><p>module keys: ' + esc(moduleKeysForDebug()) +
+      '</p><p>scripts: ' + esc(scriptListForDebug()) + '</p></section>'
     );
   }
 
@@ -270,9 +245,7 @@
     node.textContent = message;
     node.hidden = false;
     clearTimeout(node._timer);
-    node._timer = setTimeout(() => {
-      node.hidden = true;
-    }, 1600);
+    node._timer = setTimeout(() => { node.hidden = true; }, 1600);
   }
 
   function dailyAssets() {
@@ -301,70 +274,41 @@
 
   function avatar(label = '寒', account = 'xiaohan') {
     const src = account === 'xiaohan' ? momentAvatar : '';
-    return (
-      '<div class="sc-avatar sc-avatar-' +
-      esc(account) +
-      '" aria-label="avatar" ' +
-      (src
-        ? 'style="background-image:url(' + src + ') !important;background-size:cover !important;background-position:center !important;color:transparent !important"'
-        : '') +
-      '>' +
-      esc(label) +
-      '</div>'
-    );
+    return '<div class="sc-avatar sc-avatar-' + esc(account) + '" aria-label="avatar" ' +
+      (src ? 'style="background-image:url(' + src + ') !important;background-size:cover !important;background-position:center !important;color:transparent !important"' : '') +
+      '>' + esc(label) + '</div>';
   }
 
   function dailyEnv() {
     return {
       version: VERSION,
-      temporaryTakeover: TEMPORARY_TAKEOVER,
+      legacyDailyRetirement: LEGACY_DAILY_RETIREMENT,
       panel,
       q,
       toast,
       avatar,
       readImageFile,
       FileReader: root.FileReader,
-
       getMoments: () => moments,
-      setMoments: (next) => {
-        moments = Array.isArray(next) ? next : moments;
-      },
+      setMoments: (next) => { moments = Array.isArray(next) ? next : moments; },
       openMoments,
       getMomentLikes: () => momentLikes,
-      setMomentLikes: (next) => {
-        momentLikes = next && typeof next === 'object' ? next : momentLikes;
-      },
+      setMomentLikes: (next) => { momentLikes = next && typeof next === 'object' ? next : momentLikes; },
       getMomentComments: () => momentComments,
-      setMomentComments: (next) => {
-        momentComments = next && typeof next === 'object' ? next : momentComments;
-      },
+      setMomentComments: (next) => { momentComments = next && typeof next === 'object' ? next : momentComments; },
       getMomentCommentTarget: () => momentCommentTarget,
-      setMomentCommentTarget: (next) => {
-        momentCommentTarget = next || '';
-      },
+      setMomentCommentTarget: (next) => { momentCommentTarget = next || ''; },
       getMomentCover: () => momentCover,
-      setMomentCover: (next) => {
-        momentCover = next || '';
-      },
+      setMomentCover: (next) => { momentCover = next || ''; },
       getMomentAvatar: () => momentAvatar,
-      setMomentAvatar: (next) => {
-        momentAvatar = next || '';
-      },
-
+      setMomentAvatar: (next) => { momentAvatar = next || ''; },
       getDiaries: () => diaries,
-      setDiaries: (next) => {
-        diaries = Array.isArray(next) ? next : diaries;
-      },
+      setDiaries: (next) => { diaries = Array.isArray(next) ? next : diaries; },
       getDiaryDate: () => diaryDate,
-      setDiaryDate: (next) => {
-        diaryDate = next || '';
-      },
+      setDiaryDate: (next) => { diaryDate = next || ''; },
       openDiary,
-
       getAlbumItems: () => albumItems,
-      addAlbumItem: (item) => {
-        if (item) albumItems.unshift(item);
-      },
+      addAlbumItem: (item) => { if (item) albumItems.unshift(item); },
       openAlbum,
     };
   }
@@ -381,6 +325,7 @@
     try {
       await runModuleAction('dailyShell', 'openDaily');
       markDailyRoute(DAILY_ROUTES.dailyHome, DAILY_ROUTES.main);
+      retireLegacyDailyInlineHandlers();
     } catch (error) {
       showDiagnostic('海岸日报暂不可用', 'Daily shell diagnostic', DAILY_ROUTES.dailyHome, error?.message || String(error), 'dailyShell');
     }
@@ -499,7 +444,6 @@
   async function localBack() {
     const route = currentDailyRoute();
     const parent = currentParentRoute();
-
     if (route === DAILY_ROUTES.dailyHome || parent === DAILY_ROUTES.main) {
       const shell = getModule('dailyShell');
       markDailyRoute(DAILY_ROUTES.main, '');
@@ -509,15 +453,10 @@
       showSide();
       return true;
     }
-
     if (route === DAILY_ROUTES.momentsCompose) return openMoments();
     if (route === DAILY_ROUTES.diaryCompose) return openDiary();
     if (route === DAILY_ROUTES.albumCompose) return openAlbum();
-
-    if (parent === DAILY_ROUTES.dailyHome || route === DAILY_ROUTES.moments || route === DAILY_ROUTES.diary || route === DAILY_ROUTES.album || route === DAILY_ROUTES.child) {
-      return openDaily();
-    }
-
+    if (parent === DAILY_ROUTES.dailyHome || route === DAILY_ROUTES.moments || route === DAILY_ROUTES.diary || route === DAILY_ROUTES.album || route === DAILY_ROUTES.child) return openDaily();
     return openDaily();
   }
 
@@ -539,33 +478,24 @@
 
   const topBack = localBack;
 
+  function retireLegacyDailyInlineHandlers() {
+    try {
+      root.document?.querySelectorAll?.('[data-room="daily"],[data-room-v095="daily"]').forEach((node) => {
+        if (node.dataset.dailyRouterOwner === VERSION) return;
+        node.onclick = null;
+        node.dataset.dailyRouterOwner = VERSION;
+      });
+    } catch (_) {}
+  }
+
   function targetOf(event) {
     const target = event.target;
     if (!target || !target.closest || target.matches?.('input[type="file"]')) return null;
     return target.closest(ROUTER_SELECTORS.join(','));
   }
 
-  function press(node, enabled) {
-    if (node) node.classList.toggle('is-pressing', !!enabled);
-  }
-
-  function block(event) {
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-  }
-
   function getAction(hit) {
     return hit?.dataset?.freshDailyAction || hit?.dataset?.dailyAction || hit?.dataset?.action || '';
-  }
-
-  function markActivated(hit) {
-    lastActivatedHit = hit;
-    lastActivatedAt = Date.now();
-  }
-
-  function wasRecentlyActivated(hit) {
-    return hit === lastActivatedHit && Date.now() - lastActivatedAt < 800;
   }
 
   async function activate(hit) {
@@ -581,17 +511,14 @@
 
     if (open) return openDaily();
     if (room) return routeRoom(room.dataset.freshDailyRoom || room.dataset.dailyRoom);
-
     if (diaryDay) {
       diaryDate = diaryDay;
       return openDiary();
     }
-
     if (albumDownload) return downloadAlbum(albumDownload);
     if (like) return runModuleAction('moments', 'toggleLike', like).catch((error) => toast(error?.message || String(error)));
     if (comment) return runModuleAction('moments', 'toggleComment', comment).catch((error) => toast(error?.message || String(error)));
     if (sendComment) return runModuleAction('moments', 'sendComment', sendComment).catch((error) => toast(error?.message || String(error)));
-
     if (backDaily || action === DAILY_ACTIONS.backDaily || action === DAILY_ACTIONS.legacyBackDaily) return openDaily();
     if (action === DAILY_ACTIONS.momentsCompose) return openMomentsCompose();
     if (action === DAILY_ACTIONS.publishMoment) return finishMoment();
@@ -606,53 +533,26 @@
     return false;
   }
 
-  function activateOnce(hit) {
-    if (wasRecentlyActivated(hit)) return;
-    markActivated(hit);
-    activate(hit).catch((error) => toast(error?.message || String(error)));
-  }
-
   function handle(event) {
     const hit = targetOf(event);
     if (!hit) return;
-
-    if (event.type === 'pointerdown' || event.type === 'touchstart') {
-      press(hit, true);
-      block(event);
-      return;
-    }
-
-    if (event.type === 'pointercancel' || event.type === 'touchcancel') {
-      press(hit, false);
-      block(event);
-      return;
-    }
-
-    if (event.type === 'pointerup' || event.type === 'touchend') {
-      press(hit, false);
-      block(event);
-      activateOnce(hit);
-      return;
-    }
-
-    if (event.type !== 'click') return;
-    press(hit, false);
-    block(event);
-    activateOnce(hit);
+    event.preventDefault();
+    event.stopPropagation();
+    activate(hit).catch((error) => toast(error?.message || String(error)));
   }
 
-  // Temporary takeover: this pre-existing capture listener fences off app.js v106 daily handlers until physical purge.
-  // P3-DAILY-REPAIR-02 keeps it unchanged while the router becomes the sole Daily owner loaded by the formal entry.
-  DAILY_CAPTURE_EVENTS.forEach((eventName) => root.document.addEventListener(eventName, handle, true));
+  root.document.addEventListener('click', handle, true);
+  root.document.addEventListener('DOMContentLoaded', retireLegacyDailyInlineHandlers);
+  root.setTimeout(retireLegacyDailyInlineHandlers, 0);
+  root.setTimeout(retireLegacyDailyInlineHandlers, 500);
 
   modules.dailyRouter = Object.freeze({
     moduleName: 'dailyRouter',
     isRuntimeWired: true,
     VERSION,
-    TEMPORARY_TAKEOVER,
+    LEGACY_DAILY_RETIREMENT,
     DAILY_ROUTES,
     ROUTER_SELECTORS,
-    DAILY_CAPTURE_EVENTS,
     DAILY_ACTIONS,
     MODULE_SRC,
     ensureDailyModule,
@@ -670,6 +570,7 @@
     topBack,
     updateAvatarImage,
     updateCoverImage,
+    retireLegacyDailyInlineHandlers,
   });
 
   root.ElementeraDailyRouterP3Entry01R2 = modules.dailyRouter;
