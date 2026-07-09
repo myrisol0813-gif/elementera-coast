@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * P3-STRUCT-13A canonical album module.
+ * P3-DAILY-REPAIR-02 canonical album module.
  *
  * Album rendering, compose preview, finish/save-preview, categories and download
  * are owned here. app.js must not carry a second album fallback after the
@@ -10,7 +10,7 @@
 
 (function attachAlbum(root) {
   const modules = (root.ElementeraDailyModules = root.ElementeraDailyModules || {});
-  const VERSION = 'P3-STRUCT-13A';
+  const VERSION = 'P3-DAILY-REPAIR-02';
 
   const ALBUM_COPY = Object.freeze({
     title: '相册',
@@ -135,20 +135,17 @@
   }
 
   function bindAlbumPreview(env = {}) {
-    if (typeof env.q !== 'function') return false;
+    if (typeof env.q !== 'function' || typeof env.readImageFile !== 'function') return false;
     const input = env.q('#albumImageInput');
     const preview = env.q('#albumPreview');
-    const Reader = env.FileReader || root.FileReader;
-    if (!input || !preview || typeof Reader !== 'function') return false;
+    if (!input || !preview) return false;
     input.onchange = () => {
       const file = input.files && input.files[0];
-      if (!file) return;
-      const reader = new Reader();
-      reader.onload = () => {
-        preview.dataset.image = reader.result;
-        preview.innerHTML = '<img src="' + reader.result + '" alt="album preview">';
-      };
-      reader.readAsDataURL(file);
+      env.readImageFile(file).then((image) => {
+        if (!image) return;
+        preview.dataset.image = image;
+        preview.innerHTML = '<img src="' + image + '" alt="album preview">';
+      }).catch(() => undefined);
     };
     return true;
   }
