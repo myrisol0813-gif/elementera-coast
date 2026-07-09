@@ -1,17 +1,16 @@
 'use strict';
 
 /**
- * Future v106 album module.
+ * P3-STRUCT-13A canonical album module.
  *
- * Current runtime owner: public/app.js, window.__v106SiliconCarbonMoments IIFE.
- * This file is intentionally not imported or loaded yet.
- *
- * P3-STRUCT-03 stages pure label helpers and album copy here. Live album
- * rendering still remains in app.js until a later wiring task.
+ * Album rendering, compose preview, finish/save-preview, categories and download
+ * are owned here. app.js must not carry a second album fallback after the
+ * physical purge.
  */
 
 (function attachAlbum(root) {
   const modules = (root.ElementeraDailyModules = root.ElementeraDailyModules || {});
+  const VERSION = 'P3-STRUCT-13A';
 
   const ALBUM_COPY = Object.freeze({
     title: '相册',
@@ -186,7 +185,8 @@
 
   modules.album = Object.freeze({
     moduleName: 'album',
-    isRuntimeWired: false,
+    VERSION,
+    isRuntimeWired: true,
     ALBUM_COPY,
     ALBUM_CATEGORIES,
     ALBUM_BORDER_COLORS,
