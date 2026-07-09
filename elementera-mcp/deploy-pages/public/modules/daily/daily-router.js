@@ -2,7 +2,7 @@
 
 (function attachDailyRouter(root) {
   const modules = (root.ElementeraDailyModules = root.ElementeraDailyModules || {});
-  const VERSION = 'P3-ENTRY-01R2';
+  const VERSION = 'P3-DAILY-REPAIR-01';
   const TEMPORARY_TAKEOVER = Object.freeze({
     enabled: true,
     reason: 'app.js still contains the v106 daily cluster; capture blocking remains only until physical purge.',
@@ -14,6 +14,18 @@
     moments: '/public/modules/daily/moments.js?v=p3-entry-01r2',
     diary: '/public/modules/daily/diary.js?v=p3-entry-01r2',
     album: '/public/modules/daily/album.js?v=p3-entry-01r2',
+  });
+
+  const DAILY_ROUTES = Object.freeze({
+    main: 'main',
+    dailyHome: 'dailyHome',
+    child: 'child',
+    moments: 'moments',
+    momentsCompose: 'momentsCompose',
+    diary: 'diary',
+    diaryCompose: 'diaryCompose',
+    album: 'album',
+    albumCompose: 'albumCompose',
   });
 
   const ROUTER_SELECTORS = Object.freeze([
@@ -71,10 +83,44 @@
   let momentAvatar = '';
   let lastActivatedHit = null;
   let lastActivatedAt = 0;
+  let dailyNav = {
+    route: DAILY_ROUTES.main,
+    parent: '',
+    openedFrom: '',
+  };
 
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]
   ));
+
+  function panelNode() {
+    return q('#freshDailyPanelV101');
+  }
+
+  function markDailyRoute(route, parent = '') {
+    dailyNav = {
+      route: route || DAILY_ROUTES.main,
+      parent: parent || '',
+      openedFrom: parent || '',
+    };
+    const node = panelNode();
+    if (node) {
+      node.dataset.dailyRoute = dailyNav.route;
+      node.dataset.parentRoute = dailyNav.parent;
+      node.dataset.returnToDailyHome = dailyNav.parent === DAILY_ROUTES.dailyHome ? 'true' : 'false';
+    }
+    return dailyNav;
+  }
+
+  function currentDailyRoute() {
+    const node = panelNode();
+    return node?.dataset?.dailyRoute || dailyNav.route || DAILY_ROUTES.main;
+  }
+
+  function currentParentRoute() {
+    const node = panelNode();
+    return node?.dataset?.parentRoute || dailyNav.parent || '';
+  }
 
   function moduleKeysForDebug() {
     try {
@@ -209,6 +255,7 @@
 
   function showDiagnostic(title, subtitle, state, reason, moduleName) {
     panel(title, subtitle, diagnostic(title, reason, moduleName), state);
+    markDailyRoute(state || DAILY_ROUTES.child, DAILY_ROUTES.dailyHome);
   }
 
   function toast(message) {
@@ -307,88 +354,99 @@
   async function openDaily() {
     try {
       await runModuleAction('dailyShell', 'openDaily');
+      markDailyRoute(DAILY_ROUTES.dailyHome, DAILY_ROUTES.main);
     } catch (error) {
-      showDiagnostic('海岸日报暂不可用', 'Daily shell diagnostic', 'daily', error?.message || String(error), 'dailyShell');
+      showDiagnostic('海岸日报暂不可用', 'Daily shell diagnostic', DAILY_ROUTES.dailyHome, error?.message || String(error), 'dailyShell');
     }
   }
 
   async function openChild(kind, reason = '') {
     try {
       await runModuleAction('dailyShell', 'openChild', kind, reason);
+      markDailyRoute(DAILY_ROUTES.child, DAILY_ROUTES.dailyHome);
     } catch (error) {
-      showDiagnostic(kind || '入口暂不可用', 'Daily child diagnostic', 'child', error?.message || String(error), 'dailyShell');
+      showDiagnostic(kind || '入口暂不可用', 'Daily child diagnostic', DAILY_ROUTES.child, error?.message || String(error), 'dailyShell');
     }
   }
 
   async function openMoments() {
     try {
       await runModuleAction('moments', 'openMoments');
+      markDailyRoute(DAILY_ROUTES.moments, DAILY_ROUTES.dailyHome);
     } catch (error) {
-      showDiagnostic('硅碳圈暂不可用', 'Moments diagnostic', 'moments', error?.message || String(error), 'moments');
+      showDiagnostic('硅碳圈暂不可用', 'Moments diagnostic', DAILY_ROUTES.moments, error?.message || String(error), 'moments');
     }
   }
 
   async function openMomentsCompose() {
     try {
       await runModuleAction('moments', 'openMomentsCompose');
+      markDailyRoute(DAILY_ROUTES.momentsCompose, DAILY_ROUTES.moments);
     } catch (error) {
-      showDiagnostic('发表入口暂不可用', 'Moments compose diagnostic', 'compose', error?.message || String(error), 'moments');
+      showDiagnostic('发表入口暂不可用', 'Moments compose diagnostic', DAILY_ROUTES.momentsCompose, error?.message || String(error), 'moments');
     }
   }
 
   async function finishMoment() {
     try {
       await runModuleAction('moments', 'finishMoment');
+      markDailyRoute(DAILY_ROUTES.moments, DAILY_ROUTES.dailyHome);
     } catch (error) {
-      showDiagnostic('发布暂不可用', 'Moments publish diagnostic', 'moments', error?.message || String(error), 'moments');
+      showDiagnostic('发布暂不可用', 'Moments publish diagnostic', DAILY_ROUTES.moments, error?.message || String(error), 'moments');
     }
   }
 
   async function openDiary() {
     try {
       await runModuleAction('diary', 'openDiary');
+      markDailyRoute(DAILY_ROUTES.diary, DAILY_ROUTES.dailyHome);
     } catch (error) {
-      showDiagnostic('日记暂不可用', 'Diary diagnostic', 'diary', error?.message || String(error), 'diary');
+      showDiagnostic('日记暂不可用', 'Diary diagnostic', DAILY_ROUTES.diary, error?.message || String(error), 'diary');
     }
   }
 
   async function openDiaryCompose() {
     try {
       await runModuleAction('diary', 'openDiaryCompose');
+      markDailyRoute(DAILY_ROUTES.diaryCompose, DAILY_ROUTES.diary);
     } catch (error) {
-      showDiagnostic('写日记暂不可用', 'Diary compose diagnostic', 'diary-compose', error?.message || String(error), 'diary');
+      showDiagnostic('写日记暂不可用', 'Diary compose diagnostic', DAILY_ROUTES.diaryCompose, error?.message || String(error), 'diary');
     }
   }
 
   async function finishDiary() {
     try {
       await runModuleAction('diary', 'finishDiary');
+      markDailyRoute(DAILY_ROUTES.diary, DAILY_ROUTES.dailyHome);
     } catch (error) {
-      showDiagnostic('保存日记暂不可用', 'Diary finish diagnostic', 'diary', error?.message || String(error), 'diary');
+      showDiagnostic('保存日记暂不可用', 'Diary finish diagnostic', DAILY_ROUTES.diary, error?.message || String(error), 'diary');
     }
   }
 
   async function openAlbum() {
     try {
       await runModuleAction('album', 'openAlbum');
+      markDailyRoute(DAILY_ROUTES.album, DAILY_ROUTES.dailyHome);
     } catch (error) {
-      showDiagnostic('相册暂不可用', 'Album diagnostic', 'album', error?.message || String(error), 'album');
+      showDiagnostic('相册暂不可用', 'Album diagnostic', DAILY_ROUTES.album, error?.message || String(error), 'album');
     }
   }
 
   async function openAlbumCompose() {
     try {
       await runModuleAction('album', 'openAlbumCompose');
+      markDailyRoute(DAILY_ROUTES.albumCompose, DAILY_ROUTES.album);
     } catch (error) {
-      showDiagnostic('上传相册暂不可用', 'Album compose diagnostic', 'album-compose', error?.message || String(error), 'album');
+      showDiagnostic('上传相册暂不可用', 'Album compose diagnostic', DAILY_ROUTES.albumCompose, error?.message || String(error), 'album');
     }
   }
 
   async function finishAlbum() {
     try {
       await runModuleAction('album', 'finishAlbum');
+      markDailyRoute(DAILY_ROUTES.album, DAILY_ROUTES.dailyHome);
     } catch (error) {
-      showDiagnostic('保存相册暂不可用', 'Album finish diagnostic', 'album', error?.message || String(error), 'album');
+      showDiagnostic('保存相册暂不可用', 'Album finish diagnostic', DAILY_ROUTES.album, error?.message || String(error), 'album');
     }
   }
 
@@ -412,21 +470,32 @@
     return openChild(kind, 'NO_CANONICAL_MODULE_YET');
   }
 
-  async function topBack() {
-    const state = q('#freshDailyPanelV101')?.dataset.state || 'daily';
-    if (state === 'compose') return openMoments();
-    if (state === 'diary-compose') return openDiary();
-    if (state === 'album-compose') return openAlbum();
-    if (state === 'moments' || state === 'diary' || state === 'album' || state === 'child') return openDaily();
+  async function localBack() {
+    const route = currentDailyRoute();
+    const parent = currentParentRoute();
 
-    const shell = getModule('dailyShell');
-    if (shell && typeof shell.closeDaily === 'function') return shell.closeDaily();
+    if (route === DAILY_ROUTES.dailyHome || parent === DAILY_ROUTES.main) {
+      const shell = getModule('dailyShell');
+      markDailyRoute(DAILY_ROUTES.main, '');
+      if (shell && typeof shell.closeDaily === 'function') return shell.closeDaily();
+      const node = panelNode();
+      if (node) node.hidden = true;
+      showSide();
+      return true;
+    }
 
-    const panelNode = q('#freshDailyPanelV101');
-    if (panelNode) panelNode.hidden = true;
-    showSide();
-    return true;
+    if (route === DAILY_ROUTES.momentsCompose) return openMoments();
+    if (route === DAILY_ROUTES.diaryCompose) return openDiary();
+    if (route === DAILY_ROUTES.albumCompose) return openAlbum();
+
+    if (parent === DAILY_ROUTES.dailyHome || route === DAILY_ROUTES.moments || route === DAILY_ROUTES.diary || route === DAILY_ROUTES.album || route === DAILY_ROUTES.child) {
+      return openDaily();
+    }
+
+    return openDaily();
   }
+
+  const topBack = localBack;
 
   function targetOf(event) {
     const target = event.target;
@@ -488,12 +557,12 @@
     if (action === DAILY_ACTIONS.diaryFinish) return finishDiary();
     if (action === DAILY_ACTIONS.albumCompose) return openAlbumCompose();
     if (action === DAILY_ACTIONS.albumFinish) return finishAlbum();
-    if (action === DAILY_ACTIONS.topBack) return topBack();
+    if (action === DAILY_ACTIONS.topBack) return localBack();
 
     if (action === DAILY_ACTIONS.avatarUpload) {
       const input = q('#scAvatarInput');
       if (!input) {
-        showDiagnostic('头像上传暂不可用', 'Moments diagnostic', 'moments', 'scAvatarInput missing', 'moments');
+        showDiagnostic('头像上传暂不可用', 'Moments diagnostic', DAILY_ROUTES.moments, 'scAvatarInput missing', 'moments');
         return false;
       }
       input.onchange = () => runModuleAction('moments', 'uploadAvatar').catch((error) => toast(error?.message || String(error)));
@@ -504,7 +573,7 @@
     if (action === DAILY_ACTIONS.coverUpload) {
       const input = q('#scCoverInput');
       if (!input) {
-        showDiagnostic('封面上传暂不可用', 'Moments diagnostic', 'moments', 'scCoverInput missing', 'moments');
+        showDiagnostic('封面上传暂不可用', 'Moments diagnostic', DAILY_ROUTES.moments, 'scCoverInput missing', 'moments');
         return false;
       }
       input.onchange = () => runModuleAction('moments', 'uploadCover').catch((error) => toast(error?.message || String(error)));
@@ -560,6 +629,7 @@
     isRuntimeWired: true,
     VERSION,
     TEMPORARY_TAKEOVER,
+    DAILY_ROUTES,
     ROUTER_SELECTORS,
     DAILY_CAPTURE_EVENTS,
     DAILY_ACTIONS,
@@ -572,6 +642,10 @@
     openDiary,
     openAlbum,
     routeRoom,
+    markDailyRoute,
+    currentDailyRoute,
+    currentParentRoute,
+    localBack,
     topBack,
   });
 
