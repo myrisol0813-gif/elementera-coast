@@ -1397,6 +1397,14 @@
     dailyModules.album && typeof dailyModules.album.albumSection === "function"
       ? dailyModules.album.albumSection
       : null;
+  const moduleRenderAlbumHome =
+    dailyModules.album && typeof dailyModules.album.renderAlbumHome === "function"
+      ? dailyModules.album.renderAlbumHome
+      : null;
+  const moduleRenderAlbumCompose =
+    dailyModules.album && typeof dailyModules.album.renderAlbumCompose === "function"
+      ? dailyModules.album.renderAlbumCompose
+      : null;
   function albumCategories() {
     if (moduleAlbumCategories) {
       try {
@@ -1495,22 +1503,51 @@
       "</div></section>"
     );
   }
+  function renderAlbumHome() {
+    if (moduleRenderAlbumHome) {
+      try {
+        return moduleRenderAlbumHome(albumItems);
+      } catch (_) {}
+    }
+    return (
+      '<button type="button" class="album-plus" data-fresh-daily-action="album-compose">＋</button><p class="coast-room-card">' +
+      esc(albumCopy("composeNotice", "本地草稿原型，暂未同步服务器。刷新后可能消失。")) +
+      '</p><section class="album-wall">' +
+      albumCategories().map(albumSection).join("") +
+      "</section>"
+    );
+  }
+  function renderAlbumCompose() {
+    if (moduleRenderAlbumCompose) {
+      try {
+        return moduleRenderAlbumCompose();
+      } catch (_) {}
+    }
+    return (
+      '<section class="album-compose"><p class="coast-room-card">' +
+      esc(albumCopy("composeNotice", "本地草稿原型，暂未同步服务器。刷新后可能消失。")) +
+      '</p><label class="album-upload"><input id="albumImageInput" type="file" accept="image/*" hidden><span>＋</span><b>选择一张图片</b></label><div class="album-preview" id="albumPreview"></div><label class="album-select-label">归类<select id="albumCategory">' +
+      albumCategoryOptions() +
+      '</select></label><button type="button" class="album-finish" data-fresh-daily-action="album-finish">' +
+      esc(albumCopy("composeButton", "保存本地相册预览")) +
+      "</button></section>"
+    );
+  }
   function openAlbum() {
     panel(
       albumCopy("title", "相册"),
       albumCopy("subtitle", "本地草稿原型，暂未同步服务器"),
-      '<button type="button" class="album-plus" data-fresh-daily-action="album-compose">＋</button><p class="coast-room-card">本地草稿原型，暂未同步服务器。刷新后可能消失。</p><section class="album-wall">' +
-        albumCategories().map(albumSection).join("") +
-        "</section>",
+      renderAlbumHome(),
       "album",
     );
   }
   function openAlbumCompose() {
-    const body =
-      '<section class="album-compose"><p class="coast-room-card">本地草稿原型，暂未同步服务器。刷新后可能消失。</p><label class="album-upload"><input id="albumImageInput" type="file" accept="image/*" hidden><span>＋</span><b>选择一张图片</b></label><div class="album-preview" id="albumPreview"></div><label class="album-select-label">归类<select id="albumCategory">' +
-      albumCategoryOptions() +
-      '</select></label><button type="button" class="album-finish" data-fresh-daily-action="album-finish">保存本地相册预览</button></section>';
-    panel(albumCopy("composeTitle", "上传相册"), albumCopy("subtitle", "本地草稿原型，暂未同步服务器"), body, "album-compose");
+    panel(
+      albumCopy("composeTitle", "上传相册"),
+      albumCopy("subtitle", "本地草稿原型，暂未同步服务器"),
+      renderAlbumCompose(),
+      "album-compose",
+    );
     const inp = q("#albumImageInput"),
       prev = q("#albumPreview");
     if (inp && prev)
@@ -1525,6 +1562,7 @@
         r.readAsDataURL(f);
       };
   }
+
   function finishAlbum() {
     const image = q("#albumPreview")?.dataset.image || "";
     if (image) {

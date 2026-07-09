@@ -98,6 +98,36 @@
     );
   }
 
+  function albumCategoryOptions() {
+    return Object.keys(ALBUM_CATEGORIES)
+      .map((category) => '<option value="' + escapeHtml(category) + '">' + escapeHtml(albumLabel(category)) + '</option>')
+      .join('');
+  }
+
+  function renderAlbumHome(items = []) {
+    return (
+      '<button type="button" class="album-plus" data-fresh-daily-action="album-compose">＋</button>' +
+      '<p class="coast-room-card">' +
+      escapeHtml(ALBUM_COPY.composeNotice) +
+      '</p><section class="album-wall">' +
+      Object.keys(ALBUM_CATEGORIES).map((category) => albumSection(category, items)).join('') +
+      '</section>'
+    );
+  }
+
+  function renderAlbumCompose() {
+    return (
+      '<section class="album-compose"><p class="coast-room-card">' +
+      escapeHtml(ALBUM_COPY.composeNotice) +
+      '</p><label class="album-upload"><input id="albumImageInput" type="file" accept="image/*" hidden><span>＋</span><b>选择一张图片</b></label><div class="album-preview" id="albumPreview"></div><label class="album-select-label">归类<select id="albumCategory">' +
+      albumCategoryOptions() +
+      '</select></label><button type="button" class="album-finish" data-fresh-daily-action="album-finish">' +
+      escapeHtml(ALBUM_COPY.composeButton) +
+      '</button></section>'
+    );
+  }
+
+
   modules.album = Object.freeze({
     moduleName: 'album',
     isRuntimeWired: false,
@@ -109,5 +139,8 @@
     createAlbumDraft,
     albumCard,
     albumSection,
+    albumCategoryOptions,
+    renderAlbumHome,
+    renderAlbumCompose,
   });
 })(globalThis);
