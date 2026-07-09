@@ -1396,12 +1396,57 @@
       FileReader: globalThis.FileReader,
     };
   }
+  function emergencyAlbumCategories() {
+    try {
+      const categories = albumModule.ALBUM_CATEGORIES;
+      if (categories && typeof categories === "object") {
+        const keys = Object.keys(categories).filter((key) => typeof categories[key] === "string");
+        if (keys.length) return keys;
+      }
+    } catch (_) {}
+    return ["xiaohan", "myri", "together"];
+  }
+  function emergencyAlbumLabel(cat) {
+    return albumDownloadLabel(cat);
+  }
+  function emergencyAlbumBorderColor(index) {
+    if (typeof albumModule.albumBorderColor === "function") {
+      try {
+        return albumModule.albumBorderColor(index);
+      } catch (_) {}
+    }
+    const colors = ["#d9a441", "#8fb0bd", "#d78fb1", "#88b86a", "#b49bdf", "#ef9c74", "#7fb9a8", "#d0c269"];
+    return colors[index % colors.length];
+  }
+  function emergencyAlbumCard(item, index) {
+    return '<figure class="album-card" style="--album-border:' +
+      emergencyAlbumBorderColor(index) +
+      '"><img src="' +
+      item.image +
+      '" alt="海岸涂鸦"><figcaption><span>' +
+      esc(emergencyAlbumLabel(item.cat)) +
+      '</span><button type="button" data-album-download="' +
+      esc(item.id) +
+      '">下载</button></figcaption></figure>';
+  }
+  function emergencyAlbumSection(cat) {
+    const list = albumItems.filter((item) => item.cat === cat);
+    return '<section class="album-section"><h2>' +
+      esc(emergencyAlbumLabel(cat)) +
+      '</h2><div class="album-grid">' +
+      (list.length
+        ? list.map(emergencyAlbumCard).join("")
+        : '<div class="album-empty">' +
+          esc(albumModuleCopy("emptyText", "暂无图片。这里是本地草稿原型，暂未同步服务器。")) +
+          "</div>") +
+      "</div></section>";
+  }
   function emergencyAlbumHome() {
     return '<button type="button" class="album-plus" data-fresh-daily-action="album-compose">＋</button><p class="coast-room-card">' +
       albumModuleCopy("composeNotice", "本地草稿原型，暂未同步服务器。刷新后可能消失。") +
-      '</p><section class="album-wall"><div class="album-empty">' +
-      albumModuleCopy("emptyText", "暂无图片。这里是本地草稿原型，暂未同步服务器。") +
-      "</div></section>";
+      '</p><section class="album-wall">' +
+      emergencyAlbumCategories().map(emergencyAlbumSection).join("") +
+      "</section>";
   }
   function emergencyAlbumCompose() {
     return '<section class="album-compose"><p class="coast-room-card">' +
