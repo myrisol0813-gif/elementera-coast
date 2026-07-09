@@ -2,6 +2,7 @@
 
 (function attachDailyShell(root) {
   const modules = (root.ElementeraDailyModules = root.ElementeraDailyModules || {});
+  const VERSION = 'P3-STRUCT-13A';
   const PANEL_ID = 'freshDailyPanelV101';
   const DAILY_ROOM_NAMES = Object.freeze({
     moments: '硅碳圈',
@@ -136,6 +137,7 @@
 
   modules.dailyShell = Object.freeze({
     moduleName: 'dailyShell',
+    VERSION,
     panelId: PANEL_ID,
     isRuntimeWired: true,
     DAILY_ROOM_NAMES,
