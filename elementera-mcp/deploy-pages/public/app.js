@@ -1381,10 +1381,28 @@
     dailyModules.album && dailyModules.album.ALBUM_COPY && typeof dailyModules.album.ALBUM_COPY === "object"
       ? dailyModules.album.ALBUM_COPY
       : null;
+  const moduleAlbumCategories =
+    dailyModules.album && dailyModules.album.ALBUM_CATEGORIES && typeof dailyModules.album.ALBUM_CATEGORIES === "object"
+      ? dailyModules.album.ALBUM_CATEGORIES
+      : null;
   const moduleCreateAlbumDraft =
     dailyModules.album && typeof dailyModules.album.createAlbumDraft === "function"
       ? dailyModules.album.createAlbumDraft
       : null;
+  function albumCategories() {
+    if (moduleAlbumCategories) {
+      try {
+        const keys = Object.keys(moduleAlbumCategories).filter((key) => typeof moduleAlbumCategories[key] === "string");
+        if (keys.length) return keys;
+      } catch (_) {}
+    }
+    return ["xiaohan", "myri", "together"];
+  }
+  function albumCategoryOptions() {
+    return albumCategories()
+      .map((cat) => '<option value="' + esc(cat) + '">' + esc(albumLabel(cat)) + "</option>")
+      .join("");
+  }
   function albumCopy(key, fallback) {
     if (moduleAlbumCopy) {
       try {
@@ -1464,16 +1482,16 @@
       albumCopy("title", "相册"),
       albumCopy("subtitle", "本地草稿原型，暂未同步服务器"),
       '<button type="button" class="album-plus" data-fresh-daily-action="album-compose">＋</button><p class="coast-room-card">本地草稿原型，暂未同步服务器。刷新后可能消失。</p><section class="album-wall">' +
-        albumSection("xiaohan") +
-        albumSection("myri") +
-        albumSection("together") +
+        albumCategories().map(albumSection).join("") +
         "</section>",
       "album",
     );
   }
   function openAlbumCompose() {
     const body =
-      '<section class="album-compose"><p class="coast-room-card">本地草稿原型，暂未同步服务器。刷新后可能消失。</p><label class="album-upload"><input id="albumImageInput" type="file" accept="image/*" hidden><span>＋</span><b>选择一张图片</b></label><div class="album-preview" id="albumPreview"></div><label class="album-select-label">归类<select id="albumCategory"><option value="xiaohan">小寒</option><option value="myri">Myri</option><option value="together">蛇蛇狗合照</option></select></label><button type="button" class="album-finish" data-fresh-daily-action="album-finish">保存本地相册预览</button></section>';
+      '<section class="album-compose"><p class="coast-room-card">本地草稿原型，暂未同步服务器。刷新后可能消失。</p><label class="album-upload"><input id="albumImageInput" type="file" accept="image/*" hidden><span>＋</span><b>选择一张图片</b></label><div class="album-preview" id="albumPreview"></div><label class="album-select-label">归类<select id="albumCategory">' +
+      albumCategoryOptions() +
+      '</select></label><button type="button" class="album-finish" data-fresh-daily-action="album-finish">保存本地相册预览</button></section>';
     panel(albumCopy("composeTitle", "上传相册"), albumCopy("subtitle", "本地草稿原型，暂未同步服务器"), body, "album-compose");
     const inp = q("#albumImageInput"),
       prev = q("#albumPreview");
