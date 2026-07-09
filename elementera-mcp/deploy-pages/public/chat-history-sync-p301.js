@@ -73,9 +73,10 @@
   function setCurrentConversationId(id) { const clean = cleanId(id || 'main'); localStorage.setItem(CIDK, clean); return clean; }
   function turnKey(id = currentConversationId()) { return `${TK}.${cleanId(id)}`; }
   function LS(id = currentConversationId()) {
-    const keyed = J(turnKey(id), null);
+    const convId = cleanId(id);
+    const keyed = J(turnKey(convId), null);
     if (keyed?.v === 2) return NS(keyed);
-    if (id === 'main') {
+    if (convId === 'main') {
       const old = J(TK, null);
       if (old?.v === 2) return NS(old);
       return FT(J(CK, []));
@@ -132,35 +133,43 @@
     if (!res.ok || data.ok === false) throw Error(data?.error?.message || `${url} ${res.status}`);
     return data;
   }
-  function ensureConversationSection() {
+  function sectionTitle(section) { return (section?.querySelector('h2')?.textContent || '').trim(); }
+  function isConversationSection(section) {
+    if (!section) return false;
+    return section.id === 'conversationSectionP3' || section.dataset.owner === 'chat-conversations' || sectionTitle(section) === '主聊天窗口' || !!section.querySelector('#conversationListP3,[data-conversation-id]');
+  }
+  function normalizeConversationSection() {
     const nav = $('.history-list');
     if (!nav) return null;
-    let section = $('#conversationSectionP3', nav);
-    if (!section) {
-      section = $$('.history-list section').find((item) => (item.querySelector('h2')?.textContent || '').includes('主聊天窗口')) || document.createElement('section');
-      section.id = 'conversationSectionP3';
-      section.dataset.owner = 'chat-conversations';
-      if (!section.isConnected) {
-        const firstSection = $('.history-list section');
-        if (firstSection?.nextSibling) nav.insertBefore(section, firstSection.nextSibling);
-        else nav.appendChild(section);
-      }
-    }
-    let heading = section.querySelector('h2');
-    if (!heading) { heading = document.createElement('h2'); section.prepend(heading); }
+    const sections = $$('.history-list > section', nav);
+    const candidates = sections.filter(isConversationSection);
+    let canonical = candidates.find((section) => section.id === 'conversationSectionP3') || candidates.find((section) => section.dataset.owner === 'chat-conversations') || candidates[0];
+    if (!canonical) canonical = document.createElement('section');
+    canonical.id = 'conversationSectionP3';
+    canonical.dataset.owner = 'chat-conversations';
+    for (const section of candidates) if (section !== canonical) section.remove();
+    if (!canonical.isConnected) nav.appendChild(canonical);
+    let heading = canonical.querySelector('h2');
+    if (!heading) { heading = document.createElement('h2'); canonical.prepend(heading); }
     heading.textContent = '主聊天窗口';
-    let list = $('#conversationListP3', section);
+    let list = $('#conversationListP3', canonical);
     if (!list) {
       list = document.createElement('div');
       list.id = 'conversationListP3';
-      const oldButtons = Array.from(section.querySelectorAll('[data-conversation-id]'));
-      section.appendChild(list);
-      oldButtons.forEach((button) => list.appendChild(button));
+      canonical.appendChild(list);
     }
-    return list;
+    $$('[data-conversation-id]', canonical).forEach((button) => { if (!list.contains(button)) list.appendChild(button); });
+    $$('[data-conversation-id]', nav).forEach((button) => { if (!list.contains(button)) button.remove(); });
+    const liveSections = $$('.history-list > section', nav).filter((section) => section !== canonical);
+    const roomWindow = liveSections.find((section) => /房间窗口/.test(sectionTitle(section)));
+    const mainRoom = liveSections.find((section) => /主房间/.test(sectionTitle(section)));
+    if (roomWindow) nav.insertBefore(canonical, roomWindow);
+    else if (mainRoom && mainRoom.nextSibling !== canonical) nav.insertBefore(canonical, mainRoom.nextSibling);
+    return canonical;
   }
   function renderConversations(list = J(CLK, [])) {
-    const node = ensureConversationSection();
+    const section = normalizeConversationSection();
+    const node = section && $('#conversationListP3', section);
     if (!node) return;
     const current = currentConversationId();
     node.innerHTML = (Array.isArray(list) ? list : []).map((item) => `<button class="history-item ${item.id === current ? 'is-active' : ''}" type="button" data-conversation-id="${E(item.id)}">${E(item.title || '新聊天')}</button>`).join('') || '<p class="history-empty">还没有聊天窗口</p>';
@@ -196,38 +205,38 @@
     return NS(history);
   }
   async function PH(s, id = currentConversationId()) {
-    if (!profileHydrated) return;
     const convId = cleanId(id);
-    const body = { ...NS(s), conversation_id: convId, profile: localProfile() };
+    const body = { ...NS(s), conversation_id: convId, ...(profileHydrated ? { profile: localProfile() } : {}) };
     await apiJson(`${API}?conversation_id=${encodeURIComponent(convId)}`, { method: 'PUT', body: JSON.stringify(body) });
   }
   function SY(s, id = currentConversationId()) {
     const convId = cleanId(id);
     const state = NS(s);
     clearTimeout(syncTimers.get(convId));
-    syncTimers.set(convId, setTimeout(() => PH(state, convId).catch((error) => console.warn('[P3-CHAT-CONV-STABILIZE-02]', error)), 800));
+    syncTimers.set(convId, setTimeout(() => PH(state, convId).catch((error) => console.warn('[P3-CHAT-CONV-STABILIZE-03]', error)), 800));
   }
   function syncProfileSoon() { if (profileHydrated) SY(LS(), currentConversationId()); }
   async function loadConversation(id) {
+    const previousId = currentConversationId();
+    if (previousId) { SS(LS(previousId), false, previousId); SY(LS(previousId), previousId); }
     const convId = setCurrentConversationId(id);
     renderConversations();
     const local = LS(convId);
     try {
       const server = await GH(convId);
-      if (server.turns.length) { SS(server, false, convId); R(server); }
-      else { SS(local, false, convId); R(local); if (local.turns.length) SY(local, convId); }
+      if (server.turns.length) { SS(server, false, convId); R(server, convId); }
+      else { SS(local, false, convId); R(local, convId); if (local.turns.length) SY(local, convId); }
     } catch (error) {
-      console.warn('[P3-CHAT-CONV-STABILIZE-02] history fetch failed', error);
-      R(local);
+      console.warn('[P3-CHAT-CONV-STABILIZE-03] history fetch failed', error);
+      R(local, convId);
     }
   }
-  async function readableState(id) {
-    try { return await GH(id, { skipProfile: true }); } catch { return null; }
-  }
+  async function readableState(id) { try { return await GH(id, { skipProfile: true }); } catch { return null; } }
   async function BO() {
     let list = J(CLK, []);
+    normalizeConversationSection();
     renderConversations(list);
-    try { list = await fetchConversations(); } catch (error) { console.warn('[P3-CHAT-CONV-STABILIZE-02] conversations fetch failed', error); }
+    try { list = await fetchConversations(); } catch (error) { console.warn('[P3-CHAT-CONV-STABILIZE-03] conversations fetch failed', error); }
     let target = null;
     const localId = localStorage.getItem(CIDK);
     if (localId && list.some((item) => item.id === localId)) {
@@ -247,16 +256,18 @@
     if (!target) target = list[0];
     if (!target) {
       try { target = await createConversation('新聊天'); }
-      catch (error) { console.warn('[P3-CHAT-CONV-STABILIZE-02] conversation create failed', error); target = { id: 'main', title: '主聊天' }; }
+      catch (error) { console.warn('[P3-CHAT-CONV-STABILIZE-03] conversation create failed', error); target = { id: 'main', title: '主聊天' }; }
     }
     await loadConversation(target.id);
   }
   async function newConversation() {
+    const previousId = currentConversationId();
+    if (previousId) { SS(LS(previousId), false, previousId); SY(LS(previousId), previousId); }
     const conversation = await createConversation('新聊天');
     setCurrentConversationId(conversation.id);
     const empty = { v: 2, updated_at: NO(), turns: [] };
     SS(empty, false, conversation.id);
-    R(empty);
+    R(empty, conversation.id);
     renderConversations();
     if (profileHydrated) SY(empty, conversation.id);
   }
@@ -283,14 +294,14 @@
   }
   async function conversationAction(id) {
     suppressConversationClick = true;
-    setTimeout(() => { suppressConversationClick = false; }, 700);
+    setTimeout(() => { suppressConversationClick = false; }, 800);
     const action = prompt('窗口操作：输入 1 改名，输入 2 删除', '1');
     if (action === '1') await renameConversation(id).catch((error) => alert(`改名失败：${error.message || error}`));
     if (action === '2') await deleteConversation(id).catch((error) => alert(`删除失败：${error.message || error}`));
   }
-  async function autoTitleIfNeeded(state, turn) {
+  async function autoTitleIfNeeded(state, turn, id = currentConversationId()) {
     const list = J(CLK, []);
-    const conv = currentConversation(list);
+    const conv = list.find((item) => item.id === cleanId(id));
     if (!conv || conv.title_manual || conv.title_generated_at || !defaultTitle(conv.title) || NS(state).turns.length !== 1) return;
     const ui = C(turn.user.active, turn.user.variants.length || 1);
     const user = turn.user.variants[ui]?.content || '';
@@ -298,13 +309,13 @@
     const assistant = assistants[C(turn.assistant.activeByUserVariant[ui], assistants.length || 1)]?.content || '';
     if (!user.trim() || !assistant.trim() || assistant.startsWith('正在通过海岸 API')) return;
     try {
-      const data = await apiJson(TITLE_API, { method: 'POST', body: JSON.stringify({ conversation_id: currentConversationId(), user, assistant }) });
+      const data = await apiJson(TITLE_API, { method: 'POST', body: JSON.stringify({ conversation_id: cleanId(id), user, assistant }) });
       if (data.conversation) {
         const next = J(CLK, []).map((item) => item.id === data.conversation.id ? data.conversation : item);
         W(CLK, next);
         renderConversations(next);
       }
-    } catch (error) { console.warn('[P3-CHAT-CONV-STABILIZE-02] title skipped', error); }
+    } catch (error) { console.warn('[P3-CHAT-CONV-STABILIZE-03] title skipped', error); }
   }
   function AV() {
     const url = localStorage.getItem(AK) || '';
@@ -319,8 +330,10 @@
     style.textContent = '.variant-switch-p303a{display:inline-flex;gap:6px;margin-left:6px;color:var(--muted);font-size:12px}.variant-switch-p303a button{width:26px;height:24px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--text)}.assistant-text .chat-error-detail{display:block;margin-top:8px;color:var(--muted);font-size:12px;line-height:1.55}.message[data-turn]{touch-action:pan-y}.history-empty{padding:10px 14px;color:var(--muted);font-size:13px}#conversationListP3{display:grid;gap:2px}';
     document.head.appendChild(style);
   }
-  function R(s = LS()) {
-    const state = NS(s);
+  function R(s = LS(), id = currentConversationId()) {
+    const convId = cleanId(id);
+    const state = SS(NS(s), false, convId);
+    if (convId !== currentConversationId()) return;
     const box = $('#messages');
     const scroller = $('#messageScroller');
     if (!box) return;
@@ -330,13 +343,12 @@
       const list = turn.assistant.variantsByUserVariant[ui] || [];
       const ai = C(turn.assistant.activeByUserVariant[ui], list.length || 1);
       const assistant = list[ai];
-      const isLoading = loading && loading.turn === turn.id && loading.user === ui && loading.assistant === ai;
+      const isLoading = loading && loading.turn === turn.id && loading.user === ui && loading.assistant === ai && loading.conversation === convId;
       const userHtml = user ? `<article class="message user" data-turn="${E(turn.id)}" data-role="user"><div class="content"><div class="user-bubble">${E(user.content)}</div><div class="user-actions" data-ut="${E(turn.id)}">${BT('edit', '编辑', 'data-ua="edit"')}${BT('delete', '删除', 'data-ua="delete"')}${SW('user', turn, ui, turn.user.variants.length)}</div></div></article>` : '';
       const assistantHtml = assistant ? `<article class="message assistant" data-turn="${E(turn.id)}" data-role="assistant">${AV()}<div class="content"><div class="assistant-text">${HT(assistant.content)}${assistant.errorDetail ? `<span class="chat-error-detail">${E(assistant.errorDetail)}</span>` : ''}${isLoading ? '<span class="typing-cursor"></span>' : ''}</div><div class="assistant-actions" data-at="${E(turn.id)}">${BT('copy', '复制')}${BT('like', '点赞')}${BT('refresh', '重新生成')}${BT('favorite', '收藏')}${BT('delete', '删除')}${SW('assistant', turn, ai, list.length)}</div></div></article>` : '';
       return userHtml + assistantHtml;
     }).join('') + '<div class="thread-spacer"></div>';
     requestAnimationFrame(() => { if (scroller) scroller.scrollTop = scroller.scrollHeight; });
-    SS(state, false);
   }
   function currentModel() { const model = localStorage.getItem(MK) || DM; localStorage.setItem(MK, model); refreshModelLabel(); return model; }
   function setBusy(on) {
@@ -360,8 +372,8 @@
     }
     return out.filter((item) => item.content.trim()).slice(-20);
   }
-  async function generateAssistant(s, turnId) {
-    const convId = currentConversationId();
+  async function generateAssistant(s, turnId, id = currentConversationId()) {
+    const convId = cleanId(id);
     const state = NS(s);
     const turn = state.turns.find((item) => item.id === turnId);
     if (!turn) return;
@@ -372,8 +384,8 @@
     turn.assistant.variantsByUserVariant[key].push(assistant);
     const ai = turn.assistant.variantsByUserVariant[key].length - 1;
     turn.assistant.activeByUserVariant[key] = ai;
-    loading = { turn: turnId, user: ui, assistant: ai };
-    setBusy(true); R(state); SY(state, convId);
+    loading = { conversation: convId, turn: turnId, user: ui, assistant: ai };
+    setBusy(true); R(state, convId); SY(state, convId);
     const model = currentModel();
     const settings = window.elementeraRunControl?.getSettings?.() || {};
     const maxTokens = settings.outputLength === 'long' ? 1200 : settings.outputLength === 'short' ? 350 : 600;
@@ -393,68 +405,76 @@
       chatAbort = null;
       loading = null;
       setBusy(false);
-      R(state); SY(state, convId);
-      if (ok) autoTitleIfNeeded(state, turn);
-      fetchConversations().catch(() => undefined);
+      SS(state, false, convId);
+      try { await PH(state, convId); }
+      catch (error) { assistant.errorDetail = [assistant.errorDetail, `history sync: ${error.message || error}`].filter(Boolean).join('\n'); SY(state, convId); }
+      R(state, convId);
+      if (ok) autoTitleIfNeeded(state, turn, convId);
     }
   }
   function send(text) {
     const input = $('#promptInput');
-    const state = LS();
+    const convId = currentConversationId();
+    const state = LS(convId);
     const turn = { id: ID(), user: { active: 0, variants: [V(text)] }, assistant: { activeByUserVariant: { 0: 0 }, variantsByUserVariant: { 0: [] } } };
     state.turns.push(turn);
     if (input) { input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true })); }
-    generateAssistant(state, turn.id);
+    generateAssistant(state, turn.id, convId);
   }
   function editUser(turnId) {
-    const state = LS(); const turn = state.turns.find((item) => item.id === turnId); if (!turn) return;
+    const convId = currentConversationId();
+    const state = LS(convId); const turn = state.turns.find((item) => item.id === turnId); if (!turn) return;
     const ui = C(turn.user.active, turn.user.variants.length || 1);
     const next = prompt('编辑消息', turn.user.variants[ui]?.content || '');
     if (next == null || next === turn.user.variants[ui]?.content) return;
     turn.user.variants.push(V(next));
     const ni = turn.user.variants.length - 1;
     turn.user.active = ni;
-    turn.assistant.variantsByUserVariant[ni] = [];
-    turn.assistant.activeByUserVariant[ni] = 0;
-    generateAssistant(state, turn.id);
+    turn.assistant.variantsByUserVariant[String(ni)] = [];
+    turn.assistant.activeByUserVariant[String(ni)] = 0;
+    generateAssistant(state, turn.id, convId);
   }
   function deleteUser(turnId) {
-    const state = LS(); const index = state.turns.findIndex((item) => item.id === turnId); const turn = state.turns[index]; if (!turn) return;
+    const convId = currentConversationId();
+    const state = LS(convId); const index = state.turns.findIndex((item) => item.id === turnId); const turn = state.turns[index]; if (!turn) return;
     const ui = C(turn.user.active, turn.user.variants.length || 1);
-    if (turn.user.variants.length <= 1) state.turns.splice(index, 1);
+    turn.user.variants.splice(ui, 1);
+    if (!turn.user.variants.length) state.turns.splice(index, 1);
     else {
-      turn.user.variants.splice(ui, 1);
       const variantsByUserVariant = {}; const activeByUserVariant = {};
       for (let i = 0; i < turn.user.variants.length; i += 1) {
         const oldKey = String(i >= ui ? i + 1 : i); const key = String(i);
-        variantsByUserVariant[key] = turn.assistant.variantsByUserVariant[oldKey] || [];
-        activeByUserVariant[key] = C(turn.assistant.activeByUserVariant[oldKey], variantsByUserVariant[key].length || 1);
+        variantsByUserVariant[key] = turn.assistant.variantsByUserVariant?.[oldKey] || [];
+        activeByUserVariant[key] = C(turn.assistant.activeByUserVariant?.[oldKey], variantsByUserVariant[key].length || 1);
       }
       turn.user.active = Math.min(ui, turn.user.variants.length - 1);
       turn.assistant.variantsByUserVariant = variantsByUserVariant;
       turn.assistant.activeByUserVariant = activeByUserVariant;
     }
-    R(state); SY(state);
+    R(state, convId); SY(state, convId);
   }
   function deleteAssistant(turnId) {
-    const state = LS(); const turn = state.turns.find((item) => item.id === turnId); if (!turn) return;
-    const ui = C(turn.user.active, turn.user.variants.length || 1); const list = turn.assistant.variantsByUserVariant[ui] || [];
+    const convId = currentConversationId();
+    const state = LS(convId); const turn = state.turns.find((item) => item.id === turnId); if (!turn) return;
+    const ui = C(turn.user.active, turn.user.variants.length || 1); const key = String(ui); const list = turn.assistant.variantsByUserVariant[key] || [];
     if (!list.length) return;
-    const ai = C(turn.assistant.activeByUserVariant[ui], list.length);
+    const ai = C(turn.assistant.activeByUserVariant[key], list.length);
     list.splice(ai, 1);
-    turn.assistant.activeByUserVariant[ui] = Math.min(ai, Math.max(0, list.length - 1));
-    R(state); SY(state);
+    turn.assistant.variantsByUserVariant[key] = list;
+    turn.assistant.activeByUserVariant[key] = Math.min(ai, Math.max(0, list.length - 1));
+    R(state, convId); SY(state, convId);
   }
   function switchVariant(turnId, kind, direction) {
-    const state = LS(); const turn = state.turns.find((item) => item.id === turnId); if (!turn) return;
+    const convId = currentConversationId();
+    const state = LS(convId); const turn = state.turns.find((item) => item.id === turnId); if (!turn) return;
     if (kind === 'user') {
       const count = turn.user.variants.length;
       turn.user.active = (C(turn.user.active, count) + (direction === 'n' ? 1 : -1) + count) % count;
     } else {
-      const ui = C(turn.user.active, turn.user.variants.length || 1); const list = turn.assistant.variantsByUserVariant[ui] || []; const count = list.length;
-      if (count > 1) turn.assistant.activeByUserVariant[ui] = (C(turn.assistant.activeByUserVariant[ui], count) + (direction === 'n' ? 1 : -1) + count) % count;
+      const ui = C(turn.user.active, turn.user.variants.length || 1); const key = String(ui); const list = turn.assistant.variantsByUserVariant[key] || []; const count = list.length;
+      if (count > 1) turn.assistant.activeByUserVariant[key] = (C(turn.assistant.activeByUserVariant[key], count) + (direction === 'n' ? 1 : -1) + count) % count;
     }
-    R(state); SY(state);
+    R(state, convId); SY(state, convId);
   }
   function installProfileWatch() {
     if (window.__ecChatProfileWatchD100) return;
@@ -467,7 +487,7 @@
     };
   }
   function installCanonicalOwner() {
-    CSS(); installProfileWatch(); refreshModelLabel(); renderConversations(); R(LS()); BO();
+    CSS(); installProfileWatch(); refreshModelLabel(); normalizeConversationSection(); renderConversations(); R(LS()); BO();
     const input = $('#promptInput'); const form = $('#composer'); const call = $('#callButton');
     if (input && !input.dataset.cc2) { input.dataset.cc2 = '1'; input.addEventListener('keydown', (event) => { if (event.key === 'Enter') event.stopImmediatePropagation(); }, true); }
     if (form && !form.dataset.cc2) { form.dataset.cc2 = '1'; form.addEventListener('submit', (event) => { event.preventDefault(); event.stopImmediatePropagation(); const text = (input?.value || '').trim(); if (chatAbort) return chatAbort.abort(); if (text) send(text); }, true); }
@@ -476,7 +496,7 @@
   document.addEventListener('click', async (event) => {
     const newButton = event.target.closest('#newChatButton');
     if (newButton) { event.preventDefault(); event.stopImmediatePropagation(); newConversation().catch((error) => alert(`新建窗口失败：${error.message || error}`)); return; }
-    const conversationButton = event.target.closest('[data-conversation-id]');
+    const conversationButton = event.target.closest('#conversationListP3 [data-conversation-id]');
     if (conversationButton) { event.preventDefault(); event.stopImmediatePropagation(); if (suppressConversationClick) return; loadConversation(conversationButton.dataset.conversationId).catch((error) => alert(`切换窗口失败：${error.message || error}`)); return; }
     const switcher = event.target.closest('[data-d]');
     if (switcher) { event.preventDefault(); event.stopImmediatePropagation(); const wrap = switcher.closest('[data-k]'); switchVariant(wrap.dataset.t, wrap.dataset.k, switcher.dataset.d); return; }
@@ -487,15 +507,15 @@
       event.preventDefault(); event.stopImmediatePropagation();
       const turnId = assistantAction.closest('.assistant-actions')?.dataset.at; const action = assistantAction.dataset.action; const state = LS(); const turn = state.turns.find((item) => item.id === turnId);
       if (!turn) return;
-      const ui = C(turn.user.active, turn.user.variants.length || 1); const list = turn.assistant.variantsByUserVariant[ui] || []; const assistant = list[C(turn.assistant.activeByUserVariant[ui], list.length || 1)];
+      const ui = C(turn.user.active, turn.user.variants.length || 1); const list = turn.assistant.variantsByUserVariant[String(ui)] || []; const assistant = list[C(turn.assistant.activeByUserVariant[String(ui)], list.length || 1)];
       if (action === 'copy') { await navigator.clipboard?.writeText(assistant?.content || ''); return; }
       if (action === 'like' || action === 'favorite') { assistantAction.classList.toggle('is-active'); return; }
       if (action === 'delete') { deleteAssistant(turnId); return; }
-      if (action === 'refresh') { generateAssistant(state, turnId); return; }
+      if (action === 'refresh') { generateAssistant(state, turnId, currentConversationId()); return; }
     }
   }, true);
   document.addEventListener('pointerdown', (event) => {
-    const conversationButton = event.target.closest('[data-conversation-id]');
+    const conversationButton = event.target.closest('#conversationListP3 [data-conversation-id]');
     if (conversationButton) {
       clearTimeout(conversationLongTimer);
       conversationLongTimer = setTimeout(() => conversationAction(conversationButton.dataset.conversationId), 700);
