@@ -12,6 +12,30 @@
       /[&<>]/g,
       (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c],
     );
+  function dailyRouterFromV097() {
+    return (
+      window.ElementeraDailyModules?.dailyRouter ||
+      window.ElementeraDailyRouterP3Struct13A ||
+      window.ElementeraDailyRouterP3Struct13 ||
+      null
+    );
+  }
+  function openDailyCanonicalFromV097() {
+    const router = dailyRouterFromV097();
+    if (router && typeof router.openDaily === "function") {
+      router.openDaily();
+      return true;
+    }
+    return false;
+  }
+  function routeDailyCanonicalFromV097(kind) {
+    const router = dailyRouterFromV097();
+    if (router && typeof router.routeRoom === "function") {
+      router.routeRoom(kind);
+      return true;
+    }
+    return false;
+  }
   function load(k, d) {
     try {
       return JSON.parse(localStorage.getItem(k) || "") || d;
@@ -191,14 +215,16 @@
     );
   }
   function dailyV097() {
+    if (openDailyCanonicalFromV097()) return;
     let p = openLite(
       "海岸日报",
-      "海岸日报暂未接入",
-      '<section class="coast-room-card"><h2>海岸日报暂未接入</h2><p>之后这里会承接日报、相册、日记和小组件。</p><p>当前只保留入口，不生成测试内容。</p></section>',
+      "海岸日报模块加载中",
+      '<section class="coast-room-card"><h2>海岸日报模块加载中</h2><p>canonical daily router 尚未就绪，请稍后再试。</p></section>',
     );
     p.dataset.room = "daily";
   }
   function dailyRoomV097(kind) {
+    if (routeDailyCanonicalFromV097(kind)) return;
     const m = {
       moments: "朋友圈",
       diary: "日记",
@@ -209,10 +235,10 @@
     const title = m[kind] || "海岸日报";
     let p = openLite(
       title,
-      "海岸日报暂未接入",
+      "海岸日报模块加载中",
       '<section class="coast-room-card"><h2>' +
         esc(title) +
-        '</h2><p>这个入口暂未接入正式内容。</p><button type="button" data-action="daily-back" data-daily-back="daily">返回海岸日报</button></section>',
+        '</h2><p>canonical daily router 尚未就绪，请稍后再试。</p><button type="button" data-action="daily-back" data-daily-back="daily">返回海岸日报</button></section>',
     );
     p.dataset.parent = "daily";
     const back = p.querySelector("#coastBackV097");
@@ -267,7 +293,7 @@
             e.preventDefault();
             e.stopPropagation();
             e.stopImmediatePropagation();
-            dailyV097();
+            if (!openDailyCanonicalFromV097()) dailyV097();
           }
         },
         true,
@@ -278,4 +304,3 @@
   document.addEventListener("DOMContentLoaded", wireV097);
   setTimeout(wireV097, 700);
 })();
-
