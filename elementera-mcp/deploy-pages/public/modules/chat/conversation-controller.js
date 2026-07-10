@@ -72,11 +72,17 @@
   }
 
   function normalizeVariant(value = {}) {
+    const errorDetail = String(value.errorDetail || '')
+      .split('\n')
+      .filter((line) => !/^history sync:/i.test(line.trim()))
+      .join('\n')
+      .trim()
+      .slice(0, MAX_CONTENT);
     return {
       id: cleanId(value.id || newId()),
       content: String(value.content ?? '').slice(0, MAX_CONTENT),
       created_at: typeof value.created_at === 'string' ? value.created_at : now(),
-      ...(value.errorDetail ? { errorDetail: String(value.errorDetail).slice(0, MAX_CONTENT) } : {}),
+      ...(errorDetail ? { errorDetail } : {}),
     };
   }
 
