@@ -1,0 +1,11 @@
+{
+  "name": "elementera-coast",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/chat-state.test.mjs && node tests/backend.test.mjs && node tests/architecture.test.mjs && node tests/dom.test.mjs"
+  },
+  "devDependencies": {
+    "happy-dom": "18.0.1"
+  }
+}
