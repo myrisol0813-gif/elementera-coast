@@ -8,7 +8,8 @@
   <meta name="apple-mobile-web-app-title" content="ChatGPT" />
   <title>ChatGPT</title>
   <link rel="manifest" href="/manifest.json" />
-  <link rel="stylesheet" href="/public/styles.css" />
+  <link rel="stylesheet" href="/public/styles.css?v=p3-chat-core-01" />
+  <link rel="stylesheet" href="/public/modules/chat/conversation.css?v=p3-chat-core-01" />
 </head>
 <body>
   <div id="app" class="chatgpt-shell">
@@ -19,7 +20,7 @@
         <label class="sidebar-search"><span data-icon="search"></span><input type="search" placeholder="搜索聊天" autocomplete="off" /></label>
       </div>
       <nav class="history-list" aria-label="最近聊天">
-        <section><h2>已保存</h2><button id="testWindowButton" class="history-item is-active" type="button">测试窗口</button></section>
+        <section id="chatConversationSection" class="chat-conversation-section" data-owner="chat-conversations"><h2>主聊天窗口</h2><div id="chatConversationList"><p class="chat-conversation-empty">正在载入…</p></div></section>
       </nav>
       <div class="sidebar-footer">
         <button type="button" class="account-row" id="themeToggle"><span class="account-avatar" data-icon="theme"></span><span><strong>主题</strong><small id="theme-label">浅色</small></span></button>
@@ -33,6 +34,7 @@
         <div class="topbar-actions"><button id="newChatButton" class="icon-button" type="button" aria-label="新建聊天" data-icon="new-chat"></button><button id="moreButton" class="icon-button" type="button" aria-label="更多" data-icon="more"></button></div>
       </header>
       <section id="messageScroller" class="message-scroller" aria-label="聊天消息"><div id="messages" class="messages"></div></section>
+      <div id="chatSyncStatus" role="status" aria-live="polite" hidden></div>
       <form id="composer" class="composer-wrap" autocomplete="off">
         <div class="composer-line"></div>
         <div class="composer-row">
@@ -48,27 +50,25 @@
       </form>
     </main>
   </div>
-  <script src="/public/modules/daily/daily-shell.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/daily/daily-draft-state.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/daily/daily-assets.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/daily/moments.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/daily/diary.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/daily/album.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/daily/daily-router.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/00-main-shell.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/01-v094-back-patch.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/02-v094-wolf-apps-back-fix.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/03-v106-daily-legacy.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/04-v094-safe-text-setter.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/05-v095-sidebar-rooms.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/06-v096-sidebar-room-details.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/07-v097-sidebar-polish.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/08-v098-final-sidebar-order.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/09-v098-final-sidebar-order-base.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/10-v099-v119-island-letter-lovebook.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/run-control-p301c.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/api-sandbox-p302c.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/chat-history-sync-p301.js?v=p3-chat-conv-menu-04" defer></script>
-  <script src="/public/model-box-p303a.js?v=p3-chat-conv-menu-04" defer></script>
+  <script src="/public/modules/daily/daily-shell.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/modules/daily/daily-draft-state.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/modules/daily/daily-assets.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/modules/daily/moments.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/modules/daily/diary.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/modules/daily/album.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/modules/daily/daily-router.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/modules/shell/shell-controller.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/modules/legacy/appjs-flat/01-v094-back-patch.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/modules/legacy/appjs-flat/02-v094-wolf-apps-back-fix.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/modules/legacy/appjs-flat/03-v106-daily-legacy.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/modules/legacy/appjs-flat/04-v094-safe-text-setter.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/modules/legacy/appjs-flat/05-v095-sidebar-rooms.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/modules/legacy/appjs-flat/06-v096-sidebar-room-details.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/modules/legacy/appjs-flat/10-v099-v119-island-letter-lovebook.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/run-control-p301c.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/api-sandbox-p302c.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/modules/chat/conversation-controller.js?v=p3-chat-core-01" defer></script>
+  <script src="/public/model-box-p303a.js?v=p3-chat-core-01" defer></script>
 </body>
 </html>
+
