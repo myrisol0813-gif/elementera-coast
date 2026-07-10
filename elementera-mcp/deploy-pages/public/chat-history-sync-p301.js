@@ -29,6 +29,8 @@
   let longTimer = null;
   let conversationLongTimer = null;
   let suppressConversationClick = false;
+  let openConversationMenuId = null;
+  const deletedConversationIds = new Set();
   let applyingProfile = false;
   let profileHydrated = false;
   const syncTimers = new Map();
@@ -172,7 +174,30 @@
     const node = section && $('#conversationListP3', section);
     if (!node) return;
     const current = currentConversationId();
-    node.innerHTML = (Array.isArray(list) ? list : []).map((item) => `<button class="history-item ${item.id === current ? 'is-active' : ''}" type="button" data-conversation-id="${E(item.id)}">${E(item.title || '新聊天')}</button>`).join('') || '<p class="history-empty">还没有聊天窗口</p>';
+    openConversationMenuId = null;
+    node.innerHTML = (Array.isArray(list) ? list : []).map((item) => {
+      const active = item.id === current;
+      const id = E(item.id);
+      return `<div class="history-conversation-row ${active ? 'is-active' : ''}" data-conversation-row="${id}"><button class="history-item history-conversation-title ${active ? 'is-active' : ''}" type="button" data-conversation-id="${id}">${E(item.title || '新聊天')}</button><button class="history-conversation-more" type="button" data-conversation-menu="${id}" aria-label="窗口操作" aria-expanded="false">⋯</button><div class="history-conversation-popover" data-conversation-popover="${id}" hidden><button type="button" data-conversation-action="rename" data-conversation-target="${id}">改名</button><button class="is-danger" type="button" data-conversation-action="delete" data-conversation-target="${id}">删除</button></div></div>`;
+    }).join('') || '<p class="history-empty">还没有聊天窗口</p>';
+  }
+  function closeConversationMenus() {
+    openConversationMenuId = null;
+    $$('.history-conversation-popover').forEach((menu) => { menu.hidden = true; });
+    $$('[data-conversation-menu]').forEach((button) => { button.setAttribute('aria-expanded', 'false'); });
+  }
+  function toggleConversationMenu(id) {
+    const convId = cleanId(id);
+    const row = $$('.history-conversation-row').find((item) => item.dataset.conversationRow === convId);
+    if (!row) return;
+    const menu = row.querySelector('.history-conversation-popover');
+    const button = row.querySelector('[data-conversation-menu]');
+    const shouldOpen = openConversationMenuId !== convId || menu.hidden;
+    closeConversationMenus();
+    if (!shouldOpen) return;
+    openConversationMenuId = convId;
+    menu.hidden = false;
+    button?.setAttribute('aria-expanded', 'true');
   }
   async function fetchConversations() {
     const data = await apiJson(CONV_API);
@@ -206,20 +231,28 @@
   }
   async function PH(s, id = currentConversationId()) {
     const convId = cleanId(id);
+    if (deletedConversationIds.has(convId)) return;
     const body = { ...NS(s), conversation_id: convId, ...(profileHydrated ? { profile: localProfile() } : {}) };
     await apiJson(`${API}?conversation_id=${encodeURIComponent(convId)}`, { method: 'PUT', body: JSON.stringify(body) });
   }
   function SY(s, id = currentConversationId()) {
     const convId = cleanId(id);
+    if (deletedConversationIds.has(convId)) return;
     const state = NS(s);
     clearTimeout(syncTimers.get(convId));
-    syncTimers.set(convId, setTimeout(() => PH(state, convId).catch((error) => console.warn('[P3-CHAT-CONV-STABILIZE-03]', error)), 800));
+    syncTimers.set(convId, setTimeout(() => PH(state, convId).catch((error) => console.warn('[P3-CHAT-CONV-MENU-04]', error)), 800));
   }
   function syncProfileSoon() { if (profileHydrated) SY(LS(), currentConversationId()); }
   async function loadConversation(id) {
+    const convId = cleanId(id);
+    if (deletedConversationIds.has(convId)) return;
     const previousId = currentConversationId();
-    if (previousId) { SS(LS(previousId), false, previousId); SY(LS(previousId), previousId); }
-    const convId = setCurrentConversationId(id);
+    if (previousId && previousId !== convId && !deletedConversationIds.has(previousId)) {
+      SS(LS(previousId), false, previousId);
+      SY(LS(previousId), previousId);
+    }
+    setCurrentConversationId(convId);
+    closeConversationMenus();
     renderConversations();
     const local = LS(convId);
     try {
@@ -227,7 +260,7 @@
       if (server.turns.length) { SS(server, false, convId); R(server, convId); }
       else { SS(local, false, convId); R(local, convId); if (local.turns.length) SY(local, convId); }
     } catch (error) {
-      console.warn('[P3-CHAT-CONV-STABILIZE-03] history fetch failed', error);
+      console.warn('[P3-CHAT-CONV-MENU-04] history fetch failed', error);
       R(local, convId);
     }
   }
@@ -236,7 +269,7 @@
     let list = J(CLK, []);
     normalizeConversationSection();
     renderConversations(list);
-    try { list = await fetchConversations(); } catch (error) { console.warn('[P3-CHAT-CONV-STABILIZE-03] conversations fetch failed', error); }
+    try { list = await fetchConversations(); } catch (error) { console.warn('[P3-CHAT-CONV-MENU-04] conversations fetch failed', error); }
     let target = null;
     const localId = localStorage.getItem(CIDK);
     if (localId && list.some((item) => item.id === localId)) {
@@ -256,13 +289,16 @@
     if (!target) target = list[0];
     if (!target) {
       try { target = await createConversation('新聊天'); }
-      catch (error) { console.warn('[P3-CHAT-CONV-STABILIZE-03] conversation create failed', error); target = { id: 'main', title: '主聊天' }; }
+      catch (error) { console.warn('[P3-CHAT-CONV-MENU-04] conversation create failed', error); target = { id: 'main', title: '主聊天' }; }
     }
     await loadConversation(target.id);
   }
   async function newConversation() {
     const previousId = currentConversationId();
-    if (previousId) { SS(LS(previousId), false, previousId); SY(LS(previousId), previousId); }
+    if (previousId && !deletedConversationIds.has(previousId)) {
+      SS(LS(previousId), false, previousId);
+      SY(LS(previousId), previousId);
+    }
     const conversation = await createConversation('新聊天');
     setCurrentConversationId(conversation.id);
     const empty = { v: 2, updated_at: NO(), turns: [] };
@@ -282,12 +318,24 @@
     renderConversations(next);
   }
   async function deleteConversation(id) {
+    const convId = cleanId(id);
     if (!confirm('删除这个窗口？聊天记录会软删除，不会影响其他窗口。')) return;
-    await apiJson(`${CONV_API}/${encodeURIComponent(id)}`, { method: 'DELETE' });
-    localStorage.removeItem(turnKey(id));
-    let list = await fetchConversations().catch(() => J(CLK, []).filter((item) => item.id !== id));
+    deletedConversationIds.add(convId);
+    clearTimeout(syncTimers.get(convId));
+    syncTimers.delete(convId);
+    closeConversationMenus();
+    if (currentConversationId() === convId && chatAbort) chatAbort.abort();
+    try {
+      await apiJson(`${CONV_API}/${encodeURIComponent(convId)}`, { method: 'DELETE' });
+    } catch (error) {
+      deletedConversationIds.delete(convId);
+      throw error;
+    }
+    localStorage.removeItem(turnKey(convId));
+    let list = await fetchConversations().catch(() => J(CLK, []).filter((item) => item.id !== convId));
+    list = (Array.isArray(list) ? list : []).filter((item) => item.id !== convId);
     W(CLK, list);
-    if (currentConversationId() === id) {
+    if (currentConversationId() === convId) {
       if (!list.length) list = [await createConversation('新聊天')];
       await loadConversation(list[0].id);
     } else renderConversations(list);
@@ -315,7 +363,7 @@
         W(CLK, next);
         renderConversations(next);
       }
-    } catch (error) { console.warn('[P3-CHAT-CONV-STABILIZE-03] title skipped', error); }
+    } catch (error) { console.warn('[P3-CHAT-CONV-MENU-04] title skipped', error); }
   }
   function AV() {
     const url = localStorage.getItem(AK) || '';
@@ -327,7 +375,7 @@
     if ($('#canon02css')) return;
     const style = document.createElement('style');
     style.id = 'canon02css';
-    style.textContent = '.variant-switch-p303a{display:inline-flex;gap:6px;margin-left:6px;color:var(--muted);font-size:12px}.variant-switch-p303a button{width:26px;height:24px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--text)}.assistant-text .chat-error-detail{display:block;margin-top:8px;color:var(--muted);font-size:12px;line-height:1.55}.message[data-turn]{touch-action:pan-y}.history-empty{padding:10px 14px;color:var(--muted);font-size:13px}#conversationListP3{display:grid;gap:2px}';
+    style.textContent = '.variant-switch-p303a{display:inline-flex;gap:6px;margin-left:6px;color:var(--muted);font-size:12px}.variant-switch-p303a button{width:26px;height:24px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--text)}.assistant-text .chat-error-detail{display:block;margin-top:8px;color:var(--muted);font-size:12px;line-height:1.55}.message[data-turn]{touch-action:pan-y}.history-empty{padding:10px 14px;color:var(--muted);font-size:13px}#conversationListP3{display:grid;gap:2px}.history-conversation-row{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 34px;align-items:center;gap:2px}.history-conversation-title{min-width:0;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.history-conversation-more{display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:20px;line-height:1;cursor:pointer}.history-conversation-more:hover,.history-conversation-more[aria-expanded="true"]{background:color-mix(in srgb,var(--text) 8%,transparent);color:var(--text)}.history-conversation-popover{position:absolute;z-index:60;right:2px;top:calc(100% + 3px);display:grid;min-width:112px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--bg,#fff);box-shadow:0 12px 34px rgba(0,0,0,.18)}.history-conversation-popover[hidden]{display:none}.history-conversation-popover button{border:0;border-radius:8px;background:transparent;color:var(--text);padding:9px 11px;text-align:left;font:inherit;cursor:pointer}.history-conversation-popover button:hover{background:color-mix(in srgb,var(--text) 8%,transparent)}.history-conversation-popover .is-danger{color:#d04444}';
     document.head.appendChild(style);
   }
   function R(s = LS(), id = currentConversationId()) {
@@ -495,9 +543,22 @@
   }
   document.addEventListener('click', async (event) => {
     const newButton = event.target.closest('#newChatButton');
-    if (newButton) { event.preventDefault(); event.stopImmediatePropagation(); newConversation().catch((error) => alert(`新建窗口失败：${error.message || error}`)); return; }
+    if (newButton) { event.preventDefault(); event.stopImmediatePropagation(); closeConversationMenus(); newConversation().catch((error) => alert(`新建窗口失败：${error.message || error}`)); return; }
+    const menuButton = event.target.closest('#conversationListP3 [data-conversation-menu]');
+    if (menuButton) { event.preventDefault(); event.stopImmediatePropagation(); toggleConversationMenu(menuButton.dataset.conversationMenu); return; }
+    const menuAction = event.target.closest('#conversationListP3 [data-conversation-action]');
+    if (menuAction) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      const id = menuAction.dataset.conversationTarget;
+      const action = menuAction.dataset.conversationAction;
+      closeConversationMenus();
+      if (action === 'rename') await renameConversation(id).catch((error) => alert(`改名失败：${error.message || error}`));
+      if (action === 'delete') await deleteConversation(id).catch((error) => alert(`删除失败：${error.message || error}`));
+      return;
+    }
+    if (!event.target.closest('.history-conversation-row')) closeConversationMenus();
     const conversationButton = event.target.closest('#conversationListP3 [data-conversation-id]');
-    if (conversationButton) { event.preventDefault(); event.stopImmediatePropagation(); if (suppressConversationClick) return; loadConversation(conversationButton.dataset.conversationId).catch((error) => alert(`切换窗口失败：${error.message || error}`)); return; }
+    if (conversationButton) { event.preventDefault(); event.stopImmediatePropagation(); closeConversationMenus(); if (suppressConversationClick) return; loadConversation(conversationButton.dataset.conversationId).catch((error) => alert(`切换窗口失败：${error.message || error}`)); return; }
     const switcher = event.target.closest('[data-d]');
     if (switcher) { event.preventDefault(); event.stopImmediatePropagation(); const wrap = switcher.closest('[data-k]'); switchVariant(wrap.dataset.t, wrap.dataset.k, switcher.dataset.d); return; }
     const userAction = event.target.closest('[data-ua]');
