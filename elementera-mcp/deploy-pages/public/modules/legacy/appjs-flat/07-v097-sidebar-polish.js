@@ -121,6 +121,10 @@
     window.location.reload();
   }
   function mountMainWindows() {
+    if (window.elementeraChatHistorySyncP301 || document.querySelector('#conversationSectionP3,[data-owner="chat-conversations"]')) {
+      document.querySelector("#mainWindowsV097")?.remove();
+      return;
+    }
     const h = document.querySelector(".history-list");
     if (!h) return;
     let s = document.querySelector("#mainWindowsV097");
@@ -263,7 +267,7 @@
       if (!b.dataset.room) b.dataset.room = b.dataset.roomV095;
     });
     const n = document.querySelector("#newChatButton");
-    if (n && !n.dataset.v097) {
+    if (n && !n.dataset.v097 && !window.elementeraChatHistorySyncP301) {
       n.dataset.v097 = "1";
       n.addEventListener(
         "click",
