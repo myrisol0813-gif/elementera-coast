@@ -1,7 +1,7 @@
 {
   "name": "ChatGPT 5.5 Thinking",
   "short_name": "ChatGPT",
-  "description": "A local GPT-like mobile shell preview.",
+  "description": "Elementera Coast mobile chat shell.",
   "start_url": "/gptlike?source=pwa",
   "scope": "/",
   "display": "standalone",
@@ -18,3 +18,4 @@
     }
   ]
 }
+
