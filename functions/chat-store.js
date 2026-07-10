@@ -148,11 +148,17 @@ function conversationFromRow(row) {
 
 function normalizeVariant(value = {}, prefix = 'variant') {
   if (typeof value?.content !== 'string') return null;
+  const errorDetail = String(value.errorDetail || '')
+    .split('\n')
+    .filter((line) => !/^history sync:/i.test(line.trim()))
+    .join('\n')
+    .trim()
+    .slice(0, MAX_CONTENT);
   return {
     id: sanitizeId(value.id || crypto.randomUUID(), prefix),
     content: clip(value.content),
     created_at: typeof value.created_at === 'string' ? value.created_at : new Date().toISOString(),
-    ...(value.errorDetail ? { errorDetail: clip(value.errorDetail) } : {}),
+    ...(errorDetail ? { errorDetail } : {}),
   };
 }
 
