@@ -67,14 +67,6 @@ async function all(db, sql, params = []) {
   return result?.results || [];
 }
 
-async function tryMigration(db, sql) {
-  try {
-    await db.prepare(sql).run();
-  } catch {
-    // ALTER TABLE is intentionally idempotent across existing deployments.
-  }
-}
-
 async function initializeSchema(db) {
   await run(db, `CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -108,10 +100,6 @@ async function initializeSchema(db) {
     model_box_json TEXT,
     updated_at INTEGER NOT NULL
   )`);
-
-  await tryMigration(db, 'ALTER TABLE conversations ADD COLUMN title_manual INTEGER DEFAULT 0');
-  await tryMigration(db, 'ALTER TABLE conversations ADD COLUMN title_generated_at INTEGER DEFAULT NULL');
-  await tryMigration(db, 'ALTER TABLE conversations ADD COLUMN archived_at INTEGER DEFAULT NULL');
 
   await run(db, 'CREATE INDEX IF NOT EXISTS idx_conversations_owner ON conversations(user_id, deleted_at, updated_at)');
   const timestamp = nowMs();
@@ -158,6 +146,8 @@ function normalizeVariant(value = {}, prefix = 'variant') {
     id: sanitizeId(value.id || crypto.randomUUID(), prefix),
     content: clip(value.content),
     created_at: typeof value.created_at === 'string' ? value.created_at : new Date().toISOString(),
+    liked: Boolean(value.liked),
+    favorite: Boolean(value.favorite),
     ...(errorDetail ? { errorDetail } : {}),
   };
 }
@@ -203,7 +193,7 @@ export function normalizeState(value = {}) {
     .filter((turn) => turn.user.variants.length || Object.values(turn.assistant.variantsByUserVariant).some((list) => list.length))
     .slice(-100);
   return {
-    version: 3,
+    version: 4,
     updated_at: typeof raw.updated_at === 'string' ? raw.updated_at : new Date().toISOString(),
     turns,
   };
@@ -398,98 +388,19 @@ async function writeStateRow(db, conversationId, state, timestamp = nowMs()) {
       updated_at = excluded.updated_at`, [conversationId, JSON.stringify(normalizeState(state)), timestamp]);
 }
 
-async function readLegacyNormalizedState(db, conversationId) {
-  try {
-    const turns = await all(db, `SELECT id, position, active_user_variant_id, updated_at
-      FROM turns
-      WHERE conversation_id = ? AND deleted_at IS NULL
-      ORDER BY position ASC, created_at ASC`, [conversationId]);
-    if (!turns.length) return normalizeState();
-
-    const turnIds = turns.map((turn) => turn.id);
-    const placeholders = turnIds.map(() => '?').join(',');
-    const users = await all(db, `SELECT id, turn_id, position, content, created_at
-      FROM user_variants
-      WHERE deleted_at IS NULL AND turn_id IN (${placeholders})
-      ORDER BY turn_id ASC, position ASC`, turnIds);
-    const assistants = await all(db, `SELECT id, turn_id, user_variant_id, user_variant_position, position,
-        content, error_detail, is_active, created_at
-      FROM assistant_variants
-      WHERE deleted_at IS NULL AND turn_id IN (${placeholders})
-      ORDER BY turn_id ASC, user_variant_position ASC, position ASC`, turnIds);
-
-    const usersByTurn = new Map();
-    const userPositions = new Map();
-    for (const row of users) {
-      const list = usersByTurn.get(row.turn_id) || [];
-      list.push({ id: row.id, content: row.content || '', created_at: iso(row.created_at) });
-      usersByTurn.set(row.turn_id, list);
-    }
-    for (const [turnId, list] of usersByTurn.entries()) {
-      list.forEach((variant, index) => userPositions.set(`${turnId}:${variant.id}`, index));
-    }
-
-    const assistantsByBranch = new Map();
-    const activeByBranch = new Map();
-    for (const row of assistants) {
-      const linkedPosition = row.user_variant_id
-        ? userPositions.get(`${row.turn_id}:${row.user_variant_id}`)
-        : null;
-      const branch = linkedPosition == null ? Number(row.user_variant_position || 0) : linkedPosition;
-      const key = `${row.turn_id}:${branch}`;
-      const list = assistantsByBranch.get(key) || [];
-      list.push({
-        id: row.id,
-        content: row.content || '',
-        created_at: iso(row.created_at),
-        ...(row.error_detail ? { errorDetail: row.error_detail } : {}),
-      });
-      if (Number(row.is_active || 0) === 1) activeByBranch.set(key, list.length - 1);
-      assistantsByBranch.set(key, list);
-    }
-
-    return normalizeState({
-      turns: turns.map((row) => {
-        const userVariants = usersByTurn.get(row.id) || [];
-        const activeUser = userVariants.findIndex((variant) => variant.id === row.active_user_variant_id);
-        const variantsByUserVariant = {};
-        const activeByUserVariant = {};
-        for (let index = 0; index < Math.max(1, userVariants.length); index += 1) {
-          const branch = `${row.id}:${index}`;
-          variantsByUserVariant[String(index)] = assistantsByBranch.get(branch) || [];
-          activeByUserVariant[String(index)] = clamp(
-            activeByBranch.get(branch),
-            variantsByUserVariant[String(index)].length || 1,
-          );
-        }
-        return {
-          id: row.id,
-          user: { active: activeUser >= 0 ? activeUser : 0, variants: userVariants },
-          assistant: { activeByUserVariant, variantsByUserVariant },
-        };
-      }),
-    });
-  } catch {
-    return normalizeState();
-  }
-}
-
 export async function readConversationState(db, id) {
   await ensureChatSchema(db);
   const conversationId = sanitizeId(id, 'conversation');
   await requireActiveConversation(db, conversationId);
   const row = await first(db, 'SELECT state_json, updated_at FROM conversation_states WHERE conversation_id = ?', [conversationId]);
-  if (row?.state_json) {
-    try {
-      return normalizeState(JSON.parse(row.state_json));
-    } catch {
-      throw new ChatStoreError('conversation_state_corrupt', '聊天记录格式损坏，未覆盖原数据。', 500);
-    }
+  if (!row?.state_json) {
+    throw new ChatStoreError('conversation_state_missing', '聊天记录不存在，未创建替代数据。', 500);
   }
-
-  const legacy = await readLegacyNormalizedState(db, conversationId);
-  await writeStateRow(db, conversationId, legacy);
-  return legacy;
+  try {
+    return normalizeState(JSON.parse(row.state_json));
+  } catch {
+    throw new ChatStoreError('conversation_state_corrupt', '聊天记录格式损坏，未覆盖原数据。', 500);
+  }
 }
 
 export async function writeConversationState(db, id, value) {
@@ -505,18 +416,3 @@ export async function writeConversationState(db, id, value) {
   return state;
 }
 
-export async function importLegacyConversation(db, id, title, state, profile) {
-  await ensureChatSchema(db);
-  const conversationId = sanitizeId(id, 'conversation');
-  const existing = await conversationRow(db, conversationId);
-  if (existing?.deleted_at) return false;
-  const timestamp = nowMs();
-  if (!existing) {
-    await run(db, `INSERT INTO conversations (
-      id, user_id, title, created_at, updated_at, deleted_at, title_manual, title_generated_at
-    ) VALUES (?, ?, ?, ?, ?, NULL, 0, NULL)`, [conversationId, USER_ID, sanitizeTitle(title), timestamp, timestamp]);
-  }
-  await writeStateRow(db, conversationId, state, timestamp);
-  if (profile) await writeProfile(db, profile);
-  return true;
-}
