@@ -2,8 +2,6 @@ const CACHE_NAME = 'elementera-coast-app-01';
 const CORE = Object.freeze([
   '/',
   '/index.html',
-  '/app.html',
-  '/gptlike',
   '/manifest.json',
   '/public/styles/tokens.css?v=coast-app-01',
   '/public/styles/shell.css?v=coast-app-01',
@@ -62,4 +60,3 @@ self.addEventListener('fetch', (event) => {
     return response;
   })));
 });
-

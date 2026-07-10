@@ -248,6 +248,46 @@ export function createChat({ storage, toast }) {
       .filter((conversation) => conversation?.id && !seen.has(conversation.id) && seen.add(conversation.id));
   }
 
+  async function migrateLocalConversations() {
+    const local = Array.isArray(storage.migrationConversations) ? storage.migrationConversations : [];
+    if (!storage.migrationPending || !local.length) return new Map();
+
+    const serverStates = new Map();
+    for (const conversation of runtime.conversations) {
+      const data = await requestJson(`${API.history}?conversation_id=${encodeURIComponent(conversation.id)}`);
+      serverStates.set(conversation.id, normalizeState(data.history || {}));
+    }
+
+    const mappedIds = new Map();
+    const claimedServerIds = new Set();
+    const signature = (state) => JSON.stringify(activeMessages(state).map(({ role, content }) => ({ role, content })));
+    for (const item of local) {
+      const localState = item.state?.turns
+        ? normalizeState(item.state)
+        : flatMessagesToState(item.messages || []);
+      let conversation = runtime.conversations.find((entry) => entry.id === item.id);
+      if (!conversation) {
+        const sameTitle = runtime.conversations.filter((entry) => entry.title === item.title && !claimedServerIds.has(entry.id));
+        conversation = sameTitle.find((entry) => signature(serverStates.get(entry.id)) === signature(localState))
+          || sameTitle.find((entry) => !(serverStates.get(entry.id)?.turns.length))
+          || await createConversation(item.title || '新聊天');
+        if (!serverStates.has(conversation.id)) serverStates.set(conversation.id, createState());
+      }
+      claimedServerIds.add(conversation.id);
+      mappedIds.set(item.id, conversation.id);
+
+      const serverState = serverStates.get(conversation.id) || createState();
+      if (localState.turns.length && !serverState.turns.length) {
+        await requestJson(`${API.history}?conversation_id=${encodeURIComponent(conversation.id)}`, {
+          method: 'PUT',
+          body: JSON.stringify(localState),
+        });
+        serverStates.set(conversation.id, localState);
+      }
+    }
+    return mappedIds;
+  }
+
   async function createConversation(title = '新聊天') {
     const data = await requestJson(API.conversations, { method: 'POST', body: JSON.stringify({ title }) });
     const conversation = data.conversation;
@@ -548,9 +588,12 @@ export function createChat({ storage, toast }) {
       if (storage.migrationPending && JSON.stringify(merged) !== JSON.stringify(cleanProfile(profileData.profile))) {
         await persistProfile(merged);
       } else notifyProfile();
+      const migratedIds = await migrateLocalConversations();
       if (!runtime.conversations.length) runtime.conversations = [await createConversation('新聊天')];
       const remembered = storage.getCurrentConversation();
-      const target = runtime.conversations.find((item) => item.id === remembered) || runtime.conversations[0];
+      const migratedRemembered = migratedIds.get(remembered) || remembered;
+      if (migratedRemembered !== remembered) storage.setCurrentConversation(migratedRemembered);
+      const target = runtime.conversations.find((item) => item.id === migratedRemembered) || runtime.conversations[0];
       const loaded = await loadConversation(target.id);
       if (loaded) storage.completeMigration();
     } catch (error) {

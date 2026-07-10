@@ -18,6 +18,11 @@ const OLD_KEYS = Object.freeze({
   runControl: 'elementera.runControlSettings',
   currentConversation: 'ec.currentConversationId',
   olderConversation: 'coast_main_active_v097',
+  mainWindows: 'coast_main_windows_v097',
+  legacyMessages: 'gpt_like_test_window_messages_clean_v1',
+  legacyMainState: 'ec.mainChat.turns.v2',
+  lighthouseDraft: 'coast_lighthouse_draft_v095',
+  dailyStatus: 'coast_daily_status_v095',
   modelBox: 'ec.modelBox.v1',
   currentChatModel: 'ec.currentChatModel',
   currentImageModel: 'ec.currentImageModel',
@@ -85,7 +90,16 @@ function normalizeRoom(value, kind) {
     ? value.rooms.filter((room) => room && typeof room.id === 'string').map((room) => ({
       id: room.id.slice(0, 160),
       title: String(room.title || (kind === 'lighthouse' ? '灯塔来信' : '无线电波')).slice(0, 80),
-      messages: Array.isArray(room.messages) ? room.messages.filter((message) => message && typeof message.text === 'string').slice(-200) : [],
+      messages: Array.isArray(room.messages)
+        ? room.messages
+          .filter((message) => message && typeof message.text === 'string')
+          .slice(-200)
+          .map((message) => ({
+            from: String(message.from || '小寒').slice(0, 40),
+            text: message.text.slice(0, 12000),
+            at: Number(message.at || Date.now()),
+          }))
+        : [],
       updatedAt: Number(room.updatedAt || Date.now()),
     })) : [];
   if (!rooms.length) return fallback;
@@ -117,6 +131,57 @@ function oldValue(key) {
   } catch {
     return null;
   }
+}
+
+const LEGACY_STARTER_MESSAGES = new Set([
+  '这是唯一保留的 GPT-like 测试窗口。\n\n这个窗口会把对话保存在本机浏览器里；刷新页面、从侧边栏点回来，内容都会继续在这里。',
+  '我们先把这个壳调到像移动端 ChatGPT。',
+  '好。接下来主要检查输入栏高度、按钮位置、消息是否保存，以及主题是否舒服。',
+]);
+
+function cleanLegacyMessages(value) {
+  return (Array.isArray(value) ? value : [])
+    .filter((message) => message && ['user', 'assistant'].includes(message.role) && typeof message.content === 'string')
+    .filter((message) => !LEGACY_STARTER_MESSAGES.has(message.content))
+    .slice(-200)
+    .map((message) => ({ role: message.role, content: message.content }));
+}
+
+function collectMigrationConversations() {
+  const items = new Map();
+  const activeId = oldValue(OLD_KEYS.currentConversation) || oldValue(OLD_KEYS.olderConversation) || 'main';
+  const upsert = (id, patch = {}) => {
+    const cleanId = String(id || activeId || 'main').replace(/[^\w:.-]/g, '_').slice(0, 160) || 'main';
+    const current = items.get(cleanId) || { id: cleanId, title: '新聊天', messages: [], state: null };
+    if (patch.title) current.title = String(patch.title).slice(0, 80);
+    if (patch.messages?.length) current.messages = cleanLegacyMessages(patch.messages);
+    if (patch.state?.turns) current.state = patch.state;
+    items.set(cleanId, current);
+  };
+
+  const windows = parseJson(oldValue(OLD_KEYS.mainWindows), []);
+  for (const window of Array.isArray(windows) ? windows : []) {
+    if (window?.id) upsert(window.id, { title: window.title, messages: window.messages });
+  }
+
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index) || '';
+    const prefix = key.startsWith('ec.chat.state.v3.')
+      ? 'ec.chat.state.v3.'
+      : key.startsWith('ec.mainChat.turns.v2.')
+        ? 'ec.mainChat.turns.v2.'
+        : '';
+    if (!prefix) continue;
+    const id = key.slice(prefix.length);
+    const state = parseJson(oldValue(key), null);
+    if (id && state?.turns) upsert(id, { state });
+  }
+
+  const singleState = parseJson(oldValue(OLD_KEYS.legacyMainState), null);
+  if (singleState?.turns) upsert(activeId, { state: singleState });
+  const messages = cleanLegacyMessages(parseJson(oldValue(OLD_KEYS.legacyMessages), []));
+  if (messages.length) upsert(activeId, { messages });
+  return [...items.values()];
 }
 
 function extractOldLetters(target) {
@@ -151,7 +216,12 @@ function buildMigration() {
   const stored = oldValue(STATE_KEY);
   if (stored) {
     const restored = normalize(parseJson(stored, state));
-    return { state: restored, profile: restored.migration.profile, pending: restored.migration.pending };
+    return {
+      state: restored,
+      profile: restored.migration.profile,
+      conversations: restored.migration.pending ? collectMigrationConversations() : [],
+      pending: restored.migration.pending,
+    };
   }
 
   state.preferences.theme = oldValue(OLD_KEYS.theme) || state.preferences.theme;
@@ -166,6 +236,13 @@ function buildMigration() {
   state.preferences.systemDraft = oldValue(OLD_KEYS.systemDraft) || '';
   state.rooms.radio = normalizeRoom(parseJson(oldValue(OLD_KEYS.radio), null), 'radio');
   state.rooms.lighthouse = normalizeRoom(parseJson(oldValue(OLD_KEYS.lighthouse), null), 'lighthouse');
+  const lighthouseDraft = String(parseJson(oldValue(OLD_KEYS.lighthouseDraft), {})?.text || '').trim();
+  if (lighthouseDraft) {
+    const room = state.rooms.lighthouse.rooms[0];
+    if (!room.messages.some((message) => message.text === lighthouseDraft)) {
+      room.messages.push({ from: '小寒', text: lighthouseDraft.slice(0, 12000), at: Date.now() });
+    }
+  }
   state.runControl = { ...state.runControl, ...parseJson(oldValue(OLD_KEYS.runControl), {}) };
   extractOldLetters(state.letters);
 
@@ -177,7 +254,7 @@ function buildMigration() {
     model_box: modelBox,
   };
   state.migration = { pending: true, profile };
-  return { state: normalize(state), profile, pending: true };
+  return { state: normalize(state), profile, conversations: collectMigrationConversations(), pending: true };
 }
 
 function retiredKeys() {
@@ -207,6 +284,7 @@ export function createStorage() {
       return save();
     },
     migrationProfile: migration.profile,
+    migrationConversations: migration.conversations,
     migrationPending: migration.pending,
     completeMigration() {
       if (!migration.pending) return;

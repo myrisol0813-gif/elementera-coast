@@ -10,10 +10,11 @@ const pages = join(repo, 'elementera-mcp/deploy-pages');
 const read = (path) => readFile(path, 'utf8');
 
 const index = await read(join(pages, 'index.html'));
-const app = await read(join(pages, 'app.html'));
-assert.equal(index, app, 'index.html and app.html must be identical');
+const redirects = await read(join(pages, '_redirects'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
 assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-01"><\/script>/);
+assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
+assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 for (const id of ['coastStatus', 'mainRooms', 'localRoomWindows', 'localRoomWindowList', 'chatConversationSection', 'chatConversationList']) {
   assert.equal((index.match(new RegExp(`id="${id}"`, 'g')) || []).length, 1, `${id} must have one owner`);
 }
@@ -30,9 +31,19 @@ const coreBlock = worker.slice(worker.indexOf('const CORE'), worker.indexOf(']);
 const coreUrls = [...coreBlock.matchAll(/'([^']+)'/g)].map((match) => match[1]);
 for (const url of coreUrls) {
   const pathname = url.split('?')[0];
-  if (['/', '/gptlike'].includes(pathname)) continue;
+  if (pathname === '/') continue;
   await access(join(pages, pathname.replace(/^\//, '')));
 }
+
+for (const retiredPath of [
+  'app.html',
+  'app-next.html',
+  'FRONTEND_CLEANUP_AUDIT.md',
+  'public/app-next',
+]) {
+  await assert.rejects(access(join(pages, retiredPath)), undefined, `${retiredPath} must stay deleted`);
+}
+await assert.rejects(access(join(repo, 'functions/__coast_free_chat.js')), undefined, 'retired sandbox endpoint must stay deleted');
 
 const moduleRoot = join(pages, 'public');
 const moduleFiles = [
@@ -63,7 +74,8 @@ assert.ok(chatSource.includes('runtime.deletedIds.add(conversationId)'));
 const middleware = await read(join(repo, 'functions/_middleware.js'));
 const chatRouter = await read(join(repo, 'functions/chat-router.js'));
 const storeSource = await read(join(repo, 'functions/chat-store.js'));
-assert.equal(/_middleware\.full|legacyOnRequest|COAST_CHAT_STORE/.test(middleware + chatRouter + storeSource), false);
+const schemaSource = await read(join(repo, 'functions/chat-schema.js'));
+assert.equal(/_middleware\.full|legacyOnRequest|COAST_CHAT_STORE/.test(middleware + chatRouter + storeSource + schemaSource), false);
 assert.equal(/readLegacy|importLegacy|\bturns\s+WHERE|user_variants|assistant_variants/.test(storeSource), false);
 assert.ok(chatRouter.includes("source: 'd1-json-v4'"));
 assert.ok(storeSource.includes('conversation_states'));
@@ -113,6 +125,41 @@ await assert.rejects(() => store.writeConversationState(db, two.id, normalizedSt
 await store.deleteConversation(db, three.id);
 await store.deleteConversation(db, one.id);
 assert.equal((await store.listConversations(db)).length, 0);
+
+const oldDb = new D1Database();
+oldDb.database.exec(`
+  CREATE TABLE users (id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+  CREATE TABLE conversations (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT,
+    created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER
+  );
+  CREATE TABLE turns (
+    id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, position INTEGER NOT NULL,
+    active_user_variant_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER
+  );
+  CREATE TABLE user_variants (
+    id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, position INTEGER NOT NULL,
+    content TEXT, created_at INTEGER NOT NULL, deleted_at INTEGER
+  );
+  CREATE TABLE assistant_variants (
+    id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, user_variant_id TEXT,
+    user_variant_position INTEGER, position INTEGER NOT NULL, content TEXT,
+    error_detail TEXT, is_active INTEGER, created_at INTEGER NOT NULL, deleted_at INTEGER
+  );
+  INSERT INTO conversations VALUES ('old-conversation', 'owner', '旧窗口', 1, 1, NULL);
+  INSERT INTO turns VALUES ('old-turn', 'old-conversation', 0, 'old-user', 1, 1, NULL);
+  INSERT INTO user_variants VALUES ('old-user', 'old-turn', 0, '旧问题', 1, NULL);
+  INSERT INTO assistant_variants VALUES ('old-assistant', 'old-turn', 'old-user', 0, 0, '旧回答', NULL, 1, 1, NULL);
+`);
+const migrated = await store.readConversationState(oldDb, 'old-conversation');
+assert.equal(migrated.version, 4);
+assert.equal(migrated.turns[0].user.variants[0].content, '旧问题');
+assert.equal(migrated.turns[0].assistant.variantsByUserVariant['0'][0].content, '旧回答');
+const migratedColumns = oldDb.database.prepare('PRAGMA table_info(conversations)').all().map((column) => column.name);
+assert.ok(migratedColumns.includes('title_manual'));
+assert.ok(migratedColumns.includes('title_generated_at'));
+assert.ok(migratedColumns.includes('archived_at'));
+assert.equal(oldDb.database.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count, 1);
 
 const profile = await store.writeProfile(db, {
   assistant_avatar_dataurl: 'data:image/png;base64,AA==',

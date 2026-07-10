@@ -1,17 +1,19 @@
 # Elementera Coast application contract
 
-Status: rebuild contract for `refactor/canonical-app-20260710`  
-Production baseline: `main@e21505e7e58c90eb422cad29981e5ea5c59bfe6c`
+Status: canonical Pages application contract
+Rebuild origin: `main@e21505e7e58c90eb422cad29981e5ea5c59bfe6c`
+
+This contract covers the Cloudflare Pages document, browser runtime, service worker, and root `functions/` API. The standalone Node MCP service under `elementera-mcp/` is a separate runtime with its own routes, data files, and tests; it is not loaded by or deployed as part of this Pages application.
 
 ## Non-negotiable construction rules
 
-1. `index.html` and `app.html` render the same semantic shell and load one module entry: `public/app.js`.
+1. `index.html` is the only app document and loads one module entry: `public/app.js`. `/app.html` and `/gptlike` are URL aliases declared in `_redirects`, not duplicate documents.
 2. Each feature has one controller and one state owner. A feature may call shared services, but it may not scan for or replace another feature's DOM.
 3. Runtime ownership must not depend on global guard flags, delayed reclaims, `MutationObserver`, dynamic script injection, selector sweeps, duplicate DOM normalization, or compatibility loaders.
 4. D1 is the only owner of main-chat conversations, histories, and synced model profile. Local storage is reserved for explicitly local preferences and local-only rooms.
 5. Every visible icon is real inline SVG produced by the icon module. No empty pseudo-element, font glyph, base64 duplicate, or selector-dependent icon ownership is allowed.
 6. A failed request is shown as a failed request. The app must not silently switch data owners or resurrect deleted data.
-7. The rebuild may contain one explicit, versioned local-storage migration. After it runs, old keys are removed. There are no permanent legacy readers.
+7. The rebuild contains one explicit local-storage migration and one versioned D1 schema migration. After the local migration succeeds, old keys are removed. There are no permanent fallback readers.
 8. Experimental cleanroom copies, retired hosts, legacy script stacks, and unused assets are deleted when the replacement passes this contract.
 
 ## Runtime ownership
@@ -32,7 +34,7 @@ Production baseline: `main@e21505e7e58c90eb422cad29981e5ea5c59bfe6c`
 | Run control and API sandbox | `public/features/tools.js` | Request preferences, cleanup, fixed sandbox request |
 | Auth and protected routing | `functions/auth.js`, `functions/_middleware.js` | Gate, cookie session, protected assets/API |
 | Model API | `functions/models.js`, `functions/api-router.js` | Catalog, formal chat, sandbox |
-| Main-chat API | `functions/chat-router.js`, `functions/chat-store.js` | Conversations, histories, profile, title |
+| Main-chat API | `functions/chat-router.js`, `functions/chat-store.js`, `functions/chat-schema.js` | Conversations, histories, profile, title, versioned D1 migration |
 
 ## UI and behavior acceptance contract
 
@@ -134,14 +136,14 @@ The migration imports supported values from the existing keys, then deletes thos
 - root `run-control-p301c.js`, `api-sandbox-p302c.js`, and `model-box-p303a.js`
 - old chat and shell controllers replaced by the feature modules
 - monolithic patch-stacked `public/styles.css` and extra `conversation.css`
-- unused `public/app.js` legacy host copy, cleanroom copies, app-next/unfold copies, and retired module placeholder documents
+- cleanroom copies, app-next/unfold copies, and retired module placeholder documents
 - action SVG duplicates once inline SVG ownership is verified
 - `_middleware.full.js`
-- all KV/normalized-table/browser-history migration readers
+- all per-request KV, normalized-table, and browser-history fallback readers; historical D1 tables are touched only by the numbered schema migration
 
 ## Verification gates
 
-1. Static architecture test: one script entry, no legacy path, guard flag, observer, ownership timer, dynamic script injection, or missing SVG symbol.
+1. Static architecture test: one document and one script entry; no duplicate app document, legacy path, guard flag, observer, ownership timer, dynamic script injection, or missing SVG symbol.
 2. State unit tests: user/assistant branch edit/delete/regenerate/reaction behavior.
 3. D1 tests: three conversations; rename/delete tombstones; full history isolation; profile and automatic title rules.
 4. DOM interaction tests: sidebar uniqueness, menus, SVG presence, local rooms, panels, Daily actions, letter actions, model selection.

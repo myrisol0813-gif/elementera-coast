@@ -1,8 +1,9 @@
+import { ensureChatSchema as ensureSchema } from './chat-schema.js';
+
 const USER_ID = 'owner';
 const MAX_CONTENT = 12000;
 const MAX_AVATAR = 500 * 1024;
 const DEFAULT_TITLES = new Set(['', '新聊天', '未命名海岸', '主聊天']);
-const schemaPromises = new WeakMap();
 
 export class ChatStoreError extends Error {
   constructor(type, message, status = 400) {
@@ -67,58 +68,8 @@ async function all(db, sql, params = []) {
   return result?.results || [];
 }
 
-async function initializeSchema(db) {
-  await run(db, `CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  )`);
-
-  await run(db, `CREATE TABLE IF NOT EXISTS conversations (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    title TEXT,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    deleted_at INTEGER,
-    title_manual INTEGER DEFAULT 0,
-    title_generated_at INTEGER,
-    archived_at INTEGER
-  )`);
-
-  await run(db, `CREATE TABLE IF NOT EXISTS conversation_states (
-    conversation_id TEXT PRIMARY KEY,
-    state_json TEXT NOT NULL,
-    updated_at INTEGER NOT NULL
-  )`);
-
-  await run(db, `CREATE TABLE IF NOT EXISTS chat_profiles (
-    user_id TEXT PRIMARY KEY,
-    assistant_avatar_dataurl TEXT,
-    current_chat_model TEXT,
-    current_image_model TEXT,
-    model_box_json TEXT,
-    updated_at INTEGER NOT NULL
-  )`);
-
-  await run(db, 'CREATE INDEX IF NOT EXISTS idx_conversations_owner ON conversations(user_id, deleted_at, updated_at)');
-  const timestamp = nowMs();
-  await run(db, 'INSERT OR IGNORE INTO users (id, created_at, updated_at) VALUES (?, ?, ?)', [USER_ID, timestamp, timestamp]);
-  await run(db, 'UPDATE users SET updated_at = ? WHERE id = ?', [timestamp, USER_ID]);
-}
-
 export async function ensureChatSchema(db) {
-  let ready = schemaPromises.get(db);
-  if (!ready) {
-    ready = initializeSchema(db);
-    schemaPromises.set(db, ready);
-  }
-  try {
-    await ready;
-  } catch (error) {
-    schemaPromises.delete(db);
-    throw error;
-  }
+  return ensureSchema(db, normalizeState);
 }
 
 function conversationFromRow(row) {
@@ -415,4 +366,3 @@ export async function writeConversationState(db, id, value) {
   state.updated_at = iso(timestamp);
   return state;
 }
-
