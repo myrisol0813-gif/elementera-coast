@@ -1,0 +1,337 @@
+.message-scroller {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.messages {
+  width: min(760px, 100%);
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 30px 24px 22px;
+}
+
+.message {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 14px;
+  margin: 0 0 28px;
+}
+
+.message.user {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.message .content {
+  min-width: 0;
+}
+
+.message.user .content {
+  display: grid;
+  justify-items: end;
+  max-width: min(86%, 620px);
+}
+
+.user-bubble {
+  padding: 10px 15px;
+  border-radius: 20px;
+  background: var(--user);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface-soft) center/cover no-repeat;
+  color: var(--text);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.assistant-text {
+  padding-top: 4px;
+  font-size: 16px;
+  line-height: 1.72;
+  overflow-wrap: anywhere;
+}
+
+.assistant-text p {
+  margin: 0 0 12px;
+}
+
+.assistant-text p:last-child {
+  margin-bottom: 0;
+}
+
+.message-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 11px;
+  color: var(--muted);
+}
+
+.message.user .message-actions {
+  justify-content: flex-end;
+}
+
+.action-button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 6px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.action-button:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.action-button.is-active {
+  color: var(--accent);
+}
+
+.action-button.is-active[data-reaction="liked"] .icon,
+.action-button.is-active[data-reaction="favorite"] .icon {
+  fill: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.variant-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.variant-switch button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.15em;
+  margin-left: 3px;
+  background: currentColor;
+  vertical-align: -0.15em;
+  animation: blink 900ms steps(1) infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+.message-error {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.chat-status {
+  width: min(720px, calc(100% - 36px));
+  margin: 0 auto 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  color: var(--danger);
+  font-size: 12px;
+  text-align: center;
+}
+
+.chat-status[data-kind="loading"] {
+  background: transparent;
+  color: var(--muted);
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) 58px;
+  align-items: end;
+  gap: 8px;
+  width: min(780px, 100%);
+  min-height: calc(var(--composer-height) + var(--safe-bottom));
+  margin: 0 auto;
+  padding: 12px max(14px, var(--safe-right)) calc(12px + var(--safe-bottom)) max(14px, var(--safe-left));
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.composer-side,
+.composer-primary {
+  width: 54px;
+  height: 54px;
+  padding: 13px;
+  border-radius: 50%;
+}
+
+.composer-side {
+  background: var(--surface-soft);
+}
+
+.composer-primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.input-pill {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  align-items: end;
+  min-height: 54px;
+  padding: 7px 7px 7px 17px;
+  border: 1px solid transparent;
+  border-radius: 27px;
+  background: var(--surface-soft);
+}
+
+.input-pill:focus-within {
+  border-color: color-mix(in srgb, var(--text) 14%, transparent);
+}
+
+#promptInput {
+  width: 100%;
+  min-height: 38px;
+  max-height: 112px;
+  padding: 8px 0;
+  overflow-y: auto;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  line-height: 1.4;
+}
+
+#promptInput::placeholder {
+  color: var(--muted);
+}
+
+.input-action {
+  width: 40px;
+  height: 40px;
+  padding: 9px;
+  border-radius: 50%;
+}
+
+#chatConversationList,
+#localRoomWindowList {
+  display: grid;
+  gap: 2px;
+}
+
+.conversation-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 2px;
+}
+
+.conversation-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-more {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.conversation-more:hover,
+.conversation-more[aria-expanded="true"] {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.conversation-menu {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 3px);
+  right: 2px;
+  display: grid;
+  min-width: 112px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+
+.conversation-menu button {
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conversation-menu button:hover {
+  background: var(--surface-soft);
+}
+
+.conversation-menu .danger {
+  color: var(--danger);
+}
+
+@media (max-width: 560px) {
+  :root {
+    --topbar-height: 68px;
+    --composer-height: 82px;
+  }
+
+  .messages {
+    padding: 30px 27px 12px;
+  }
+
+  .message {
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 12px;
+    margin-bottom: 26px;
+  }
+
+  .assistant-text {
+    font-size: 16px;
+  }
+
+  .composer {
+    grid-template-columns: 54px minmax(0, 1fr) 56px;
+    padding-inline: 14px;
+  }
+}
+
