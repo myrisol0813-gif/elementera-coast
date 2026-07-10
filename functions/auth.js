@@ -1,4 +1,4 @@
-import { json, readText, redirect, sameOrigin, securityHeaders, text } from './http.js';
+import { json, readText, redirect, securityHeaders, text } from './http.js';
 
 const COOKIE_NAME = '__Host-coast_session';
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
@@ -18,6 +18,19 @@ function configured(env) {
   return /^[a-f0-9]{64}$/.test(passwordHash(env))
     && typeof sessionSecret(env) === 'string'
     && sessionSecret(env).length >= 32;
+}
+
+function loginRequestAllowed(request) {
+  const requestOrigin = new URL(request.url).origin;
+  const origin = request.headers.get('Origin');
+  if (origin && origin !== 'null') return origin === requestOrigin;
+  const referer = request.headers.get('Referer');
+  if (!referer) return true;
+  try {
+    return new URL(referer).origin === requestOrigin;
+  } catch {
+    return false;
+  }
 }
 
 function parseCookies(header) {
@@ -133,7 +146,7 @@ export async function handleLogin(request, env) {
   if (!configured(env)) return html(loginPage('Gate is not configured yet.'), 503);
   if (request.method === 'GET') return (await verifySession(request, env)) ? redirect('/') : html(loginPage());
   if (request.method !== 'POST') return text('Method not allowed\n', 405, { Allow: 'GET, POST' });
-  if (!sameOrigin(request, { allowMissingReferer: true })) return text('Forbidden\n', 403);
+  if (!loginRequestAllowed(request)) return text('Forbidden\n', 403);
   let body;
   try {
     body = await readText(request, MAX_LOGIN_BODY_BYTES);
@@ -148,4 +161,3 @@ export async function handleLogin(request, env) {
 export function handleLogout() {
   return redirect('/login', { 'Set-Cookie': cookie('', 0) });
 }
-

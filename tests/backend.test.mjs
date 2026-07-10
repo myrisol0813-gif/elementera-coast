@@ -32,6 +32,20 @@ const forbidden = await handleLogin(new Request('https://coast.test/login', {
   body: 'password=coast-password',
 }), env);
 assert.equal(forbidden.status, 403);
+
+const opaqueOriginLogin = await handleLogin(new Request('https://coast.test/login', {
+  method: 'POST',
+  headers: { Origin: 'null', 'Content-Type': 'application/x-www-form-urlencoded' },
+  body: 'password=coast-password',
+}), env);
+assert.equal(opaqueOriginLogin.status, 302);
+
+const opaqueCrossSite = await handleLogin(new Request('https://coast.test/login', {
+  method: 'POST',
+  headers: { Origin: 'null', Referer: 'https://evil.test/form' },
+  body: 'password=coast-password',
+}), env);
+assert.equal(opaqueCrossSite.status, 403);
 assert.equal(unauthorized(new Request('https://coast.test/api/health')).status, 401);
 assert.equal(unauthorized(new Request('https://coast.test/')).status, 302);
 
@@ -49,4 +63,3 @@ assert.ok(catalog.groups.free_test.some((model) => model.id === 'vendor/free:fre
 assert.ok(catalog.groups.free_test.some((model) => model.id === 'nvidia/nemotron-3-super-120b-a12b:free'));
 
 console.log('backend: ok');
-
