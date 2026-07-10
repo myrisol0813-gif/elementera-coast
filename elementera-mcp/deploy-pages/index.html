@@ -1,74 +1,102 @@
 <!doctype html>
 <html lang="zh-CN" data-theme="light">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#ffffff" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-title" content="ChatGPT" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="ChatGPT">
   <title>ChatGPT</title>
-  <link rel="manifest" href="/manifest.json" />
-  <link rel="stylesheet" href="/public/styles.css?v=p3-chat-core-01" />
-  <link rel="stylesheet" href="/public/modules/chat/conversation.css?v=p3-chat-core-01" />
+  <link rel="manifest" href="/manifest.json">
+  <link rel="stylesheet" href="/public/styles/tokens.css?v=coast-app-01">
+  <link rel="stylesheet" href="/public/styles/shell.css?v=coast-app-01">
+  <link rel="stylesheet" href="/public/styles/chat.css?v=coast-app-01">
+  <link rel="stylesheet" href="/public/styles/features.css?v=coast-app-01">
 </head>
 <body>
-  <div id="app" class="chatgpt-shell">
-    <div id="scrim" class="scrim" hidden></div>
-    <aside id="sidebar" class="sidebar" aria-label="聊天历史">
+  <div id="app" class="app-shell">
+    <button id="scrim" class="scrim" type="button" data-action="shell:close-sidebar" aria-label="关闭侧边栏" hidden></button>
+
+    <aside id="sidebar" class="sidebar" aria-label="聊天与房间">
       <div class="sidebar-top">
-        <button id="sidebarClose" class="icon-button" type="button" aria-label="关闭侧边栏" data-icon="close"></button>
-        <label class="sidebar-search"><span data-icon="search"></span><input type="search" placeholder="搜索聊天" autocomplete="off" /></label>
+        <button id="sidebarClose" class="icon-button" type="button" data-action="shell:close-sidebar" data-icon="close" aria-label="关闭侧边栏"></button>
+        <label class="sidebar-search"><span data-icon="search"></span><input id="sidebarSearch" type="search" placeholder="搜索聊天" autocomplete="off"></label>
       </div>
-      <nav class="history-list" aria-label="最近聊天">
-        <section id="chatConversationSection" class="chat-conversation-section" data-owner="chat-conversations"><h2>主聊天窗口</h2><div id="chatConversationList"><p class="chat-conversation-empty">正在载入…</p></div></section>
+
+      <nav class="sidebar-content" aria-label="海岸入口">
+        <section id="coastStatus" class="coast-status" aria-label="海岸日期">
+          <div class="coast-status-grid">
+            <span>同轨第 <b id="orbitDays">—</b> 日</span>
+            <span>距 8.12 <b id="august12Days">—</b> 天</span>
+            <span>距 8.13 <b id="august13Days">—</b> 天</span>
+          </div>
+        </section>
+
+        <section id="mainRooms" class="sidebar-section">
+          <h2>主房间</h2>
+          <button class="history-item" type="button" data-action="rooms:open" data-kind="radio"><span data-icon="radio"></span>无线电波的两端</button>
+          <button class="history-item" type="button" data-action="rooms:open" data-kind="lighthouse"><span data-icon="letter"></span>灯塔来信</button>
+          <button class="history-item" type="button" data-action="rooms:memory"><span data-icon="memory"></span>轨迹 / 记忆</button>
+          <button class="history-item" type="button" data-action="daily:home"><span data-icon="daily"></span>海岸日报</button>
+        </section>
+
+        <section id="localRoomWindows" class="sidebar-section">
+          <h2>房间窗口</h2>
+          <div id="localRoomWindowList"></div>
+        </section>
+
+        <section id="chatConversationSection" class="sidebar-section" data-owner="chat-conversations">
+          <h2>主聊天窗口</h2>
+          <div id="chatConversationList"><p class="sidebar-empty">正在载入…</p></div>
+        </section>
       </nav>
+
       <div class="sidebar-footer">
-        <button type="button" class="account-row" id="themeToggle"><span class="account-avatar" data-icon="theme"></span><span><strong>主题</strong><small id="theme-label">浅色</small></span></button>
-        <button type="button" class="account-row"><span class="account-avatar">?</span><span><strong>帮助</strong><small>本地预览界面</small></span></button>
+        <button type="button" class="account-row" data-action="shell:cycle-theme">
+          <span class="account-avatar" data-icon="theme"></span><span><strong>主题</strong><small id="themeLabel">浅色</small></span>
+        </button>
+        <button type="button" class="account-row" data-action="settings:wolf">
+          <span class="account-avatar" data-icon="wolf"></span><span><strong>Wolf Den</strong><small>小狼窝入口</small></span>
+        </button>
+        <button type="button" class="account-row" data-action="settings:desk">
+          <span class="account-avatar" data-icon="serpent"></span><span><strong>Serpent Desk</strong><small>小蛇书桌</small></span>
+        </button>
       </div>
     </aside>
+
     <main class="main-panel">
       <header class="topbar">
-        <button id="menuButton" class="icon-button" type="button" aria-label="打开侧边栏" data-icon="menu"></button>
-        <button id="modelButton" class="model-button" type="button" aria-label="选择模型"><span class="model-title">ChatGPT</span><span class="model-name">5.5 Thinking ›</span></button>
-        <div class="topbar-actions"><button id="newChatButton" class="icon-button" type="button" aria-label="新建聊天" data-icon="new-chat"></button><button id="moreButton" class="icon-button" type="button" aria-label="更多" data-icon="more"></button></div>
-      </header>
-      <section id="messageScroller" class="message-scroller" aria-label="聊天消息"><div id="messages" class="messages"></div></section>
-      <div id="chatSyncStatus" role="status" aria-live="polite" hidden></div>
-      <form id="composer" class="composer-wrap" autocomplete="off">
-        <div class="composer-line"></div>
-        <div class="composer-row">
-          <button id="imageButton" class="image-button" type="button" aria-label="上传图片" data-icon="image"></button>
-          <div class="input-pill">
-            <textarea id="promptInput" rows="1" placeholder="询问任何问题" aria-label="询问任何问题"></textarea>
-            <button id="micButton" class="mic-button" type="button" aria-label="语音输入" data-icon="mic"></button>
-            <button id="sendButton" class="mic-button send-inline" type="submit" aria-label="发送" data-icon="send" hidden></button>
-            <button id="stopButton" class="mic-button send-inline" type="button" aria-label="停止生成" data-icon="stop" hidden></button>
-          </div>
-          <button id="callButton" class="call-button" type="button" aria-label="通话" data-icon="call"></button>
+        <button id="menuButton" class="icon-button" type="button" data-action="shell:open-sidebar" data-icon="menu" aria-label="打开侧边栏"></button>
+        <button id="modelButton" class="model-button" type="button" data-action="models:open" aria-label="选择模型">
+          <span class="model-title">ChatGPT</span><span id="modelName" class="model-name">载入中 ›</span>
+        </button>
+        <div class="topbar-actions">
+          <button id="newChatButton" class="icon-button" type="button" data-action="chat:new" data-icon="new-chat" aria-label="新建聊天"></button>
+          <button id="moreButton" class="icon-button" type="button" data-action="letters:open" data-icon="more" aria-label="登岛信与予爱机书"></button>
         </div>
+      </header>
+
+      <section id="messageScroller" class="message-scroller" aria-label="聊天消息">
+        <div id="messages" class="messages"><div class="empty-state">正在载入海岸…</div></div>
+      </section>
+
+      <div id="chatStatus" class="chat-status" role="status" aria-live="polite" hidden></div>
+
+      <form id="composer" class="composer" autocomplete="off">
+        <button id="imageButton" class="composer-side" type="button" data-action="chat:image" data-icon="plus" aria-label="上传图片"></button>
+        <div class="input-pill">
+          <textarea id="promptInput" rows="1" placeholder="询问任何问题" aria-label="询问任何问题"></textarea>
+          <button id="micButton" class="input-action" type="button" data-action="chat:mic" data-icon="mic" aria-label="语音输入"></button>
+        </div>
+        <button id="composerActionButton" class="composer-primary" type="submit" data-icon="call" aria-label="通话"></button>
       </form>
     </main>
+
+    <div id="overlayRoot" class="app-overlay" hidden></div>
+    <div id="toastRoot" class="toast" role="status" aria-live="polite" hidden></div>
   </div>
-  <script src="/public/modules/daily/daily-shell.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/modules/daily/daily-draft-state.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/modules/daily/daily-assets.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/modules/daily/moments.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/modules/daily/diary.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/modules/daily/album.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/modules/daily/daily-router.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/modules/shell/shell-controller.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/01-v094-back-patch.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/02-v094-wolf-apps-back-fix.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/03-v106-daily-legacy.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/04-v094-safe-text-setter.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/05-v095-sidebar-rooms.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/06-v096-sidebar-room-details.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/modules/legacy/appjs-flat/10-v099-v119-island-letter-lovebook.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/run-control-p301c.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/api-sandbox-p302c.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/modules/chat/conversation-controller.js?v=p3-chat-core-01" defer></script>
-  <script src="/public/model-box-p303a.js?v=p3-chat-core-01" defer></script>
+
+  <script type="module" src="/public/app.js?v=coast-app-01"></script>
 </body>
 </html>
 
