@@ -19,7 +19,7 @@
   let catalogState = null;
 
   function syncProfileSoon() {
-    window.elementeraChatHistorySyncP301?.syncProfileSoon?.();
+    window.ElementeraChat?.syncProfile?.();
   }
   function installCss() {
     if (q('#modelBoxP303AStyle')) return;
@@ -144,7 +144,7 @@
   }
   function panelHtml(search = '') {
     const updated = catalogState?.updated_at || '未刷新';
-    return `<header class="clean-head"><button class="clean-back" type="button" data-mb-back>←</button><div><h1>模型箱</h1><p>OpenAI chat · Free test · GPT Image</p></div></header><main class="clean-body"><p class="mb-note">模型目录来自 Cloudflare /api/models。常驻模型箱只保存模型 id 和轻量目录缓存；不会保存 API key。</p><p class="mb-version">Panel version: p3-chat-d1-00</p><p class="mb-status">updated_at: ${esc(updated)} · 当前 chat: ${esc(localStorage.getItem(CURRENT_CHAT_KEY) || '未选择')}</p><div class="mb-toolbar"><input id="modelBoxSearchP303A" type="search" placeholder="搜索 OpenAI chat 模型" value="${esc(search)}"><button class="mb-refresh" type="button" data-mb-refresh>刷新目录</button></div>${currentBoxHtml()}${catalogHtml(search)}</main>`;
+    return `<header class="clean-head"><button class="clean-back" type="button" data-mb-back>←</button><div><h1>模型箱</h1><p>OpenAI chat · Free test · GPT Image</p></div></header><main class="clean-body"><p class="mb-note">模型目录来自 Cloudflare /api/models。常驻模型箱只保存模型 id 和轻量目录缓存；不会保存 API key。</p><p class="mb-version">Panel version: p3-chat-core-01</p><p class="mb-status">updated_at: ${esc(updated)} · 当前 chat: ${esc(localStorage.getItem(CURRENT_CHAT_KEY) || '未选择')}</p><div class="mb-toolbar"><input id="modelBoxSearchP303A" type="search" placeholder="搜索 OpenAI chat 模型" value="${esc(search)}"><button class="mb-refresh" type="button" data-mb-refresh>刷新目录</button></div>${currentBoxHtml()}${catalogHtml(search)}</main>`;
   }
   function openModelBox(search = '') {
     installCss();
@@ -221,7 +221,6 @@
   }
 
   document.addEventListener('click', async (event) => {
-    if (window.__ecChatCanon02 && (event.target.closest('[data-user-act]') || event.target.closest('.assistant-actions .action-button'))) return;
     if (event.target.closest('#modelButton') || event.target.closest('[data-mb-entry]')) {
       event.preventDefault(); event.stopPropagation(); openModelBox(); return;
     }
@@ -255,3 +254,4 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
 })();
+
