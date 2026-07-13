@@ -6,9 +6,10 @@ export function createRouter(root, { onOpen = () => {}, onClose = () => {} } = {
   const stack = [];
   let renderToken = 0;
 
-  async function render() {
+  async function render({ preserveScroll = false } = {}) {
     const token = ++renderToken;
     const current = stack.at(-1);
+    const scrollTop = preserveScroll ? root.querySelector('.feature-body')?.scrollTop || 0 : 0;
     if (!current) {
       root.hidden = true;
       root.replaceChildren();
@@ -34,6 +35,10 @@ export function createRouter(root, { onOpen = () => {}, onClose = () => {} } = {
     </section>`;
     onOpen(current);
     view.afterRender?.(root);
+    if (preserveScroll) {
+      const body = root.querySelector('.feature-body');
+      if (body) body.scrollTop = scrollTop;
+    }
   }
 
   return Object.freeze({
@@ -54,10 +59,9 @@ export function createRouter(root, { onOpen = () => {}, onClose = () => {} } = {
       stack.length = 0;
       await render();
     },
-    async refresh() {
-      await render();
+    async refresh(options = {}) {
+      await render({ preserveScroll: options.preserveScroll !== false });
     },
     current: () => stack.at(-1) || null,
   });
 }
-

@@ -2,7 +2,6 @@ import { escapeAttribute, escapeHtml, id, q, readImageFile } from '../core/dom.j
 import { icon } from '../core/icons.js';
 
 const CATEGORIES = Object.freeze({ xiaohan: '小寒', myri: 'Myri', together: '蛇蛇狗合照' });
-const BORDER_COLORS = Object.freeze(['#d9a441', '#8fb0bd', '#d78fb1', '#88b86a', '#b49bdf', '#ef9c74', '#7fb9a8', '#d0c269']);
 
 function dateKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -75,7 +74,7 @@ export function createDaily({ storage, router, toast }) {
   function momentsView() {
     const feed = state.moments.length
       ? state.moments.map(momentCard).join('')
-      : '<section class="feature-card feature-prose"><h2>暂无动态。</h2><p>这里是本地草稿原型，暂未同步服务器。刷新后可能消失。</p></section>';
+      : '<section class="daily-empty"><h2>暂无动态。</h2><p>这里是本地草稿原型，暂未同步服务器。刷新后可能消失。</p></section>';
     const cover = state.momentCover ? `style="background-image:linear-gradient(rgba(0,0,0,.12),rgba(0,0,0,.12)),url(${escapeAttribute(state.momentCover)})"` : '';
     return {
       title: '硅碳圈',
@@ -83,7 +82,7 @@ export function createDaily({ storage, router, toast }) {
       className: 'moments-panel',
       headerAction: `<button class="round-add" type="button" data-action="daily:moments-compose" aria-label="发表硅碳圈">${icon('plus')}</button>`,
       body: `<button class="moment-cover" type="button" data-action="daily:cover" ${cover}><span>上传封面</span></button>
-        <section class="moment-profile"><button type="button" data-action="daily:avatar">${xiaohanAvatar()}</button><h2>小寒</h2><p>本地草稿原型，暂未同步服务器</p></section>
+        <section class="moment-profile"><button type="button" data-action="daily:avatar">${xiaohanAvatar()}</button><div><h2>小寒</h2><p>本地草稿原型，暂未同步服务器</p></div></section>
         <section class="moment-feed">${feed}</section>`,
     };
   }
@@ -93,11 +92,11 @@ export function createDaily({ storage, router, toast }) {
       title: '发表硅碳圈',
       subtitle: '本地草稿原型，暂未同步服务器',
       className: 'daily-compose',
-      body: `<section class="feature-card feature-note">本地草稿原型，暂未同步服务器。刷新后可能消失。</section>
-        <textarea id="momentText" rows="6" placeholder="这一刻的想法..."></textarea>
-        <label class="image-picker"><input id="momentImageInput" type="file" accept="image/*" hidden><span>${icon('plus')}</span><b>选择配图</b></label>
+      body: `<p class="daily-context">本地草稿原型 · 暂未同步服务器</p>
+        <textarea id="momentText" class="moment-compose-text" rows="8" placeholder="这一刻的想法..."></textarea>
+        <label class="image-picker" aria-label="选择配图"><input id="momentImageInput" type="file" accept="image/*" hidden><span>${icon('plus')}</span></label>
         <div id="momentPreview" class="image-preview"></div>
-        <button class="feature-row" type="button" data-action="daily:location"><span><strong>所在位置</strong><small>暂未接入</small></span></button>
+        <button class="compose-location" type="button" data-action="daily:location"><span><strong>所在位置</strong><small>暂未接入</small></span><b>›</b></button>
         <button class="primary-wide" type="button" data-action="daily:publish-moment">保存本地草稿预览</button>`,
       afterRender: () => bindPreview('#momentImageInput', '#momentPreview'),
     };
@@ -108,9 +107,7 @@ export function createDaily({ storage, router, toast }) {
   }
 
   function diaryEntry(entry) {
-    const mine = entry.author === 'xiaohan';
-    const avatar = mine ? xiaohanAvatar() : `<span class="daily-avatar">${entry.author === 'api' ? '✦' : '≋'}</span>`;
-    return `<article class="diary-entry ${mine ? 'is-mine' : 'is-myri'}"><div>${avatar}</div><div class="diary-paper"><header><b>${escapeHtml(authorName(entry.author))}</b><span>${escapeHtml(entry.weather)} · ${escapeHtml(entry.mood)}</span></header><p>${escapeHtml(entry.text || '今天也在海岸留下一张纸。')}</p>${entry.image ? `<img src="${escapeAttribute(entry.image)}" alt="日记配图">` : ''}</div></article>`;
+    return `<article class="diary-paper"><header><b>${escapeHtml(authorName(entry.author))}</b><span>${escapeHtml(entry.weather)} · ${escapeHtml(entry.mood)}</span></header><p>${escapeHtml(entry.text || '今天也在海岸留下一张纸。')}</p>${entry.image ? `<img src="${escapeAttribute(entry.image)}" alt="日记配图">` : ''}</article>`;
   }
 
   function diaryView() {
@@ -122,7 +119,7 @@ export function createDaily({ storage, router, toast }) {
       className: 'diary-panel',
       headerAction: `<button class="round-add" type="button" data-action="daily:diary-compose" aria-label="写日记">${icon('plus')}</button>`,
       body: `<section class="diary-filter">${dates.map((date) => `<button class="${date === state.diaryDate ? 'is-active' : ''}" type="button" data-action="daily:diary-date" data-date="${date}">${dateLabel(date)}</button>`).join('')}</section>
-        <section class="diary-stack">${entries.length ? entries.map(diaryEntry).join('') : '<section class="feature-card feature-prose"><h2>暂无日记。</h2><p>这里是本地草稿原型，暂未同步服务器。今天可以留下小寒、✦Myrisol、≋Myrisol 的纸页。</p></section>'}</section>`,
+        <section class="diary-stack">${entries.length ? entries.map(diaryEntry).join('') : '<section class="daily-empty"><h2>暂无日记。</h2><p>今天可以留下小寒、✦Myrisol、≋Myrisol 的纸页。</p></section>'}</section>`,
     };
   }
 
@@ -131,31 +128,33 @@ export function createDaily({ storage, router, toast }) {
       title: '写日记',
       subtitle: '本地草稿原型，暂未同步服务器',
       className: 'daily-compose',
-      body: `<section class="feature-card feature-note">本地草稿原型，暂未同步服务器。刷新后可能消失。</section>
-        <div class="form-grid"><label>写作者<select id="diaryAuthor"><option value="xiaohan">小寒</option><option value="api">✦Myrisol / API</option><option value="mcp">≋Myrisol / MCP</option></select></label><label>天气<input id="diaryWeather" placeholder="晴 / 雨 / 雾"></label><label>心情<input id="diaryMood" placeholder="平静 / 开心 / 想你"></label></div>
-        <textarea id="diaryText" rows="8" placeholder="今天的纸页..."></textarea>
-        <label class="image-picker"><input id="diaryImageInput" type="file" accept="image/*" hidden><span>${icon('plus')}</span><b>选择配图</b></label>
-        <div id="diaryPreview" class="image-preview"></div>
-        <button class="primary-wide" type="button" data-action="daily:save-diary">保存本地日记预览</button>`,
+      body: `<p class="daily-context">本地草稿原型 · 暂未同步服务器</p>
+        <section class="daily-form-surface">
+          <div class="form-grid"><label>写作者<select id="diaryAuthor"><option value="xiaohan">小寒</option><option value="api">✦Myrisol / API</option><option value="mcp">≋Myrisol / MCP</option></select></label><label>天气<input id="diaryWeather" placeholder="晴 / 雨 / 雾"></label><label>心情<input id="diaryMood" placeholder="平静 / 开心 / 想你"></label></div>
+          <textarea id="diaryText" rows="8" placeholder="今天的小句子..."></textarea>
+          <label class="image-picker" aria-label="选择日记配图"><input id="diaryImageInput" type="file" accept="image/*" hidden><span>${icon('plus')}</span></label>
+          <div id="diaryPreview" class="image-preview"></div>
+          <button class="primary-wide" type="button" data-action="daily:save-diary">保存今日小卡</button>
+        </section>`,
       afterRender: () => bindPreview('#diaryImageInput', '#diaryPreview'),
     };
   }
 
-  function albumCard(item, index) {
-    return `<figure class="album-card" style="--album-border:${BORDER_COLORS[index % BORDER_COLORS.length]}"><img src="${escapeAttribute(item.image)}" alt="海岸涂鸦"><figcaption><span>${escapeHtml(CATEGORIES[item.cat] || CATEGORIES.xiaohan)}</span><button type="button" data-action="daily:download" data-id="${escapeAttribute(item.id)}">下载</button></figcaption></figure>`;
+  function albumCard(item) {
+    return `<figure class="album-card"><img src="${escapeAttribute(item.image)}" alt="海岸涂鸦"><figcaption><span>${escapeHtml(CATEGORIES[item.cat] || CATEGORIES.xiaohan)}</span><button type="button" data-action="daily:download" data-id="${escapeAttribute(item.id)}">下载</button></figcaption></figure>`;
   }
 
   function albumView() {
     const sections = Object.entries(CATEGORIES).map(([category, label]) => {
       const items = state.albumItems.filter((item) => item.cat === category);
-      return `<section class="album-section"><h2>${label}</h2><div class="album-grid">${items.length ? items.map(albumCard).join('') : '<div class="album-empty">暂无图片。这里是本地草稿原型，暂未同步服务器。</div>'}</div></section>`;
+      return `<section class="album-section"><h2>${label}</h2><div class="album-grid">${items.length ? items.map(albumCard).join('') : '<div class="album-empty">暂无图片。这里会放海岸的小画片。</div>'}</div></section>`;
     }).join('');
     return {
       title: '相册',
       subtitle: '本地草稿原型，暂未同步服务器',
       className: 'album-panel',
       headerAction: `<button class="round-add" type="button" data-action="daily:album-compose" aria-label="上传相册">${icon('plus')}</button>`,
-      body: `<section class="feature-card feature-note">本地草稿原型，暂未同步服务器。刷新后可能消失。</section><section class="album-wall">${sections}</section>`,
+      body: `<p class="daily-context">本地草稿原型 · 暂未同步服务器</p><section class="album-wall">${sections}</section>`,
     };
   }
 
@@ -164,11 +163,13 @@ export function createDaily({ storage, router, toast }) {
       title: '上传相册',
       subtitle: '本地草稿原型，暂未同步服务器',
       className: 'daily-compose',
-      body: `<section class="feature-card feature-note">本地草稿原型，暂未同步服务器。刷新后可能消失。</section>
-        <label class="image-picker large"><input id="albumImageInput" type="file" accept="image/*" hidden><span>${icon('plus')}</span><b>选择一张图片</b></label>
-        <div id="albumPreview" class="image-preview"></div>
-        <label class="select-row">归类<select id="albumCategory">${Object.entries(CATEGORIES).map(([key, label]) => `<option value="${key}">${label}</option>`).join('')}</select></label>
-        <button class="primary-wide" type="button" data-action="daily:save-album">保存本地相册预览</button>`,
+      body: `<p class="daily-context">本地草稿原型 · 暂未同步服务器</p>
+        <section class="daily-form-surface album-compose-surface">
+          <label class="image-picker large" aria-label="选择一张图片"><input id="albumImageInput" type="file" accept="image/*" hidden><span>${icon('plus')}</span></label>
+          <div id="albumPreview" class="image-preview"></div>
+          <label class="select-row">归类<select id="albumCategory">${Object.entries(CATEGORIES).map(([key, label]) => `<option value="${key}">${label}</option>`).join('')}</select></label>
+          <button class="primary-wide" type="button" data-action="daily:save-album">保存本地相册预览</button>
+        </section>`,
       afterRender: () => bindPreview('#albumImageInput', '#albumPreview'),
     };
   }

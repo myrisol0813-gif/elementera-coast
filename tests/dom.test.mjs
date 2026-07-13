@@ -85,9 +85,14 @@ globalThis.fetch = async (input, options = {}) => {
     return response({ ok: true, conversation });
   }
   if (url.pathname === '/api/models') {
-    const model = { id: 'openai/gpt-4.1-nano', name: 'GPT-4.1 Nano', is_free: false, available: true, supported_parameters: ['temperature'], pricing: { prompt: '0', completion: '0' } };
+    const models = [
+      { id: 'openai/gpt-4.1-nano', name: 'GPT-4.1 Nano' },
+      { id: 'openai/o3', name: 'o3' },
+      { id: 'openai/gpt-4o', name: 'GPT-4o' },
+      { id: 'openai/gpt-5.2', name: 'GPT-5.2' },
+    ].map((model) => ({ ...model, is_free: false, available: true, supported_parameters: ['temperature'], pricing: { prompt: '0', completion: '0' } }));
     const free = { id: 'nvidia/nemotron-3-super-120b-a12b:free', name: 'Nemotron Super', is_free: true, available: true, supported_parameters: [], pricing: { prompt: '0', completion: '0' } };
-    return response({ ok: true, groups: { openai_chat: [model], openai_image: [], free_test: [free] }, defaults: { chat: model.id, image: '', free: free.id }, updated_at: now() });
+    return response({ ok: true, groups: { openai_chat: models, openai_image: [], free_test: [free] }, defaults: { chat: models[0].id, image: '', free: free.id }, updated_at: now() });
   }
   if (url.pathname === '/api/health') return response({ ok: true, authenticated: true, ts: now() });
   if (url.pathname === '/api/chat-sandbox') return response({ ok: true, model: 'mock/free', message: { role: 'assistant', content: '海岸测试灯已亮。' } });
@@ -165,14 +170,48 @@ renamed.querySelector('[data-action="chat:delete-conversation"]').click();
 await waitFor(() => document.querySelectorAll('#chatConversationList .conversation-row').length === 1, 'delete conversation');
 
 document.querySelector('#modelButton').click();
+await waitFor(() => !document.querySelector('#modelQuickPicker').hidden, 'model quick picker');
+assert.ok(document.querySelectorAll('#modelQuickPicker [data-action="models:quick-select"]').length >= 2);
+document.querySelector('#modelQuickPicker [data-action="models:open"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'models', 'models route');
 assert.ok(document.querySelectorAll('.model-row').length >= 2);
+const catalogHeadings = [...document.querySelectorAll('.feature-group > h2')].map((heading) => heading.textContent);
+assert.ok(catalogHeadings.indexOf('o 系列') < catalogHeadings.indexOf('GPT-4 系列'));
+assert.ok(catalogHeadings.indexOf('GPT-4 系列') < catalogHeadings.indexOf('GPT-5 系列'));
+const searchInput = document.querySelector('[data-input="models:search-draft"]');
+searchInput.value = '5.2';
+searchInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+assert.equal(document.querySelector('[data-input="models:search-draft"]'), searchInput, 'typing must not rerender the model page');
+document.querySelector('[data-submit="models:search"]').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+await waitFor(() => document.querySelector('.feature-group > h2')?.ownerDocument.body.textContent.includes('GPT-5.2'), 'model search');
+assert.equal(document.querySelectorAll('[data-action="models:add"][data-id="openai/gpt-5.2"]').length, 1);
+const modelBody = document.querySelector('.feature-body');
+modelBody.scrollTop = 320;
+document.querySelector('[data-action="models:add"][data-id="openai/gpt-5.2"]').click();
+await waitFor(() => profile.model_box.chat.includes('openai/gpt-5.2'), 'add model');
+assert.equal(document.querySelector('.feature-body').scrollTop, 320);
+assert.equal(document.querySelector('#toastRoot').textContent, '模型已添加');
 document.querySelector('[data-action="router:back"]').click();
 await tick();
+document.querySelector('#modelButton').click();
+await waitFor(() => !document.querySelector('#modelQuickPicker').hidden, 'updated quick picker');
+const quickFive = document.querySelector('#modelQuickPicker [data-action="models:quick-select"][data-id="openai/gpt-5.2"]');
+assert.ok(quickFive);
+quickFive.click();
+await waitFor(() => document.querySelector('#modelName').textContent === '5.2 ›', 'quick model switch');
+assert.equal(document.querySelector('#modelQuickPicker').hidden, true);
 
 document.querySelector('[data-action="daily:home"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'daily-home', 'daily route');
 assert.equal(document.querySelectorAll('.daily-grid button').length, 5);
+document.querySelector('[data-action="daily:moments"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'moments', 'moments route');
+assert.ok(document.querySelector('.moment-profile > div h2'));
+assert.equal(document.querySelector('.moment-feed > .feature-card'), null);
+document.querySelector('[data-action="daily:moments-compose"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'moments-compose', 'moments composer');
+assert.equal(document.querySelector('.image-picker b'), null);
+assert.equal(document.querySelector('.moment-compose-text').closest('.feature-body') !== null, true);
 document.querySelector('[data-action="router:back"]').click();
 await tick();
 

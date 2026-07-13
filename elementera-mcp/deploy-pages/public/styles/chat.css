@@ -171,22 +171,22 @@
 
 .composer {
   display: grid;
-  grid-template-columns: 54px minmax(0, 1fr) 58px;
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
   align-items: end;
   gap: 8px;
   width: min(780px, 100%);
   min-height: calc(var(--composer-height) + var(--safe-bottom));
   margin: 0 auto;
-  padding: 12px max(14px, var(--safe-right)) calc(12px + var(--safe-bottom)) max(14px, var(--safe-left));
+  padding: 7px max(14px, var(--safe-right)) calc(7px + var(--safe-bottom)) max(14px, var(--safe-left));
   border-top: 1px solid var(--line);
   background: var(--bg);
 }
 
 .composer-side,
 .composer-primary {
-  width: 54px;
-  height: 54px;
-  padding: 13px;
+  width: 42px;
+  height: 42px;
+  padding: 10px;
   border-radius: 50%;
 }
 
@@ -201,12 +201,12 @@
 
 .input-pill {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 40px;
+  grid-template-columns: minmax(0, 1fr) 32px;
   align-items: end;
-  min-height: 54px;
-  padding: 7px 7px 7px 17px;
+  min-height: 42px;
+  padding: 4px 6px 4px 15px;
   border: 1px solid transparent;
-  border-radius: 27px;
+  border-radius: 22px;
   background: var(--surface-soft);
 }
 
@@ -216,9 +216,9 @@
 
 #promptInput {
   width: 100%;
-  min-height: 38px;
+  min-height: 32px;
   max-height: 112px;
-  padding: 8px 0;
+  padding: 5px 0;
   overflow-y: auto;
   resize: none;
   border: 0;
@@ -232,9 +232,9 @@
 }
 
 .input-action {
-  width: 40px;
-  height: 40px;
-  padding: 9px;
+  width: 32px;
+  height: 32px;
+  padding: 7px;
   border-radius: 50%;
 }
 
@@ -309,10 +309,6 @@
 }
 
 @media (max-width: 560px) {
-  :root {
-    --composer-height: 82px;
-  }
-
   .messages {
     padding: 30px 27px 12px;
   }
@@ -328,7 +324,7 @@
   }
 
   .composer {
-    grid-template-columns: 54px minmax(0, 1fr) 56px;
+    grid-template-columns: 42px minmax(0, 1fr) 42px;
     padding-inline: 14px;
   }
 }

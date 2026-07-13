@@ -14,13 +14,13 @@ import { createTools } from './features/tools.js';
 const storage = createStorage();
 let toastTimer = 0;
 
-function toast(message) {
+function toast(message, duration = 1800) {
   const root = q('#toastRoot');
   if (!root) return;
   root.textContent = String(message || '');
   root.hidden = !message;
   clearTimeout(toastTimer);
-  if (message) toastTimer = setTimeout(() => { root.hidden = true; }, 1800);
+  if (message) toastTimer = setTimeout(() => { root.hidden = true; }, duration);
 }
 
 const shell = createShell({ storage });
@@ -41,6 +41,7 @@ const controllers = Object.freeze({ chat, models, tools, settings, rooms, daily,
 
 document.addEventListener('click', async (event) => {
   if (!event.target.closest('[data-conversation-id]')) chat.closeMenu();
+  models.handleDocumentClick(event.target);
   const target = event.target.closest('[data-action]');
   if (!target) return;
   const [namespace, name] = String(target.dataset.action || '').split(':');
@@ -109,4 +110,3 @@ start().catch((error) => {
   console.error('[bootstrap]', error);
   toast('海岸载入失败，请刷新重试。');
 });
-

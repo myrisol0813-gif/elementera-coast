@@ -12,10 +12,10 @@ const read = (path) => readFile(path, 'utf8');
 const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-02"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-03"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
-for (const id of ['coastStatus', 'mainRooms', 'localRoomWindows', 'localRoomWindowList', 'chatConversationSection', 'chatConversationList']) {
+for (const id of ['coastStatus', 'mainRooms', 'localRoomWindows', 'localRoomWindowList', 'chatConversationSection', 'chatConversationList', 'modelQuickPicker']) {
   assert.equal((index.match(new RegExp(`id="${id}"`, 'g')) || []).length, 1, `${id} must have one owner`);
 }
 for (const label of ['同轨第', '距 8.12', '距 8.13', '无线电波的两端', '灯塔来信', '轨迹 / 记忆', '海岸日报', '主聊天窗口']) {
@@ -76,7 +76,11 @@ const shellStyles = await read(join(moduleRoot, 'styles/shell.css'));
 const iconSource = await read(join(moduleRoot, 'core/icons.js'));
 assert.equal((tokenStyles.match(/--topbar-height:/g) || []).length, 1, 'top bar height must have one owner');
 assert.match(tokenStyles, /--topbar-height:\s*52px;/);
+assert.match(tokenStyles, /--composer-height:\s*62px;/);
 assert.match(shellStyles, /\.topbar\s*\{[\s\S]*?align-items:\s*center;/);
+const featureStyles = await read(join(moduleRoot, 'styles/features.css'));
+assert.match(featureStyles, /\.feature-head\s*\{[\s\S]*?height:\s*calc\(var\(--topbar-height\) \+ var\(--safe-top\)\)/);
+assert.match(featureStyles, /\.local-room-composer\s*\{[\s\S]*?min-height:\s*calc\(var\(--composer-height\) \+ var\(--safe-bottom\)\)/);
 assert.equal(/action-(copy|edit|heart|like|refresh|trash)\.svg/.test(iconSource + shellStyles), false, 'icons cannot fall back to retired assets');
 assert.equal(/stroke=["']#000/i.test(iconSource), false, 'inline icons must inherit the active theme color');
 for (const historicalPath of ['M12.2 6.4H25.2', 'M8 24l2-6', 'r="10.7"', 'M9.5 27H6.5', 'M23.8 13.3', 'M10.4 10.8']) {
