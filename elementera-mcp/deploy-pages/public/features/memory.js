@@ -225,7 +225,7 @@ export function createMemory({ chat, router, toast, storage }) {
       title: '落袋',
       subtitle: '先减负，之后再决定去哪里',
       className: 'memory-pocket-action',
-      body: `${section('当前内容', textBlock(messageSource?.source_text || turnSource?.source_text || ''))}<section class="feature-group"><div class="feature-card">${options.join('')}</div></section>`,
+      body: `<p class="feature-note">长按消息会打开这里。落袋只进入待确认袋，不会自动写入记忆。</p>${section('当前内容', textBlock(messageSource?.source_text || turnSource?.source_text || ''))}<section class="feature-group"><div class="feature-card">${options.join('')}</div></section>`,
     };
   }
 

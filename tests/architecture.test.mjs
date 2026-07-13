@@ -12,7 +12,7 @@ const read = (path) => readFile(path, 'utf8');
 const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-03"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-04"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 for (const id of ['coastStatus', 'mainRooms', 'localRoomWindows', 'localRoomWindowList', 'chatConversationSection', 'chatConversationList', 'modelQuickPicker']) {
@@ -68,12 +68,19 @@ for (const file of moduleFiles) {
 const chatSource = await read(join(moduleRoot, 'features/chat.js'));
 const memorySource = await read(join(moduleRoot, 'features/memory.js'));
 const roomsSource = await read(join(moduleRoot, 'features/rooms.js'));
+const modelsBackendSource = await read(join(repo, 'functions/models.js'));
 for (const name of ['edit', 'trash', 'copy', 'like', 'refresh', 'heart']) {
   assert.ok(chatSource.includes(`'${name}'`), `chat icon ${name} is missing`);
 }
 assert.equal(chatSource.includes('localStorage'), false, 'main chat cannot use browser history storage');
 assert.equal(chatSource.includes('history sync'), false);
 assert.ok(chatSource.includes('runtime.deletedIds.add(conversationId)'));
+for (const copy of [
+  '图片消息还没接入。本轮主聊天先支持文字、思维壤与记忆。',
+  '语音输入还没接入。',
+  '通话模式还没接入。先输入文字或选择模型聊天。',
+  '当前是生图模型，不能用于文字聊天。请切换聊天模型。',
+]) assert.ok((chatSource + modelsBackendSource).includes(copy), `missing chat state copy: ${copy}`);
 assert.equal((memorySource.match(/router\.register\('memory'/g) || []).length, 1, 'memory route must have one owner');
 assert.equal(roomsSource.includes("router.register('memory'"), false, 'rooms cannot retain the memory placeholder route');
 

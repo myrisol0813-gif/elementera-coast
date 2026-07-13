@@ -322,6 +322,15 @@ for (const options of [
 await tick();
 assert.equal(formalChatRequests, 0, 'keyboard input must not submit chat');
 assert.equal(input.style.overflowY, 'hidden', 'an empty composer must not show a scrollbar beside the microphone');
+document.querySelector('#imageButton').click();
+await tick();
+assert.equal(document.querySelector('#toastRoot').textContent, '图片消息还没接入。本轮主聊天先支持文字、思维壤与记忆。');
+document.querySelector('#micButton').click();
+await tick();
+assert.equal(document.querySelector('#toastRoot').textContent, '语音输入还没接入。');
+document.querySelector('#composerActionButton').click();
+await tick();
+assert.equal(document.querySelector('#toastRoot').textContent, '通话模式还没接入。先输入文字或选择模型聊天。');
 input.value = 'a1';
 input.dispatchEvent(new window.Event('input', { bubbles: true }));
 document.querySelector('#composerActionButton').click();
@@ -357,6 +366,7 @@ assert.ok(formalChatBodies[1].recent_entry_ids.includes('mock-memory-1'), 'the n
 assert.equal(document.querySelectorAll('.message.assistant').length, 1);
 document.querySelector('.message.assistant').dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory-pocket-action', 'message pocket action');
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('落袋只进入待确认袋，不会自动写入记忆。'));
 document.querySelector('[data-action="memory:pocket-save"][data-source="assistant"]').click();
 await waitFor(() => memoryPockets.length === 1, 'active assistant pocket');
 assert.equal(memoryPockets[0].source_text, 'mock: a1 edited');

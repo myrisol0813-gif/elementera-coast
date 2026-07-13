@@ -61,6 +61,11 @@ function mergeMigrationProfile(server, migrated) {
   });
 }
 
+function isImageModel(modelId, imageModels = []) {
+  const id = String(modelId || '');
+  return imageModels.includes(id) || /(?:gpt-image-|dall-e)/i.test(id);
+}
+
 export function createChat({ storage, toast }) {
   const runtime = {
     conversations: [],
@@ -529,6 +534,10 @@ export function createChat({ storage, toast }) {
   function send(text) {
     const content = String(text || '').trim();
     if (!content || !runtime.currentId || runtime.generation) return;
+    if (isImageModel(runtime.profile.current_chat_model, runtime.profile.model_box.image)) {
+      toast('当前是生图模型，不能用于文字聊天。请切换聊天模型。');
+      return;
+    }
     const appended = appendTurn(currentHistory(), content);
     setHistory(runtime.currentId, appended.state);
     ui.input.value = '';
@@ -652,8 +661,8 @@ export function createChat({ storage, toast }) {
     if (name === 'open') return loadConversation(conversationId);
     if (name === 'rename') return renameConversation(conversationId).catch((error) => toast(`改名失败：${error.message}`));
     if (name === 'delete-conversation') return deleteConversation(conversationId).catch((error) => toast(`删除失败：${error.message}`));
-    if (name === 'image') return toast('图片消息尚未接入正式模型接口。');
-    if (name === 'mic') return toast('语音输入尚未接入。');
+    if (name === 'image') return toast('图片消息还没接入。本轮主聊天先支持文字、思维壤与记忆。');
+    if (name === 'mic') return toast('语音输入还没接入。');
 
     const turnId = turnIdFrom(target);
     if (runtime.generation && runtime.generation.conversationId === runtime.currentId
@@ -737,7 +746,7 @@ export function createChat({ storage, toast }) {
       event.preventDefault();
       if (runtime.generation) runtime.generation.controller.abort();
       else if (ui.input.value.trim()) send(ui.input.value);
-      else toast('通话尚未接入。');
+      else toast('通话模式还没接入。先输入文字或选择模型聊天。');
     });
     ui.input.addEventListener('input', composerState);
     composerState();

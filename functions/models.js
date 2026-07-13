@@ -264,7 +264,7 @@ export async function performFormalChat(env, input = {}, { allowSystem = false }
   const catalog = await fetchModelCatalog(env);
   const modelId = String(input.model || catalog.defaults.chat || DEFAULT_MODEL);
   if ((catalog.groups.openai_image || []).some((model) => model.id === modelId) || /gpt-image-|dall-e|image/i.test(modelId)) {
-    throw new ModelRequestError('image_model_not_supported', '生图模型不能走聊天接口。请切换到聊天模型。', 400, { model: modelId });
+    throw new ModelRequestError('image_model_not_supported', '当前是生图模型，不能用于文字聊天。请切换聊天模型。', 400, { model: modelId });
   }
   const model = catalogModel(catalog, modelId);
   if (!model || ![...(catalog.groups.openai_chat || []), ...(catalog.groups.free_test || [])].some((item) => item.id === modelId)) {
