@@ -71,6 +71,20 @@ async function createLatestSchema(db) {
     model_box_json TEXT,
     updated_at INTEGER NOT NULL
   )`);
+  await run(db, `CREATE TABLE IF NOT EXISTS conversation_landing_letters (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    letter_text TEXT NOT NULL,
+    letter_hash TEXT NOT NULL,
+    assistant_turn_id TEXT NOT NULL,
+    landing_version INTEGER NOT NULL,
+    sent_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(conversation_id, model_id, landing_version),
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+  )`);
   await run(db, `CREATE TABLE IF NOT EXISTS schema_migrations (
     id TEXT PRIMARY KEY,
     applied_at INTEGER NOT NULL
@@ -177,6 +191,8 @@ async function initialize(db, normalizeState) {
   await createLatestSchema(db);
   await migrateJsonStates(db, normalizeState);
   await run(db, 'CREATE INDEX IF NOT EXISTS idx_conversations_owner ON conversations(user_id, deleted_at, updated_at)');
+  await run(db, `CREATE INDEX IF NOT EXISTS idx_landing_letters_latest
+    ON conversation_landing_letters(conversation_id, model_id, landing_version DESC)`);
   const timestamp = Date.now();
   await run(db, 'INSERT OR IGNORE INTO users (id, created_at, updated_at) VALUES (?, ?, ?)', [USER_ID, timestamp, timestamp]);
   await run(db, 'UPDATE users SET updated_at = ? WHERE id = ?', [timestamp, USER_ID]);

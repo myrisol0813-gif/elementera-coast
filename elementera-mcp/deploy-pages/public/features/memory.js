@@ -580,11 +580,11 @@ export function createMemory({ chat, router, toast }) {
     toast('思维壤已保存。');
   }
 
-  async function onReplyCompleted(conversationId) {
+  async function onReplyCompleted(conversationId, { trigger = 'reply' } = {}) {
     try {
       const data = await requestJson(API.memorySoilOrganize, {
         method: 'POST',
-        body: JSON.stringify({ conversation_id: conversationId, force: false }),
+        body: JSON.stringify({ conversation_id: conversationId, force: false, trigger }),
       });
       if (data.soil) runtime.soils.set(conversationId, data.soil);
       if (currentId() === conversationId) chat.renderMessages();

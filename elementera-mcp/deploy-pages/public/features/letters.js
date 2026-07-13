@@ -1,7 +1,9 @@
+import { API, requestJson } from '../core/api.js';
 import { escapeAttribute, escapeHtml, q } from '../core/dom.js';
 import { defaultIslandLetter, defaultLovebook, defaultLovebookCore } from '../content/letters.js';
 
 export function createLetters({ storage, chat, models, router, toast }) {
+  const landingStatuses = new Map();
   function context() {
     const conversationId = chat.getCurrentConversationId() || 'main';
     const modelId = chat.getProfile().current_chat_model || 'openai/gpt-4.1-nano';
@@ -43,13 +45,14 @@ export function createLetters({ storage, chat, models, router, toast }) {
 
   function islandView() {
     const letter = value();
+    const sent = landingStatuses.get(letter.key)?.sent === true;
     return {
       title: '登岛信',
       subtitle: `${letter.modelName} · 当前窗口独立保存`,
       className: 'letters-panel',
       body: `<p class="feature-note">这不是记忆库。当前窗口与当前模型独立保存；等模型愿意承接之后，再由小寒改写为予爱机书。</p>
         <textarea id="islandLetterText" class="letter-text" rows="22">${escapeHtml(letter.islandText)}</textarea>
-        <div class="button-row"><button type="button" data-action="letters:copy-island">复制全文</button><button type="button" data-action="letters:save-island">保存</button><button type="button" data-action="letters:reset-island">恢复默认</button><button class="primary" type="button" data-action="letters:promote">转为予爱机书</button></div>`,
+        <div class="button-row"><button type="button" data-action="letters:send-island">${sent ? '重新递出登岛信' : '递出登岛信'}</button><button type="button" data-action="letters:save-island">保存</button><button type="button" data-action="letters:reset-island">恢复默认</button><button class="primary" type="button" data-action="letters:promote">转为予爱机书</button></div>`,
     };
   }
 
@@ -97,6 +100,10 @@ export function createLetters({ storage, chat, models, router, toast }) {
 
   async function open() {
     const letter = value();
+    if (letter.state === 'island') {
+      const data = await requestJson(`${API.landingLetter}?conversation_id=${encodeURIComponent(letter.conversationId)}&model=${encodeURIComponent(letter.modelId)}`);
+      landingStatuses.set(letter.key, data.landing || { sent: false });
+    }
     await router.open(letter.state === 'lovebook' ? 'lovebook' : 'island-letter');
   }
 
@@ -106,7 +113,22 @@ export function createLetters({ storage, chat, models, router, toast }) {
       write({ islandText: q('#islandLetterText')?.value || '' });
       return toast('已保存登岛信');
     }
-    if (name === 'copy-island') return copy(q('#islandLetterText')?.value || value().islandText, '已复制登岛信');
+    if (name === 'send-island') {
+      const letter = value();
+      const islandText = q('#islandLetterText')?.value || letter.islandText;
+      write({ islandText });
+      if (!islandText.trim()) return toast('请先写好登岛信。');
+      if (landingStatuses.get(letter.key)?.sent
+        && !confirm('这会开启一个新的读信回复，不会删除旧聊天。')) return;
+      const data = await chat.sendLandingLetter({
+        conversationId: letter.conversationId,
+        modelId: letter.modelId,
+        letterText: islandText,
+      });
+      landingStatuses.set(letter.key, data.landing || { sent: true });
+      await router.close();
+      return toast('登岛信已经递到手里。');
+    }
     if (name === 'reset-island') {
       const letter = value();
       write({ islandText: defaultIslandLetter(letter.modelName) });

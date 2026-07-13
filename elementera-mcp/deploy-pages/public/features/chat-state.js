@@ -15,6 +15,8 @@ export function normalizeVariant(value = {}, prefix = 'variant') {
     created_at: typeof value.created_at === 'string' ? value.created_at : now(),
     liked: Boolean(value.liked),
     favorite: Boolean(value.favorite),
+    ...(value.hidden === true ? { hidden: true } : {}),
+    ...(value.input_type === 'landing_letter' ? { input_type: 'landing_letter' } : {}),
     ...(errorDetail ? { errorDetail } : {}),
   };
 }
@@ -36,8 +38,10 @@ export function normalizeTurn(value = {}) {
       .slice(0, MAX_VARIANTS);
     active[key] = clamp(value?.assistant?.activeByUserVariant?.[key], branches[key].length || 1);
   }
+  const turnType = value.turn_type === 'landing' ? 'landing' : '';
   return {
     id: sanitizeId(value.id || id('turn'), 'turn'),
+    ...(turnType ? { turn_type: turnType, model_id: String(value.model_id || '').slice(0, 180) } : {}),
     user: {
       active: clamp(value?.user?.active, userVariants.length || 1),
       variants: userVariants,
@@ -233,4 +237,3 @@ export function flatMessagesToState(messages = []) {
   }
   return normalizeState(state);
 }
-

@@ -11,6 +11,7 @@ import {
   isDefaultTitle,
   listConversations,
   normalizeProfile,
+  readLandingStatus,
   readConversationState,
   readProfile,
   renameConversation,
@@ -18,12 +19,14 @@ import {
   sanitizeTitle,
   setGeneratedTitle,
   writeConversationState,
+  writeLandingExchange,
   writeProfile,
 } from './chat-store.js';
 
 const BODY_LIMIT = 2 * 1024 * 1024;
 const CONVERSATIONS_PATH = '/api/chat/conversations';
 const FORMAL_CHAT_PATH = '/api/chat';
+const LANDING_LETTER_PATH = '/api/chat/landing-letter';
 
 function methodNotAllowed(allow) {
   return apiError('method_not_allowed', 'Method not allowed.', 405, { allow });
@@ -160,8 +163,99 @@ async function formalChat(request, env) {
   });
 }
 
+function activeStateMessages(state) {
+  const messages = [];
+  for (const turn of Array.isArray(state?.turns) ? state.turns : []) {
+    const users = Array.isArray(turn?.user?.variants) ? turn.user.variants : [];
+    const userIndex = Math.min(Math.max(0, Number(turn?.user?.active || 0)), Math.max(0, users.length - 1));
+    const user = users[userIndex];
+    const assistants = turn?.assistant?.variantsByUserVariant?.[String(userIndex)] || [];
+    const assistantIndex = Math.min(
+      Math.max(0, Number(turn?.assistant?.activeByUserVariant?.[String(userIndex)] || 0)),
+      Math.max(0, assistants.length - 1),
+    );
+    const assistant = assistants[assistantIndex];
+    if (user?.content) messages.push({ role: 'user', content: user.content });
+    if (assistant?.content) messages.push({ role: 'assistant', content: assistant.content });
+  }
+  return messages;
+}
+
+async function sha256(value) {
+  const bytes = new TextEncoder().encode(String(value || ''));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function landingLetter(request, env) {
+  const url = new URL(request.url);
+  const conversationId = sanitizeId(url.searchParams.get('conversation_id') || '', 'conversation');
+  if (request.method === 'GET') {
+    return json({
+      ok: true,
+      landing: await readLandingStatus(env.COAST_CHAT_DB, conversationId, url.searchParams.get('model') || ''),
+    });
+  }
+  if (request.method !== 'POST') return methodNotAllowed('GET, POST');
+  requireSameOrigin(request);
+  const value = await body(request);
+  const targetConversationId = sanitizeId(value.conversation_id || '', 'conversation');
+  const modelId = String(value.model || '').trim().slice(0, 180);
+  const letterText = String(value.letter_text || '').slice(0, 12000);
+  if (!modelId || !letterText.trim()) {
+    throw new ChatStoreError('invalid_request', '请先写好登岛信并选择当前聊天模型。', 400);
+  }
+
+  const state = await readConversationState(env.COAST_CHAT_DB, targetConversationId);
+  const recentTurns = Math.min(20, Math.max(1, Number(value.settings?.recentTurns || 8)));
+  const previous = activeStateMessages(state).slice(-(recentTurns * 2 - 1));
+  const messages = [...previous, { role: 'user', content: letterText }];
+  const lastUser = messages.at(-1);
+  let memory = null;
+  let softContext = '';
+  try {
+    memory = await buildMemoryContext(env, MEMORY_OWNER_ID, targetConversationId, lastUser.content, {
+      recent_entry_ids: value.recent_entry_ids,
+      mode: 'chat',
+      settings: value.settings,
+      conversation_turns: messages.filter((message) => message.role === 'user').length,
+    });
+    softContext = formatMemoryContext(memory, value.settings);
+  } catch (error) {
+    console.error('[chat-memory:landing-recall]', error);
+  }
+  const recent = softContext ? messages.slice(-19) : messages.slice(-20);
+  const generated = await performFormalChat(env, {
+    model: modelId,
+    messages: softContext ? [{ role: 'system', content: softContext }, ...recent] : recent,
+    settings: value.settings,
+  }, { allowSystem: Boolean(softContext) });
+  const assistantText = generated?.message?.content || '';
+  if (!assistantText.trim()) throw new ChatStoreError('empty_model_reply', '模型读完了信，但没有返回文字。', 502);
+
+  const saved = await writeLandingExchange(env.COAST_CHAT_DB, targetConversationId, {
+    state,
+    model_id: modelId,
+    letter_text: letterText,
+    letter_hash: await sha256(letterText),
+    assistant_text: assistantText,
+  });
+  return json({
+    ok: true,
+    assistant: saved.assistant,
+    conversation: await getConversation(env.COAST_CHAT_DB, targetConversationId),
+    history: { ...saved.state, conversation_id: targetConversationId },
+    landing: saved.landing,
+    memory: {
+      selected_entry_ids: memory?.trace?.selected || [],
+      vector_enabled: Boolean(memory?.trace?.vector_enabled),
+    },
+  });
+}
+
 export function isChatApiPath(pathname) {
   return pathname === FORMAL_CHAT_PATH
+    || pathname === LANDING_LETTER_PATH
     || pathname === '/api/chat/history'
     || pathname === '/api/chat/profile'
     || pathname === '/api/chat/title'
@@ -174,6 +268,7 @@ export async function routeChatApi(request, env) {
   const pathname = new URL(request.url).pathname;
   try {
     if (pathname === FORMAL_CHAT_PATH) return await formalChat(request, env);
+    if (pathname === LANDING_LETTER_PATH) return await landingLetter(request, env);
     if (pathname === '/api/chat/history') return await history(request, env);
     if (pathname === '/api/chat/profile') return await profile(request, env);
     if (pathname === '/api/chat/title') return await title(request, env);

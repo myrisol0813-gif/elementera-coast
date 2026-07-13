@@ -119,6 +119,9 @@ for (const pool of ['conversation_seeds', 'conversation_memories', 'global_seeds
 }
 assert.ok(chatRouter.includes('buildMemoryContext'));
 assert.ok(chatRouter.includes("role: 'system'"));
+assert.ok(chatRouter.includes("'/api/chat/landing-letter'"));
+assert.ok(schemaSource.includes('conversation_landing_letters'));
+assert.ok(chatSource.includes('branch.user && !branch.user.hidden'));
 assert.equal(/memory_edges|sleep|dream|梦边|自动核心/.test(memoryStoreSource + memoryRecallSource + memoryRouterSource), false);
 for (const label of ['思维壤预算', '当前窗口种子召回上限', '总种子召回上限', '当前窗口记忆召回上限', '总记忆召回上限', '清空当前思维壤', '打开待确认袋', '查看向量状态']) {
   assert.ok(toolsSource.includes(label), `API cottage is missing: ${label}`);
@@ -154,6 +157,18 @@ class D1Statement {
 class D1Database {
   constructor() { this.database = new DatabaseSync(':memory:'); }
   prepare(sql) { return new D1Statement(this.database, sql); }
+  async batch(statements) {
+    this.database.exec('BEGIN');
+    try {
+      const results = [];
+      for (const statement of statements) results.push(await statement.run());
+      this.database.exec('COMMIT');
+      return results;
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
+  }
 }
 
 const db = new D1Database();
@@ -163,6 +178,27 @@ const three = await store.createConversation(db, 'third');
 assert.equal((await store.listConversations(db)).length, 3);
 await store.writeConversationState(db, one.id, normalizedState);
 assert.equal((await store.readConversationState(db, one.id)).turns[0].assistant.variantsByUserVariant['1'][1].content, 'second answer 2');
+const firstLanding = await store.writeLandingExchange(db, one.id, {
+  state: await store.readConversationState(db, one.id),
+  model_id: 'openai/gpt-4.1-nano',
+  letter_text: '登岛信正文',
+  letter_hash: 'hash-one',
+  assistant_text: '我读完了。',
+});
+assert.equal(firstLanding.landing.landing_version, 1);
+assert.equal(firstLanding.state.turns.at(-1).turn_type, 'landing');
+assert.equal(firstLanding.state.turns.at(-1).user.variants[0].hidden, true);
+assert.equal((await store.readLandingStatus(db, one.id, 'openai/gpt-4.1-nano')).landing_text_hash, 'hash-one');
+const secondLanding = await store.writeLandingExchange(db, one.id, {
+  state: firstLanding.state,
+  model_id: 'openai/gpt-4.1-nano',
+  letter_text: '第二次递信',
+  letter_hash: 'hash-two',
+  assistant_text: '我又读了一次。',
+});
+assert.equal(secondLanding.landing.landing_version, 2);
+assert.equal((await store.readConversationState(db, one.id)).turns.at(-1).assistant.variantsByUserVariant['0'][0].content, '我又读了一次。');
+assert.deepEqual(await store.readLandingStatus(db, one.id, 'openai/gpt-4.1-mini'), { sent: false });
 assert.equal((await store.renameConversation(db, one.id, 'one')).title, 'one');
 await store.deleteConversation(db, two.id);
 assert.equal((await store.listConversations(db)).length, 2);

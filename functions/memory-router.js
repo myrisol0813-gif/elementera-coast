@@ -124,7 +124,8 @@ async function organizeSoil(request, env) {
   const state = await readConversationState(env.COAST_CHAT_DB, conversationId);
   const turns = completedTurns(state);
   if (!turns.length) return json({ ok: true, skipped: true, reason: 'no_completed_turns', soil: oldSoil });
-  const scheduledTurn = turns.length === 1
+  const scheduledTurn = value.trigger === 'landing'
+    || turns.length === 1
     || (turns.length - 1) % MEMORY_CONFIG.soil.autoRefreshEveryTurns === 0;
   const latestAssistantAt = Date.parse(turns.at(-1)?.assistant?.created_at || '');
   const soilUpdatedAt = Date.parse(oldSoil.updated_at || '');

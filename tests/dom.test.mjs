@@ -42,6 +42,7 @@ const formalChatBodies = [];
 const soils = new Map();
 const memoryPockets = [];
 const memoryEntries = [];
+const landingStatuses = new Map();
 
 function soilFor(conversationId) {
   if (!soils.has(conversationId)) soils.set(conversationId, {
@@ -93,6 +94,48 @@ globalThis.fetch = async (input, options = {}) => {
     const id = url.searchParams.get('conversation_id');
     if (method === 'PUT') histories.set(id, body);
     return response({ ok: true, source: 'd1-json-v4', history: { ...(histories.get(id) || { version: 4, turns: [] }), conversation_id: id } });
+  }
+  if (url.pathname === '/api/chat/landing-letter') {
+    if (method === 'GET') {
+      const key = `${url.searchParams.get('conversation_id')}::${url.searchParams.get('model')}`;
+      return response({ ok: true, landing: landingStatuses.get(key) || { sent: false } });
+    }
+    const state = structuredClone(histories.get(body.conversation_id) || { version: 4, updated_at: now(), turns: [] });
+    const turnId = `landing-turn-${++sequence}`;
+    state.turns.push({
+      id: turnId,
+      turn_type: 'landing',
+      model_id: body.model,
+      user: {
+        active: 0,
+        variants: [{ id: `landing-user-${sequence}`, content: body.letter_text, hidden: true, input_type: 'landing_letter', created_at: now() }],
+      },
+      assistant: {
+        activeByUserVariant: { 0: 0 },
+        variantsByUserVariant: { 0: [{ id: `landing-assistant-${sequence}`, content: '我把登岛信读完了。', created_at: now() }] },
+      },
+    });
+    state.updated_at = now();
+    histories.set(body.conversation_id, state);
+    const key = `${body.conversation_id}::${body.model}`;
+    const previous = landingStatuses.get(key);
+    const landing = {
+      sent: true,
+      model_id: body.model,
+      landing_version: Number(previous?.landing_version || 0) + 1,
+      landing_text_hash: `hash-${sequence}`,
+      assistant_turn_id: turnId,
+      sent_at: now(),
+    };
+    landingStatuses.set(key, landing);
+    return response({
+      ok: true,
+      assistant: { role: 'assistant', content: '我把登岛信读完了。' },
+      conversation: conversations.find((item) => item.id === body.conversation_id),
+      history: { ...state, conversation_id: body.conversation_id },
+      landing,
+      memory: { selected_entry_ids: [], vector_enabled: false },
+    });
   }
   if (url.pathname === '/api/chat') {
     formalChatRequests += 1;
@@ -429,6 +472,20 @@ await tick();
 document.querySelector('#moreButton').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'island-letter', 'letter route');
 assert.ok(document.querySelector('#islandLetterText').value.includes('欢迎回家'));
+assert.equal(document.querySelector('[data-action="letters:send-island"]').textContent, '递出登岛信');
+const visibleUsersBeforeLetter = document.querySelectorAll('.message.user').length;
+const assistantsBeforeLetter = document.querySelectorAll('.message.assistant').length;
+document.querySelector('[data-action="letters:send-island"]').click();
+await waitFor(() => document.querySelector('#overlayRoot').hidden, 'landing letter response closes panel');
+await waitFor(() => document.querySelectorAll('.message.assistant').length === assistantsBeforeLetter + 1, 'landing assistant reply');
+assert.equal(document.querySelectorAll('.message.user').length, visibleUsersBeforeLetter, 'hidden landing input must not render a user bubble');
+assert.ok(document.querySelector('.message.assistant:last-of-type')?.textContent.includes('我把登岛信读完了。'));
+const landingTurn = histories.get('conv-1').turns.at(-1);
+assert.equal(landingTurn.turn_type, 'landing');
+assert.equal(landingTurn.user.variants[0].hidden, true);
+document.querySelector('#moreButton').click();
+await waitFor(() => document.querySelector('[data-action="letters:send-island"]'), 'reopen letter route');
+assert.equal(document.querySelector('[data-action="letters:send-island"]').textContent, '重新递出登岛信');
 document.querySelector('[data-action="router:back"]').click();
 await tick();
 

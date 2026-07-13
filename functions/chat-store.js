@@ -99,6 +99,8 @@ function normalizeVariant(value = {}, prefix = 'variant') {
     created_at: typeof value.created_at === 'string' ? value.created_at : new Date().toISOString(),
     liked: Boolean(value.liked),
     favorite: Boolean(value.favorite),
+    ...(value.hidden === true ? { hidden: true } : {}),
+    ...(value.input_type === 'landing_letter' ? { input_type: 'landing_letter' } : {}),
     ...(errorDetail ? { errorDetail } : {}),
   };
 }
@@ -127,8 +129,11 @@ function normalizeTurn(value = {}) {
     );
   }
 
+  const turnType = value.turn_type === 'landing' ? 'landing' : '';
+  const modelId = turnType ? clip(value.model_id, 180) : '';
   return {
     id: sanitizeId(value.id || crypto.randomUUID(), 'turn'),
+    ...(turnType ? { turn_type: turnType, model_id: modelId } : {}),
     user: {
       active: clamp(value?.user?.active, userVariants.length || 1),
       variants: userVariants,
@@ -365,4 +370,106 @@ export async function writeConversationState(db, id, value) {
     WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, [timestamp, conversationId, USER_ID]);
   state.updated_at = iso(timestamp);
   return state;
+}
+
+function landingFromRow(row) {
+  if (!row) return { sent: false };
+  return {
+    sent: true,
+    model_id: row.model_id,
+    landing_version: Number(row.landing_version || 0),
+    landing_text_hash: row.letter_hash,
+    assistant_turn_id: row.assistant_turn_id,
+    sent_at: iso(row.sent_at),
+  };
+}
+
+export async function readLandingStatus(db, id, model) {
+  await ensureChatSchema(db);
+  const conversationId = sanitizeId(id, 'conversation');
+  await requireActiveConversation(db, conversationId);
+  const modelId = clip(model, 180).trim();
+  if (!modelId) throw new ChatStoreError('invalid_request', '没有可递信的当前模型。', 400);
+  const row = await first(db, `SELECT model_id, letter_hash, assistant_turn_id, landing_version, sent_at
+    FROM conversation_landing_letters
+    WHERE conversation_id = ? AND model_id = ?
+    ORDER BY landing_version DESC
+    LIMIT 1`, [conversationId, modelId]);
+  return landingFromRow(row);
+}
+
+export async function writeLandingExchange(db, id, value = {}) {
+  await ensureChatSchema(db);
+  const conversationId = sanitizeId(id, 'conversation');
+  await requireActiveConversation(db, conversationId);
+  const modelId = clip(value.model_id, 180).trim();
+  const letterText = clip(value.letter_text);
+  const letterHash = clip(value.letter_hash, 128).trim();
+  const assistantText = clip(value.assistant_text);
+  if (!modelId || !letterText.trim() || !letterHash || !assistantText.trim()) {
+    throw new ChatStoreError('invalid_request', '登岛信或模型回复不完整。', 400);
+  }
+
+  const state = normalizeState(value.state);
+  const timestamp = nowMs();
+  const createdAt = iso(timestamp);
+  const turnId = sanitizeId(crypto.randomUUID(), 'landing_turn');
+  const userVariantId = sanitizeId(crypto.randomUUID(), 'landing_user');
+  const assistantVariantId = sanitizeId(crypto.randomUUID(), 'landing_assistant');
+  state.turns.push(normalizeTurn({
+    id: turnId,
+    turn_type: 'landing',
+    model_id: modelId,
+    user: {
+      active: 0,
+      variants: [{
+        id: userVariantId,
+        content: letterText,
+        hidden: true,
+        input_type: 'landing_letter',
+        created_at: createdAt,
+      }],
+    },
+    assistant: {
+      activeByUserVariant: { 0: 0 },
+      variantsByUserVariant: { 0: [{ id: assistantVariantId, content: assistantText, created_at: createdAt }] },
+    },
+  }));
+  state.turns = state.turns.slice(-100);
+  state.updated_at = createdAt;
+
+  const latest = await first(db, `SELECT MAX(landing_version) AS version
+    FROM conversation_landing_letters
+    WHERE conversation_id = ? AND model_id = ?`, [conversationId, modelId]);
+  const landingVersion = Number(latest?.version || 0) + 1;
+  const landingId = sanitizeId(crypto.randomUUID(), 'landing_letter');
+  const statements = [
+    db.prepare(`INSERT INTO conversation_landing_letters (
+      id, conversation_id, model_id, letter_text, letter_hash, assistant_turn_id,
+      landing_version, sent_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(landingId, conversationId, modelId, letterText, letterHash, turnId, landingVersion, timestamp, timestamp, timestamp),
+    db.prepare(`INSERT INTO conversation_states (conversation_id, state_json, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(conversation_id) DO UPDATE SET
+        state_json = excluded.state_json,
+        updated_at = excluded.updated_at`)
+      .bind(conversationId, JSON.stringify(state), timestamp),
+    db.prepare(`UPDATE conversations SET updated_at = ?
+      WHERE id = ? AND user_id = ? AND deleted_at IS NULL`)
+      .bind(timestamp, conversationId, USER_ID),
+  ];
+  await db.batch(statements);
+
+  return {
+    state,
+    assistant: { role: 'assistant', content: assistantText, id: assistantVariantId },
+    landing: landingFromRow({
+      model_id: modelId,
+      letter_hash: letterHash,
+      assistant_turn_id: turnId,
+      landing_version: landingVersion,
+      sent_at: timestamp,
+    }),
+  };
 }

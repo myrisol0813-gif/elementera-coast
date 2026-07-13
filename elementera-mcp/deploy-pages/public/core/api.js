@@ -3,6 +3,7 @@ export const API = Object.freeze({
   session: '/api/session',
   models: '/api/models',
   chat: '/api/chat',
+  landingLetter: '/api/chat/landing-letter',
   sandbox: '/api/chat-sandbox',
   conversations: '/api/chat/conversations',
   history: '/api/chat/history',

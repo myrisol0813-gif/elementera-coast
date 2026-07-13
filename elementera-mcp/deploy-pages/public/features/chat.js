@@ -185,7 +185,7 @@ export function createChat({ storage, toast }) {
         && runtime.generation.turnId === turn.id
         && runtime.generation.userIndex === branch.userIndex
         && runtime.generation.assistantIndex === branch.assistantIndex;
-      const user = branch.user ? `<article class="message user" data-turn="${escapeAttribute(turn.id)}">
+      const user = branch.user && !branch.user.hidden ? `<article class="message user" data-turn="${escapeAttribute(turn.id)}">
         <div class="content">
           <div class="user-bubble">${escapeHtml(branch.user.content)}</div>
           <div class="message-actions">
@@ -457,12 +457,56 @@ export function createChat({ storage, toast }) {
     if (generated) runtime.memory?.onReplyCompleted(conversationId)?.catch((error) => console.warn('[memory:reply]', error));
   }
 
+  async function sendLandingLetter({ conversationId, modelId, letterText }) {
+    if (runtime.generation) throw new Error('请先停止或等待当前回复完成。');
+    if (runtime.deletedIds.has(conversationId)) throw new Error('这个聊天窗口已经删除。');
+    const pendingSave = runtime.saveChains.get(conversationId);
+    if (pendingSave) await pendingSave;
+
+    const settings = runtime.runSettings() || {};
+    const maxTokens = settings.outputLength === 'long' ? 1200 : settings.outputLength === 'short' ? 350 : 600;
+    const temperature = settings.creativity === 'stable' ? 0.3 : settings.creativity === 'expansive' ? 1 : 0.7;
+    const cooldown = Math.min(8, Math.max(0, Number(settings.seedCooldownTurns ?? 2)));
+    const recentEntryIds = (runtime.recallHistory.get(conversationId) || []).slice(-cooldown).flat();
+    const controller = new AbortController();
+    runtime.generation = { conversationId, turnId: '', userIndex: -1, assistantIndex: -1, controller };
+    composerState();
+    try {
+      const data = await requestJson(API.landingLetter, {
+        method: 'POST',
+        signal: controller.signal,
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          model: modelId,
+          letter_text: letterText,
+          recent_entry_ids: recentEntryIds,
+          settings: { ...settings, max_tokens: maxTokens, temperature },
+        }),
+      });
+      setHistory(conversationId, data.history || {});
+      if (data.conversation) {
+        runtime.conversations = runtime.conversations.map((item) => item.id === conversationId ? data.conversation : item);
+        renderConversationList();
+      }
+      const selected = Array.isArray(data?.memory?.selected_entry_ids) ? data.memory.selected_entry_ids.map(String) : [];
+      const recalled = runtime.recallHistory.get(conversationId) || [];
+      runtime.recallHistory.set(conversationId, [...recalled, selected].slice(-8));
+      renderMessages(conversationId);
+      runtime.memory?.onReplyCompleted(conversationId, { trigger: 'landing' })?.catch((error) => console.warn('[memory:landing]', error));
+      return data;
+    } finally {
+      if (runtime.generation?.controller === controller) runtime.generation = null;
+      composerState();
+    }
+  }
+
   async function autoTitle(conversationId, history, turnId) {
     if (normalizeState(history).turns.length !== 1) return;
     const conversation = runtime.conversations.find((item) => item.id === conversationId);
     if (!conversation || conversation.title_manual || conversation.title_generated_at) return;
     const turn = history.turns.find((item) => item.id === turnId);
     const branch = turn ? activeBranch(turn) : null;
+    if (branch?.user?.hidden) return;
     const data = await requestJson(API.title, {
       method: 'POST',
       body: JSON.stringify({
@@ -712,6 +756,7 @@ export function createChat({ storage, toast }) {
     getCurrentConversationId: () => runtime.currentId,
     getCurrentConversation: () => runtime.conversations.find((item) => item.id === runtime.currentId) || null,
     getProfile: () => runtime.profile,
+    sendLandingLetter,
     updateProfile,
     importFlatMessages: async (messages) => {
       if (!runtime.currentId) throw new Error('当前没有聊天窗口');
