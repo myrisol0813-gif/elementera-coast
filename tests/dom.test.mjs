@@ -37,6 +37,7 @@ let profile = {
 };
 let conversations = [{ id: 'conv-1', title: '新聊天', created_at: now(), updated_at: now(), deleted_at: null, title_manual: false, title_generated_at: null }];
 const histories = new Map([['conv-1', { version: 4, updated_at: now(), turns: [] }]]);
+let formalChatRequests = 0;
 
 function response(value, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
@@ -76,6 +77,7 @@ globalThis.fetch = async (input, options = {}) => {
     return response({ ok: true, source: 'd1-json-v4', history: { ...(histories.get(id) || { version: 4, turns: [] }), conversation_id: id } });
   }
   if (url.pathname === '/api/chat') {
+    formalChatRequests += 1;
     return response({ ok: true, model: body.model, message: { role: 'assistant', content: `mock: ${body.messages.at(-1)?.content || ''}` } });
   }
   if (url.pathname === '/api/chat/title') {
@@ -125,10 +127,23 @@ assert.equal(document.querySelector('[data-action="settings:wolf"] svg').getAttr
 assert.equal(document.querySelector('#modelName').textContent, '4.1 Nano ›');
 
 const input = document.querySelector('#promptInput');
+for (const options of [
+  { key: 'Enter' },
+  { key: 'Enter', shiftKey: true },
+  { key: 'Enter', isComposing: true },
+]) {
+  const event = new window.KeyboardEvent('keydown', { ...options, bubbles: true, cancelable: true });
+  assert.equal(input.dispatchEvent(event), true, 'Enter must retain the textarea native newline behavior');
+  assert.equal(event.defaultPrevented, false);
+}
+await tick();
+assert.equal(formalChatRequests, 0, 'keyboard input must not submit chat');
+assert.equal(input.style.overflowY, 'hidden', 'an empty composer must not show a scrollbar beside the microphone');
 input.value = 'a1';
 input.dispatchEvent(new window.Event('input', { bubbles: true }));
-document.querySelector('#composer').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+document.querySelector('#composerActionButton').click();
 await waitFor(() => document.querySelector('.message.assistant')?.textContent.includes('mock: a1'), 'assistant reply');
+assert.equal(formalChatRequests, 1, 'the existing right-hand button still submits chat');
 assert.equal(document.querySelectorAll('.message.user .action-button').length, 2);
 assert.equal(document.querySelectorAll('.message.assistant .action-button').length, 5);
 assert.equal(document.querySelectorAll('.message .action-button svg').length, 7);

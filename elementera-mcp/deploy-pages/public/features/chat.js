@@ -233,6 +233,7 @@ export function createChat({ storage, toast }) {
     if (!ui.input || !ui.primary) return;
     ui.input.style.height = '22px';
     ui.input.style.height = `${Math.min(Math.max(ui.input.scrollHeight, 22), 112)}px`;
+    ui.input.style.overflowY = ui.input.scrollHeight > 112 ? 'auto' : 'hidden';
     const generating = Boolean(runtime.generation);
     const hasText = Boolean(ui.input.value.trim());
     const name = generating ? 'stop' : hasText ? 'send' : 'call';
@@ -610,12 +611,6 @@ export function createChat({ storage, toast }) {
       else toast('通话尚未接入。');
     });
     ui.input.addEventListener('input', composerState);
-    ui.input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' && !event.shiftKey) {
-        event.preventDefault();
-        ui.form.requestSubmit();
-      }
-    });
     composerState();
   }
 
