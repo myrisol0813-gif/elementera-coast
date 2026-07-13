@@ -84,6 +84,23 @@
   justify-content: flex-end;
 }
 
+.thought-soil-row {
+  margin: -13px 0 12px 52px;
+}
+
+.thought-soil-entry {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.thought-soil-entry:hover {
+  color: var(--text);
+}
+
 .action-button {
   display: grid;
   place-items: center;

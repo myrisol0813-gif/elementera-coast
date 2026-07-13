@@ -8,6 +8,9 @@ export const API = Object.freeze({
   history: '/api/chat/history',
   profile: '/api/chat/profile',
   title: '/api/chat/title',
+  memorySoil: '/api/memory/soil',
+  memorySoilOrganize: '/api/memory/soil/organize',
+  memoryPockets: '/api/memory/pockets',
 });
 
 export class ApiError extends Error {
@@ -45,4 +48,3 @@ export async function requestJson(url, options = {}) {
   }
   return data;
 }
-

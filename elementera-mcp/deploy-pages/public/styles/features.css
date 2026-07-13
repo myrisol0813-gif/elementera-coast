@@ -142,6 +142,11 @@
   line-height: 1.65;
 }
 
+.memory-pocket-list {
+  display: grid;
+  gap: 12px;
+}
+
 .feature-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

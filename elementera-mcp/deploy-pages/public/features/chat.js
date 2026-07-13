@@ -72,6 +72,7 @@ export function createChat({ storage, toast }) {
     profileChain: Promise.resolve(),
     profile: emptyProfile(),
     generation: null,
+    memory: null,
     profileListeners: new Set(),
     runSettings: () => storage.read().runControl,
   };
@@ -175,6 +176,7 @@ export function createChat({ storage, toast }) {
   function renderMessages(conversationId = runtime.currentId) {
     if (!ui.messages || conversationId !== runtime.currentId) return;
     const state = runtime.histories.get(conversationId) || createState();
+    const latestAssistantTurnId = [...state.turns].reverse().find((turn) => activeBranch(turn).assistant)?.id || '';
     const html = state.turns.map((turn) => {
       const branch = activeBranch(turn);
       const loading = runtime.generation
@@ -205,7 +207,10 @@ export function createChat({ storage, toast }) {
           </div>
         </div>
       </article>` : '';
-      return user + assistant;
+      const soil = branch.assistant && turn.id === latestAssistantTurnId
+        ? runtime.memory?.renderSoilEntry(conversationId) || ''
+        : '';
+      return user + soil + assistant;
     }).join('');
     ui.messages.innerHTML = html || '<div class="empty-state">这里还没有消息。</div>';
     const avatarUrl = runtime.profile.assistant_avatar_dataurl;
@@ -314,6 +319,7 @@ export function createChat({ storage, toast }) {
       setHistory(conversationId, data.history || {});
       setStatus('');
       renderMessages(conversationId);
+      runtime.memory?.onConversationChanged(conversationId)?.catch((error) => console.warn('[memory:conversation]', error));
       return true;
     } catch (error) {
       setStatus(`聊天记录载入失败：${error.message}`, 'error');
@@ -440,6 +446,7 @@ export function createChat({ storage, toast }) {
     composerState();
     await saveHistory(conversationId, latest).catch(() => undefined);
     if (generated) autoTitle(conversationId, latest, turnId).catch(() => undefined);
+    if (generated) runtime.memory?.onReplyCompleted(conversationId)?.catch((error) => console.warn('[memory:reply]', error));
   }
 
   async function autoTitle(conversationId, history, turnId) {
@@ -514,6 +521,70 @@ export function createChat({ storage, toast }) {
 
   function turnIdFrom(target) {
     return target.dataset.turn || target.closest('[data-turn]')?.dataset.turn || '';
+  }
+
+  function getPocketSource(turnId, source) {
+    const turn = currentHistory().turns.find((item) => item.id === turnId);
+    if (!turn) return null;
+    const branch = activeBranch(turn);
+    const role = source === 'turn' ? 'turn' : source === 'user' ? 'user' : 'assistant';
+    const content = role === 'turn'
+      ? [branch.user?.content ? `用户：${branch.user.content}` : '', branch.assistant?.content ? `助手：${branch.assistant.content}` : ''].filter(Boolean).join('\n\n')
+      : role === 'user' ? branch.user?.content || '' : branch.assistant?.content || '';
+    if (!content) return null;
+    return {
+      conversation_id: runtime.currentId,
+      source_type: role === 'turn' ? 'turn' : 'message',
+      source_ref: {
+        conversation_id: runtime.currentId,
+        turn_id: turn.id,
+        role,
+        user_variant_id: branch.user?.id || null,
+        assistant_variant_id: branch.assistant?.id || null,
+        user_variant: branch.userIndex,
+        assistant_variant: branch.assistantIndex,
+      },
+      source_text: content,
+    };
+  }
+
+  function bindPocketGesture() {
+    let timer = 0;
+    let start = null;
+    let openedAt = 0;
+    const targetMessage = (target) => target.closest?.('.message[data-turn]');
+    const open = (message) => {
+      if (!message || runtime.generation) return;
+      const role = message.classList.contains('user') ? 'user' : 'assistant';
+      openedAt = Date.now();
+      runtime.memory?.openPocketAction({ turnId: message.dataset.turn, role })?.catch((error) => toast(error?.message || '落袋入口打开失败。'));
+    };
+    const clear = () => {
+      clearTimeout(timer);
+      timer = 0;
+      start = null;
+    };
+    ui.messages.addEventListener('contextmenu', (event) => {
+      const message = targetMessage(event.target);
+      if (!message || event.target.closest('button') || Date.now() - openedAt < 800) return;
+      event.preventDefault();
+      open(message);
+    });
+    ui.messages.addEventListener('touchstart', (event) => {
+      const message = targetMessage(event.target);
+      const touch = event.touches?.[0];
+      if (!message || !touch || event.target.closest('button')) return;
+      clear();
+      start = { x: touch.clientX, y: touch.clientY };
+      timer = setTimeout(() => open(message), 620);
+    }, { passive: true });
+    ui.messages.addEventListener('touchmove', (event) => {
+      const touch = event.touches?.[0];
+      if (!touch || !start) return;
+      if (Math.abs(touch.clientX - start.x) > 8 || Math.abs(touch.clientY - start.y) > 8) clear();
+    }, { passive: true });
+    ui.messages.addEventListener('touchend', clear, { passive: true });
+    ui.messages.addEventListener('touchcancel', clear, { passive: true });
   }
 
   async function handleAction(name, target) {
@@ -617,6 +688,7 @@ export function createChat({ storage, toast }) {
   async function start() {
     bindUi();
     bindComposer();
+    bindPocketGesture();
     await bootstrap();
   }
 
@@ -627,6 +699,7 @@ export function createChat({ storage, toast }) {
     renderConversationList,
     renderMessages,
     getActiveMessages: () => activeMessages(currentHistory()),
+    getPocketSource,
     getCurrentConversationId: () => runtime.currentId,
     getCurrentConversation: () => runtime.conversations.find((item) => item.id === runtime.currentId) || null,
     getProfile: () => runtime.profile,
@@ -644,6 +717,9 @@ export function createChat({ storage, toast }) {
     },
     setRunSettingsProvider(provider) {
       runtime.runSettings = provider;
+    },
+    setMemoryController(controller) {
+      runtime.memory = controller;
     },
   });
 }

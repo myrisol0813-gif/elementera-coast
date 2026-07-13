@@ -18,6 +18,7 @@ const CORE = Object.freeze([
   '/public/features/chat.js',
   '/public/features/daily.js',
   '/public/features/letters.js',
+  '/public/features/memory.js',
   '/public/features/models.js',
   '/public/features/rooms.js',
   '/public/features/settings.js',

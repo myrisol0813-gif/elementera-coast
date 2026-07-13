@@ -51,7 +51,7 @@ const moduleFiles = [
   'core/api.js', 'core/dom.js', 'core/icons.js', 'core/router.js', 'core/storage.js',
   'content/letters.js',
   'features/chat-state.js', 'features/chat.js', 'features/daily.js', 'features/letters.js',
-  'features/models.js', 'features/rooms.js', 'features/settings.js', 'features/shell.js', 'features/tools.js',
+  'features/memory.js', 'features/models.js', 'features/rooms.js', 'features/settings.js', 'features/shell.js', 'features/tools.js',
 ].map((path) => join(moduleRoot, path));
 
 for (const file of moduleFiles) {

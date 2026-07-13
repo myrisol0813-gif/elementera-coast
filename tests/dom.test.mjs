@@ -38,6 +38,22 @@ let profile = {
 let conversations = [{ id: 'conv-1', title: '新聊天', created_at: now(), updated_at: now(), deleted_at: null, title_manual: false, title_generated_at: null }];
 const histories = new Map([['conv-1', { version: 4, updated_at: now(), turns: [] }]]);
 let formalChatRequests = 0;
+const soils = new Map();
+const memoryPockets = [];
+
+function soilFor(conversationId) {
+  if (!soils.has(conversationId)) soils.set(conversationId, {
+    conversation_id: conversationId,
+    current_text: '',
+    hand_seeds: [],
+    do_not_repeat: '',
+    pocket_candidates: [],
+    manual_locked: false,
+    auto_refresh_enabled: true,
+    revision: 1,
+  });
+  return soils.get(conversationId);
+}
 
 function response(value, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
@@ -85,6 +101,36 @@ globalThis.fetch = async (input, options = {}) => {
     conversation.title = '测试标题';
     conversation.title_generated_at = now();
     return response({ ok: true, conversation });
+  }
+  if (url.pathname === '/api/memory/soil') {
+    const conversationId = url.searchParams.get('conversation_id');
+    if (method === 'PUT') soils.set(conversationId, { ...soilFor(conversationId), ...body, revision: soilFor(conversationId).revision + 1 });
+    return response({ ok: true, soil: soilFor(conversationId) });
+  }
+  if (url.pathname === '/api/memory/soil/organize') {
+    const soil = {
+      ...soilFor(body.conversation_id),
+      current_text: '继续测试当前窗口',
+      hand_seeds: [{ name: '测试种', life_core: '只在需要时轻轻递入', usage_hint: '', avoid_hint: '不要复读' }],
+      revision: soilFor(body.conversation_id).revision + 1,
+    };
+    soils.set(body.conversation_id, soil);
+    return response({ ok: true, soil });
+  }
+  if (url.pathname === '/api/memory/pockets') {
+    if (method === 'POST') {
+      const pocket = { id: `pocket-${memoryPockets.length + 1}`, status: 'pending', ...body };
+      memoryPockets.unshift(pocket);
+      return response({ ok: true, pocket }, 201);
+    }
+    const conversationId = url.searchParams.get('conversation_id');
+    return response({ ok: true, pockets: memoryPockets.filter((item) => item.conversation_id === conversationId && item.status === (url.searchParams.get('status') || 'pending')) });
+  }
+  if (url.pathname.startsWith('/api/memory/pockets/')) {
+    const id = decodeURIComponent(url.pathname.split('/').at(-1));
+    const pocket = memoryPockets.find((item) => item.id === id);
+    Object.assign(pocket, body);
+    return response({ ok: true, pocket });
   }
   if (url.pathname === '/api/models') {
     const models = [
@@ -144,6 +190,12 @@ input.dispatchEvent(new window.Event('input', { bubbles: true }));
 document.querySelector('#composerActionButton').click();
 await waitFor(() => document.querySelector('.message.assistant')?.textContent.includes('mock: a1'), 'assistant reply');
 assert.equal(formalChatRequests, 1, 'the existing right-hand button still submits chat');
+await waitFor(() => document.querySelector('.thought-soil-entry')?.textContent.includes('1 粒手持种'), 'thought soil entry');
+document.querySelector('.thought-soil-entry').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'thought-soil', 'thought soil route');
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('勿复读'));
+document.querySelector('[data-action="memory:done"]').click();
+await tick();
 assert.equal(document.querySelectorAll('.message.user .action-button').length, 2);
 assert.equal(document.querySelectorAll('.message.assistant .action-button').length, 5);
 assert.equal(document.querySelectorAll('.message .action-button svg').length, 7);
@@ -164,6 +216,13 @@ document.querySelector('.message.user [data-action="chat:edit-user"]').click();
 await waitFor(() => document.querySelector('.message.user .variant-switch')?.textContent.includes('2/2'), 'user variant');
 await waitFor(() => document.querySelector('.message.assistant')?.textContent.includes('mock: a1 edited'), 'edited assistant');
 assert.equal(document.querySelectorAll('.message.assistant').length, 1);
+document.querySelector('.message.assistant').dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory-pocket-action', 'message pocket action');
+document.querySelector('[data-action="memory:pocket-save"][data-source="assistant"]').click();
+await waitFor(() => memoryPockets.length === 1, 'active assistant pocket');
+assert.equal(memoryPockets[0].source_text, 'mock: a1 edited');
+assert.equal(memoryPockets[0].source_ref.user_variant, 1);
+assert.equal(memoryPockets[0].source_ref.role, 'assistant');
 document.querySelector('.message.assistant [data-action="chat:delete-assistant"]').click();
 await tick();
 assert.equal(document.querySelectorAll('.message.assistant').length, 0);
