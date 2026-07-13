@@ -397,9 +397,11 @@ export function createChat({ storage, toast }) {
     return messages.slice(-count);
   }
 
-  function chatRequestContext(conversationId) {
+  function chatRequestContext(conversationId, { landing = false } = {}) {
     const current = runtime.runSettings() || {};
-    const maxTokens = current.outputLength === 'long' ? 1200 : current.outputLength === 'short' ? 350 : 600;
+    const maxTokens = landing
+      ? current.outputLength === 'long' ? 1600 : current.outputLength === 'short' ? 700 : 1200
+      : current.outputLength === 'long' ? 1200 : current.outputLength === 'short' ? 350 : 600;
     const temperature = current.creativity === 'stable' ? 0.3 : current.creativity === 'expansive' ? 1 : 0.7;
     const cooldown = Math.min(8, Math.max(0, Number(current.seedCooldownTurns ?? 2)));
     return {
@@ -477,7 +479,7 @@ export function createChat({ storage, toast }) {
     const pendingSave = runtime.saveChains.get(conversationId);
     if (pendingSave) await pendingSave;
 
-    const requestContext = chatRequestContext(conversationId);
+    const requestContext = chatRequestContext(conversationId, { landing: true });
     const controller = new AbortController();
     runtime.generation = { conversationId, turnId: '', userIndex: -1, assistantIndex: -1, controller };
     composerState();
@@ -502,7 +504,11 @@ export function createChat({ storage, toast }) {
       const recalled = runtime.recallHistory.get(conversationId) || [];
       runtime.recallHistory.set(conversationId, [...recalled, selected].slice(-8));
       renderMessages(conversationId);
-      runtime.memory?.onReplyCompleted(conversationId, { trigger: 'landing' })?.catch((error) => console.warn('[memory:landing]', error));
+      autoTitleFromLanding(conversationId, letterText, data?.assistant?.content || '')
+        .catch((error) => console.warn('[chat:landing-title]', error));
+      const soilRefresh = await (runtime.memory?.onReplyCompleted(conversationId, { trigger: 'landing' })
+        || Promise.resolve({ ok: false, reason: 'memory_unavailable' }));
+      data.soil_refresh = soilRefresh;
       return data;
     } finally {
       if (runtime.generation?.controller === controller) runtime.generation = null;
@@ -523,6 +529,24 @@ export function createChat({ storage, toast }) {
         conversation_id: conversationId,
         user: branch?.user?.content || '',
         assistant: branch?.assistant?.content || '',
+      }),
+    });
+    if (data.conversation) {
+      runtime.conversations = runtime.conversations.map((item) => item.id === conversationId ? data.conversation : item);
+      renderConversationList();
+    }
+  }
+
+  async function autoTitleFromLanding(conversationId, letterText, assistantText) {
+    const conversation = runtime.conversations.find((item) => item.id === conversationId);
+    if (!conversation || conversation.title_manual || conversation.title_generated_at) return;
+    const excerpt = String(letterText || '').replace(/\s+/g, ' ').trim().slice(0, 1000);
+    const data = await requestJson(API.title, {
+      method: 'POST',
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        user: `登岛信：${excerpt}`,
+        assistant: String(assistantText || '').slice(0, 1000),
       }),
     });
     if (data.conversation) {

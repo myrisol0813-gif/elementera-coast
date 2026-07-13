@@ -93,6 +93,7 @@ function normalizeVariant(value = {}, prefix = 'variant') {
     .join('\n')
     .trim()
     .slice(0, MAX_CONTENT);
+  const finishReason = String(value.finish_reason || '').trim().slice(0, 80);
   return {
     id: sanitizeId(value.id || crypto.randomUUID(), prefix),
     content: clip(value.content),
@@ -101,6 +102,7 @@ function normalizeVariant(value = {}, prefix = 'variant') {
     favorite: Boolean(value.favorite),
     ...(value.hidden === true ? { hidden: true } : {}),
     ...(value.input_type === 'landing_letter' ? { input_type: 'landing_letter' } : {}),
+    ...(finishReason ? { finish_reason: finishReason } : {}),
     ...(errorDetail ? { errorDetail } : {}),
   };
 }
@@ -406,6 +408,7 @@ export async function writeLandingExchange(db, id, value = {}) {
   const letterText = clip(value.letter_text);
   const letterHash = clip(value.letter_hash, 128).trim();
   const assistantText = clip(value.assistant_text);
+  const finishReason = clip(value.finish_reason, 80).trim();
   if (!modelId || !letterText.trim() || !letterHash || !assistantText.trim()) {
     throw new ChatStoreError('invalid_request', '登岛信或模型回复不完整。', 400);
   }
@@ -432,7 +435,12 @@ export async function writeLandingExchange(db, id, value = {}) {
     },
     assistant: {
       activeByUserVariant: { 0: 0 },
-      variantsByUserVariant: { 0: [{ id: assistantVariantId, content: assistantText, created_at: createdAt }] },
+      variantsByUserVariant: { 0: [{
+        id: assistantVariantId,
+        content: assistantText,
+        created_at: createdAt,
+        ...(finishReason ? { finish_reason: finishReason } : {}),
+      }] },
     },
   }));
   state.turns = state.turns.slice(-100);
@@ -463,7 +471,12 @@ export async function writeLandingExchange(db, id, value = {}) {
 
   return {
     state,
-    assistant: { role: 'assistant', content: assistantText, id: assistantVariantId },
+    assistant: {
+      role: 'assistant',
+      content: assistantText,
+      id: assistantVariantId,
+      ...(finishReason ? { finish_reason: finishReason } : {}),
+    },
     landing: landingFromRow({
       model_id: modelId,
       letter_hash: letterHash,

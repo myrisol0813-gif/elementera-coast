@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { createConversation } from '../functions/chat-store.js';
-import { budgetChatMessages, estimateContextTokens, routeChatApi } from '../functions/chat-router.js';
+import { createConversation, readConversationState } from '../functions/chat-store.js';
+import {
+  budgetChatMessages,
+  clipGeneratedTitle,
+  estimateContextTokens,
+  landingRequestSettings,
+  routeChatApi,
+} from '../functions/chat-router.js';
 import { soilSettings } from '../functions/memory-config.js';
+import { routeMemoryApi } from '../functions/memory-router.js';
 import {
   deleteEntryVector,
   detectEmbeddingDimensions,
@@ -59,6 +66,10 @@ const conversationB = await createConversation(db, 'B');
 
 assert.equal(estimateContextTokens('海岸'), 2);
 assert.equal(estimateContextTokens('coast'), 2);
+assert.equal(clipGeneratedTitle('一二三四五六七八九十十一十二十三'), '一二三四五六七八九十十一');
+assert.equal(landingRequestSettings({ outputLength: 'short', max_tokens: 100 }).max_tokens, 700);
+assert.equal(landingRequestSettings({ outputLength: 'auto', max_tokens: 600 }).max_tokens, 1200);
+assert.equal(landingRequestSettings({ outputLength: 'long', max_tokens: 9999 }).max_tokens, 2000);
 const assistantFirst = budgetChatMessages([
   { role: 'user', content: '旧'.repeat(80) },
   { role: 'assistant', content: 'a'.repeat(2000) },
@@ -313,6 +324,9 @@ assert.equal(status.index_ready, true);
 
 const originalFetch = globalThis.fetch;
 let providerPayload = null;
+let providerContent = '带着轻量上下文回答。';
+let providerFinishReason = 'stop';
+let providerChatCalls = 0;
 globalThis.fetch = async (input, options = {}) => {
   const url = String(input);
   if (url.includes('/api/v1/models')) {
@@ -325,10 +339,11 @@ globalThis.fetch = async (input, options = {}) => {
     }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
   if (url.includes('/api/v1/chat/completions')) {
+    providerChatCalls += 1;
     providerPayload = JSON.parse(options.body);
     return new Response(JSON.stringify({
       model: 'openai/gpt-4.1-nano',
-      choices: [{ message: { content: '带着轻量上下文回答。' }, finish_reason: 'stop' }],
+      choices: [{ message: { content: providerContent }, finish_reason: providerFinishReason }],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
   throw new Error(`unexpected fetch: ${url}`);
@@ -344,7 +359,6 @@ const chatResponse = await routeChatApi(new Request('https://coast.test/api/chat
   }),
 }), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
 const chatData = await chatResponse.json();
-globalThis.fetch = originalFetch;
 assert.equal(chatResponse.status, 200);
 assert.equal(providerPayload.messages[0].role, 'system');
 assert.match(providerPayload.messages[0].content, /思维壤/);
@@ -355,5 +369,67 @@ assert.ok(chatData.memory.selected_entry_ids.length > 0);
 assert.equal(chatData.context.mode, 'estimated_characters');
 assert.equal(chatData.context.budget, 2000);
 assert.equal(chatData.context.recent_turns, 2);
+
+providerContent = '我已经完整读完这封登岛信。';
+providerFinishReason = 'length';
+const landingResponse = await routeChatApi(new Request('https://coast.test/api/chat/landing-letter', {
+  method: 'POST',
+  headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    conversation_id: conversationB.id,
+    model: 'openai/gpt-4.1-nano',
+    letter_text: '请把这封登岛信当作当前窗口的第一轮开场。',
+    settings: { outputLength: 'auto', max_tokens: 600, temperature: 0.2 },
+  }),
+}), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
+const landingData = await landingResponse.json();
+assert.equal(landingResponse.status, 200);
+assert.equal(providerPayload.max_completion_tokens, 1200, 'landing auto output must use its dedicated floor');
+assert.equal(landingData.max_tokens, 1200);
+assert.equal(landingData.finish_reason, 'length');
+assert.equal(landingData.history.turns.at(-1).user.variants[0].hidden, true);
+assert.equal(landingData.history.turns.at(-1).assistant.variantsByUserVariant['0'][0].finish_reason, 'length');
+assert.equal((await readConversationState(db, conversationB.id)).turns.at(-1).assistant.variantsByUserVariant['0'][0].finish_reason, 'length');
+
+providerContent = JSON.stringify({
+  current_text: '',
+  hand_seeds: [],
+  do_not_repeat: '',
+  pocket_candidates: [],
+});
+providerFinishReason = 'stop';
+const soilResponse = await routeMemoryApi(new Request('https://coast.test/api/memory/soil/organize', {
+  method: 'POST',
+  headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    conversation_id: conversationB.id,
+    force: true,
+    trigger: 'landing',
+    settings: { maxHandSeeds: 3, autoRefreshEveryTurns: 5 },
+  }),
+}), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
+const soilData = await soilResponse.json();
+assert.equal(soilResponse.status, 200);
+assert.equal(soilData.soil.hand_seeds.length, 0);
+assert.match(soilData.soil.current_text, /登岛信开场已经完成/);
+
+await writeSoil(db, conversationB.id, {
+  current_text: '小寒手动锁定的当前方向',
+  hand_seeds: [],
+  manual_locked: true,
+});
+const callsBeforeLockedLanding = providerChatCalls;
+const lockedSoilResponse = await routeMemoryApi(new Request('https://coast.test/api/memory/soil/organize', {
+  method: 'POST',
+  headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+  body: JSON.stringify({ conversation_id: conversationB.id, force: true, trigger: 'landing' }),
+}), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
+const lockedSoilData = await lockedSoilResponse.json();
+assert.equal(lockedSoilResponse.status, 200);
+assert.equal(lockedSoilData.skipped, true);
+assert.equal(lockedSoilData.reason, 'manual_locked');
+assert.equal(lockedSoilData.soil.current_text, '小寒手动锁定的当前方向');
+assert.equal(providerChatCalls, callsBeforeLockedLanding, 'landing organize must not call the model through a manual lock');
+globalThis.fetch = originalFetch;
 
 console.log('memory: ok');

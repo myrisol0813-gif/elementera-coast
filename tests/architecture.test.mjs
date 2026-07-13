@@ -12,7 +12,7 @@ const read = (path) => readFile(path, 'utf8');
 const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-04"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-05"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 for (const id of ['coastStatus', 'mainRooms', 'localRoomWindows', 'localRoomWindowList', 'chatConversationSection', 'chatConversationList', 'modelQuickPicker']) {
@@ -194,10 +194,12 @@ const firstLanding = await store.writeLandingExchange(db, one.id, {
   letter_text: '登岛信正文',
   letter_hash: 'hash-one',
   assistant_text: '我读完了。',
+  finish_reason: 'length',
 });
 assert.equal(firstLanding.landing.landing_version, 1);
 assert.equal(firstLanding.state.turns.at(-1).turn_type, 'landing');
 assert.equal(firstLanding.state.turns.at(-1).user.variants[0].hidden, true);
+assert.equal(firstLanding.state.turns.at(-1).assistant.variantsByUserVariant['0'][0].finish_reason, 'length');
 assert.equal((await store.readLandingStatus(db, one.id, 'openai/gpt-4.1-nano')).landing_text_hash, 'hash-one');
 const secondLanding = await store.writeLandingExchange(db, one.id, {
   state: firstLanding.state,

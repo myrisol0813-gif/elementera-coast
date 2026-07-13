@@ -1,7 +1,7 @@
 import { apiError, json, readJson, sameOrigin } from './http.js';
 import { buildMemoryContext, formatMemoryContext } from './memory-recall.js';
 import { MEMORY_OWNER_ID } from './memory-store.js';
-import { ModelRequestError, modelErrorResponse, performFormalChat } from './models.js';
+import { MAX_FORMAL_TOKENS, ModelRequestError, modelErrorResponse, performFormalChat } from './models.js';
 import {
   ChatStoreError,
   createConversation,
@@ -94,6 +94,10 @@ async function profile(request, env) {
   return methodNotAllowed('GET, PUT');
 }
 
+export function clipGeneratedTitle(value) {
+  return Array.from(sanitizeTitle(value, '新聊天')).slice(0, 12).join('');
+}
+
 async function generatedTitle(env, user, assistant) {
   const prompt = `为下面这轮对话生成一个简短中文标题，12字以内，不要引号，不要句号，不要解释。\n用户：${String(user || '').slice(0, 1000)}\n助手：${String(assistant || '').slice(0, 1000)}`;
   const result = await performFormalChat(env, {
@@ -101,7 +105,7 @@ async function generatedTitle(env, user, assistant) {
     messages: [{ role: 'user', content: prompt }],
     settings: { max_tokens: 40, temperature: 0.2 },
   });
-  return sanitizeTitle(result?.message?.content || '', '新聊天').slice(0, 24);
+  return clipGeneratedTitle(result?.message?.content || '');
 }
 
 async function title(request, env) {
@@ -167,6 +171,21 @@ async function formalChat(request, env) {
 function integer(value, fallback, min, max) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.trunc(number))) : fallback;
+}
+
+export function landingRequestSettings(rawSettings = {}) {
+  const settings = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
+  const minimum = settings.outputLength === 'short'
+    ? 700
+    : settings.outputLength === 'long'
+      ? 1600
+      : 1200;
+  const requested = Number(settings.max_tokens);
+  const maxTokens = Math.min(
+    MAX_FORMAL_TOKENS,
+    Math.max(minimum, Number.isFinite(requested) ? Math.trunc(requested) : minimum),
+  );
+  return { ...settings, max_tokens: maxTokens };
 }
 
 export function estimateContextTokens(value) {
@@ -272,6 +291,7 @@ async function landingLetter(request, env) {
     throw new ChatStoreError('invalid_request', '请先写好登岛信并选择当前聊天模型。', 400);
   }
 
+  const requestSettings = landingRequestSettings(value.settings);
   const state = await readConversationState(env.COAST_CHAT_DB, targetConversationId);
   const messages = [...activeStateMessages(state), { role: 'user', content: letterText }];
   const lastUser = messages.at(-1);
@@ -281,18 +301,18 @@ async function landingLetter(request, env) {
     memory = await buildMemoryContext(env, MEMORY_OWNER_ID, targetConversationId, lastUser.content, {
       recent_entry_ids: value.recent_entry_ids,
       mode: 'chat',
-      settings: value.settings,
+      settings: requestSettings,
       conversation_turns: messages.filter((message) => message.role === 'user').length,
     });
-    softContext = formatMemoryContext(memory, value.settings);
+    softContext = formatMemoryContext(memory, requestSettings);
   } catch (error) {
     console.error('[chat-memory:landing-recall]', error);
   }
-  const assembled = budgetChatMessages(messages, softContext, value.settings);
+  const assembled = budgetChatMessages(messages, softContext, requestSettings);
   const generated = await performFormalChat(env, {
     model: modelId,
     messages: assembled.messages,
-    settings: value.settings,
+    settings: requestSettings,
   }, { allowSystem: assembled.messages[0]?.role === 'system' });
   const assistantText = generated?.message?.content || '';
   if (!assistantText.trim()) throw new ChatStoreError('empty_model_reply', '模型读完了信，但没有返回文字。', 502);
@@ -303,6 +323,7 @@ async function landingLetter(request, env) {
     letter_text: letterText,
     letter_hash: await sha256(letterText),
     assistant_text: assistantText,
+    finish_reason: generated.finish_reason,
   });
   return json({
     ok: true,
@@ -310,6 +331,8 @@ async function landingLetter(request, env) {
     conversation: await getConversation(env.COAST_CHAT_DB, targetConversationId),
     history: { ...saved.state, conversation_id: targetConversationId },
     landing: saved.landing,
+    finish_reason: generated.finish_reason || null,
+    max_tokens: requestSettings.max_tokens,
     context: assembled.trace,
     memory: {
       selected_entry_ids: memory?.trace?.selected || [],

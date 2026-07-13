@@ -55,12 +55,13 @@ const landing = normalizeState({
     turn_type: 'landing',
     model_id: 'openai/gpt-4.1-nano',
     user: { active: 0, variants: [{ id: 'landing-user', content: 'hidden letter', hidden: true, input_type: 'landing_letter' }] },
-    assistant: { activeByUserVariant: { 0: 0 }, variantsByUserVariant: { 0: [{ id: 'landing-assistant', content: 'I read it.' }] } },
+    assistant: { activeByUserVariant: { 0: 0 }, variantsByUserVariant: { 0: [{ id: 'landing-assistant', content: 'I read it.', finish_reason: 'length' }] } },
   }],
 });
 assert.equal(landing.turns[0].turn_type, 'landing');
 assert.equal(activeBranch(landing.turns[0]).user.hidden, true);
 assert.equal(activeBranch(landing.turns[0]).user.input_type, 'landing_letter');
 assert.equal(activeBranch(landing.turns[0]).assistant.content, 'I read it.');
+assert.equal(activeBranch(landing.turns[0]).assistant.finish_reason, 'length');
 
 console.log('chat-state: ok');

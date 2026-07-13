@@ -592,15 +592,32 @@ export function createMemory({ chat, router, toast, storage }) {
   }
 
   async function onReplyCompleted(conversationId, { trigger = 'reply' } = {}) {
+    const landing = trigger === 'landing';
     try {
       const data = await requestJson(API.memorySoilOrganize, {
         method: 'POST',
-        body: JSON.stringify({ conversation_id: conversationId, force: false, trigger, settings: settings() }),
+        body: JSON.stringify({ conversation_id: conversationId, force: landing, trigger, settings: settings() }),
       });
-      if (data.soil) runtime.soils.set(conversationId, data.soil);
+      if (landing) await fetchSoil(conversationId);
+      else if (data.soil) runtime.soils.set(conversationId, data.soil);
       if (currentId() === conversationId) chat.renderMessages();
+      return {
+        ok: true,
+        skipped: Boolean(data.skipped),
+        reason: data.reason || '',
+        soil: runtime.soils.get(conversationId) || data.soil || emptySoil(conversationId),
+      };
     } catch (error) {
       if (!['soil_locked'].includes(error?.type)) console.warn('[memory:soil-auto]', error);
+      if (landing) {
+        try {
+          await fetchSoil(conversationId);
+          if (currentId() === conversationId) chat.renderMessages();
+        } catch (fetchError) {
+          console.warn('[memory:landing-readback]', fetchError);
+        }
+      }
+      return { ok: false, reason: error?.type || 'soil_organize_failed' };
     }
   }
 

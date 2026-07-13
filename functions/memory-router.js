@@ -115,8 +115,12 @@ async function organizeSoil(request, env) {
   const value = await body(request);
   const conversationId = conversationIdFrom(new URL(request.url), value);
   const force = value.force === true;
+  const landing = value.trigger === 'landing';
   const settings = soilSettings(value.settings || {});
   const oldSoil = await readSoil(env.COAST_CHAT_DB, conversationId);
+  if (landing && oldSoil.manual_locked) {
+    return json({ ok: true, skipped: true, reason: 'manual_locked', soil: oldSoil });
+  }
   if (!force && oldSoil.manual_locked) throw new MemoryStoreError('soil_locked', '思维壤已由小寒手动锁定。', 409);
   if (!force && !oldSoil.auto_refresh_enabled) {
     return json({ ok: true, skipped: true, reason: 'auto_refresh_disabled', soil: oldSoil });
@@ -125,7 +129,7 @@ async function organizeSoil(request, env) {
   const state = await readConversationState(env.COAST_CHAT_DB, conversationId);
   const turns = completedTurns(state);
   if (!turns.length) return json({ ok: true, skipped: true, reason: 'no_completed_turns', soil: oldSoil });
-  const scheduledTurn = value.trigger === 'landing'
+  const scheduledTurn = landing
     || turns.length === 1
     || (turns.length - 1) % settings.autoRefreshEveryTurns === 0;
   const latestAssistantAt = Date.parse(turns.at(-1)?.assistant?.created_at || '');
@@ -142,7 +146,8 @@ async function organizeSoil(request, env) {
   });
   const organized = parseStrictJson(result?.message?.content);
   const soilValue = {
-    current_text: organized.current_text,
+    current_text: String(organized.current_text || '').trim()
+      || (landing ? '登岛信开场已经完成，正在承接这封信与刚刚的读信回复。' : ''),
     hand_seeds: normalizeHandSeeds(organized.hand_seeds).slice(0, settings.maxHandSeeds),
     do_not_repeat: organized.do_not_repeat,
     pocket_candidates: organized.pocket_candidates,

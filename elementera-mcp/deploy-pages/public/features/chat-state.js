@@ -9,6 +9,7 @@ const now = () => new Date().toISOString();
 export function normalizeVariant(value = {}, prefix = 'variant') {
   if (typeof value.content !== 'string') return null;
   const errorDetail = String(value.errorDetail || '').trim().slice(0, MAX_CONTENT);
+  const finishReason = String(value.finish_reason || '').trim().slice(0, 80);
   return {
     id: sanitizeId(value.id || id(prefix), prefix),
     content: value.content.slice(0, MAX_CONTENT),
@@ -17,6 +18,7 @@ export function normalizeVariant(value = {}, prefix = 'variant') {
     favorite: Boolean(value.favorite),
     ...(value.hidden === true ? { hidden: true } : {}),
     ...(value.input_type === 'landing_letter' ? { input_type: 'landing_letter' } : {}),
+    ...(finishReason ? { finish_reason: finishReason } : {}),
     ...(errorDetail ? { errorDetail } : {}),
   };
 }
@@ -177,6 +179,11 @@ export function updateAssistantVariant(value, turnId, userIndex, assistantIndex,
   }
   if ('liked' in patch) variant.liked = Boolean(patch.liked);
   if ('favorite' in patch) variant.favorite = Boolean(patch.favorite);
+  if ('finish_reason' in patch) {
+    const finishReason = String(patch.finish_reason || '').trim().slice(0, 80);
+    if (finishReason) variant.finish_reason = finishReason;
+    else delete variant.finish_reason;
+  }
   state.updated_at = now();
   return state;
 }

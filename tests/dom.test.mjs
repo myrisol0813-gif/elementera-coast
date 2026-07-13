@@ -44,7 +44,10 @@ const memoryPockets = [];
 const memoryEntries = [];
 const landingStatuses = new Map();
 const landingBodies = [];
+const titleBodies = [];
 const soilOrganizeBodies = [];
+let landingFinishReason = 'stop';
+let failNextSoilOrganize = false;
 
 function soilFor(conversationId) {
   if (!soils.has(conversationId)) soils.set(conversationId, {
@@ -115,7 +118,12 @@ globalThis.fetch = async (input, options = {}) => {
       },
       assistant: {
         activeByUserVariant: { 0: 0 },
-        variantsByUserVariant: { 0: [{ id: `landing-assistant-${sequence}`, content: '我把登岛信读完了。', created_at: now() }] },
+        variantsByUserVariant: { 0: [{
+          id: `landing-assistant-${sequence}`,
+          content: '我把登岛信读完了。',
+          created_at: now(),
+          finish_reason: landingFinishReason,
+        }] },
       },
     });
     state.updated_at = now();
@@ -138,6 +146,8 @@ globalThis.fetch = async (input, options = {}) => {
       history: { ...state, conversation_id: body.conversation_id },
       landing,
       memory: { selected_entry_ids: [], vector_enabled: false },
+      finish_reason: landingFinishReason,
+      max_tokens: body.settings.max_tokens,
     });
   }
   if (url.pathname === '/api/chat') {
@@ -146,6 +156,7 @@ globalThis.fetch = async (input, options = {}) => {
     return response({ ok: true, model: body.model, message: { role: 'assistant', content: `mock: ${body.messages.at(-1)?.content || ''}` }, memory: { selected_entry_ids: [`mock-memory-${formalChatRequests}`], vector_enabled: false } });
   }
   if (url.pathname === '/api/chat/title') {
+    titleBodies.push(body);
     const conversation = conversations.find((item) => item.id === body.conversation_id);
     conversation.title = '测试标题';
     conversation.title_generated_at = now();
@@ -158,11 +169,19 @@ globalThis.fetch = async (input, options = {}) => {
   }
   if (url.pathname === '/api/memory/soil/organize') {
     soilOrganizeBodies.push(body);
+    if (failNextSoilOrganize) {
+      failNextSoilOrganize = false;
+      return response({ ok: false, error: { type: 'soil_organize_failed', message: 'mock soil failure' } }, 502);
+    }
+    const current = soilFor(body.conversation_id);
+    if (body.trigger === 'landing' && current.manual_locked) {
+      return response({ ok: true, skipped: true, reason: 'manual_locked', soil: current });
+    }
     const soil = {
-      ...soilFor(body.conversation_id),
+      ...current,
       current_text: '继续测试当前窗口',
       hand_seeds: [{ name: '测试种', life_core: '只在需要时轻轻递入', usage_hint: '', avoid_hint: '不要复读' }],
-      revision: soilFor(body.conversation_id).revision + 1,
+      revision: current.revision + 1,
     };
     soils.set(body.conversation_id, soil);
     return response({ ok: true, soil });
@@ -494,32 +513,81 @@ assert.equal(document.querySelector('.moment-compose-text').closest('.feature-bo
 document.querySelector('[data-action="router:back"]').click();
 await tick();
 
+const conversationsBeforeLanding = document.querySelectorAll('#chatConversationList .conversation-row').length;
+document.querySelector('#newChatButton').click();
+await waitFor(() => document.querySelectorAll('#chatConversationList .conversation-row').length === conversationsBeforeLanding + 1, 'fresh landing conversation');
+const landingConversationId = document.querySelector('#chatConversationList .conversation-title.is-active')?.closest('[data-conversation-id]')?.dataset.conversationId;
+assert.ok(landingConversationId);
+assert.equal(conversations.find((item) => item.id === landingConversationId)?.title, '新聊天');
+
 document.querySelector('#moreButton').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'island-letter', 'letter route');
 assert.ok(document.querySelector('#islandLetterText').value.includes('欢迎回家'));
 assert.equal(document.querySelector('[data-action="letters:send-island"]').textContent, '递出登岛信');
 const visibleUsersBeforeLetter = document.querySelectorAll('.message.user').length;
 const assistantsBeforeLetter = document.querySelectorAll('.message.assistant').length;
+const titlesBeforeLetter = titleBodies.length;
+landingFinishReason = 'length';
 document.querySelector('[data-action="letters:send-island"]').click();
 await waitFor(() => document.querySelector('#overlayRoot').hidden, 'landing letter response closes panel');
 await waitFor(() => document.querySelectorAll('.message.assistant').length === assistantsBeforeLetter + 1, 'landing assistant reply');
 await waitFor(() => soilOrganizeBodies.some((item) => item.trigger === 'landing'), 'landing soil refresh');
 const landingSoil = soilOrganizeBodies.findLast((item) => item.trigger === 'landing');
 assert.deepEqual(landingBodies.at(-1).recent_entry_ids, [], 'zero cooldown must send no cooldown ids');
+assert.equal(landingBodies.at(-1).settings.max_tokens, 1200, 'landing auto output must not reuse ordinary chat 600');
+assert.equal(landingSoil.force, true, 'landing soil refresh must bypass the ordinary schedule');
 assert.equal(landingSoil.settings.seedCooldownTurns, 0);
 assert.equal(landingSoil.settings.conversationSeedStallLimit, 6);
 assert.equal(landingSoil.settings.autoRefreshEveryTurns, 5);
 assert.equal(landingSoil.settings.maxHandSeeds, 3);
 assert.equal(document.querySelectorAll('.message.user').length, visibleUsersBeforeLetter, 'hidden landing input must not render a user bubble');
 assert.ok(document.querySelector('.message.assistant:last-of-type')?.textContent.includes('我把登岛信读完了。'));
-const landingTurn = histories.get('conv-1').turns.at(-1);
+assert.equal(titleBodies.length, titlesBeforeLetter + 1, 'landing must generate a title without another user message');
+assert.match(titleBodies.at(-1).user, /^登岛信：/);
+assert.equal(titleBodies.at(-1).assistant, '我把登岛信读完了。');
+assert.equal(conversations.find((item) => item.id === landingConversationId)?.title, '测试标题');
+assert.equal(document.querySelector('#toastRoot').textContent, '登岛信已递出，但回复达到长度上限；可以点“重新生成”再读一次。');
+assert.ok(document.querySelector('.thought-soil-entry')?.textContent.includes('1 粒手持种'));
+document.querySelector('.thought-soil-entry').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'thought-soil', 'landing thought soil route');
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('继续测试当前窗口'));
+document.querySelector('[data-action="memory:done"]').click();
+await tick();
+
+const landingTurn = histories.get(landingConversationId).turns.at(-1);
 assert.equal(landingTurn.turn_type, 'landing');
 assert.equal(landingTurn.user.variants[0].hidden, true);
+assert.equal(landingTurn.assistant.variantsByUserVariant['0'][0].finish_reason, 'length');
+const requestsBeforeLandingRegenerate = formalChatRequests;
+document.querySelector(`.message.assistant[data-turn="${landingTurn.id}"] [data-action="chat:regenerate"]`).click();
+await waitFor(() => formalChatRequests === requestsBeforeLandingRegenerate + 1, 'landing regenerate request');
+await waitFor(() => histories.get(landingConversationId).turns.at(-1).assistant.variantsByUserVariant['0'].length === 2, 'landing regenerate variant');
+assert.equal(formalChatBodies.at(-1).messages.at(-1).content, landingBodies.at(-1).letter_text);
+assert.equal(formalChatBodies.at(-1).settings.max_tokens, 600, 'ordinary regenerate output logic must stay unchanged');
+assert.equal(document.querySelectorAll('.message.user').length, visibleUsersBeforeLetter, 'landing regenerate must keep the hidden input hidden');
+
 document.querySelector('#moreButton').click();
 await waitFor(() => document.querySelector('[data-action="letters:send-island"]'), 'reopen letter route');
 assert.equal(document.querySelector('[data-action="letters:send-island"]').textContent, '重新递出登岛信');
-document.querySelector('[data-action="router:back"]').click();
-await tick();
+const lockedSoil = { ...soilFor(landingConversationId), current_text: '小寒手动锁定的当前方向', hand_seeds: [], manual_locked: true };
+soils.set(landingConversationId, lockedSoil);
+landingFinishReason = 'stop';
+const landingCountBeforeLocked = landingBodies.length;
+document.querySelector('[data-action="letters:send-island"]').click();
+await waitFor(() => landingBodies.length === landingCountBeforeLocked + 1 && document.querySelector('#overlayRoot').hidden, 'locked landing soil readback');
+assert.equal(document.querySelector('#toastRoot').textContent, '登岛信已递出；思维壤已手动锁定，保留原有内容。');
+assert.equal(soilFor(landingConversationId).current_text, '小寒手动锁定的当前方向');
+assert.equal(soilFor(landingConversationId).hand_seeds.length, 0);
+
+document.querySelector('#moreButton').click();
+await waitFor(() => document.querySelector('[data-action="letters:send-island"]'), 'reopen letter for soil failure');
+failNextSoilOrganize = true;
+const landingCountBeforeFailure = landingBodies.length;
+document.querySelector('[data-action="letters:send-island"]').click();
+await waitFor(() => landingBodies.length === landingCountBeforeFailure + 1 && document.querySelector('#overlayRoot').hidden, 'landing soil failure preserves reply');
+assert.equal(document.querySelector('#toastRoot').textContent, '登岛信已递出，但思维壤整理失败，可以稍后手动整理。');
+assert.equal(document.querySelectorAll('.message.user').length, visibleUsersBeforeLetter);
+assert.equal(histories.get(landingConversationId).turns.length, 3, 'soil failure must not discard a saved landing reply');
 
 document.querySelector('[data-action="rooms:open"][data-kind="radio"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'local-room', 'room route');

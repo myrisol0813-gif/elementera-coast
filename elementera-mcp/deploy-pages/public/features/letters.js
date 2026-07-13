@@ -127,6 +127,15 @@ export function createLetters({ storage, chat, models, router, toast }) {
       });
       landingStatuses.set(letter.key, data.landing || { sent: true });
       await router.close();
+      if (data.soil_refresh?.ok === false) {
+        return toast('登岛信已递出，但思维壤整理失败，可以稍后手动整理。', 3200);
+      }
+      if (data.soil_refresh?.reason === 'manual_locked') {
+        return toast('登岛信已递出；思维壤已手动锁定，保留原有内容。', 2800);
+      }
+      if (data.finish_reason === 'length') {
+        return toast('登岛信已递出，但回复达到长度上限；可以点“重新生成”再读一次。', 3200);
+      }
       return toast('登岛信已经递到手里。');
     }
     if (name === 'reset-island') {
