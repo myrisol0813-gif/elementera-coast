@@ -259,7 +259,7 @@ async function requestOpenRouter(env, payload, title) {
   }
 }
 
-export async function performFormalChat(env, input = {}) {
+export async function performFormalChat(env, input = {}, { allowSystem = false } = {}) {
   if (!openRouterKey(env)) throw new ModelRequestError('auth_error', 'OpenRouter key 未配置。', 503);
   const catalog = await fetchModelCatalog(env);
   const modelId = String(input.model || catalog.defaults.chat || DEFAULT_MODEL);
@@ -270,7 +270,7 @@ export async function performFormalChat(env, input = {}) {
   if (!model || ![...(catalog.groups.openai_chat || []), ...(catalog.groups.free_test || [])].some((item) => item.id === modelId)) {
     throw new ModelRequestError('model_not_allowed', '该模型不在当前正式线允许范围内。', 400, { model: modelId });
   }
-  const messages = validateMessages(input.messages);
+  const messages = validateMessages(input.messages, { system: allowSystem });
   const settings = input.settings || {};
   const maxTokens = clamp(settings.max_tokens ?? input.max_tokens, 600, 1, MAX_FORMAL_TOKENS);
   const temperature = clamp(settings.temperature ?? input.temperature, 0.7, 0, 2);
@@ -289,15 +289,6 @@ export async function handleModels(request, env) {
   if (request.method !== 'GET') return apiError('method_not_allowed', 'Method not allowed.', 405);
   try {
     return json(await fetchModelCatalog(env, new URL(request.url).searchParams.get('refresh') === '1'));
-  } catch (error) {
-    return modelErrorResponse(error);
-  }
-}
-
-export async function handleFormalChat(request, env) {
-  if (request.method !== 'POST') return apiError('method_not_allowed', 'Method not allowed.', 405);
-  try {
-    return json(await performFormalChat(env, await readJson(request)));
   } catch (error) {
     return modelErrorResponse(error);
   }
@@ -336,4 +327,3 @@ export function modelErrorResponse(error) {
   const status = error?.status === 413 ? 413 : 400;
   return apiError(status === 413 ? 'body_too_large' : 'invalid_request', status === 413 ? '请求体过大。' : '请求体无效。', status);
 }
-

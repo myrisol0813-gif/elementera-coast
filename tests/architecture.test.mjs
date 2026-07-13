@@ -98,6 +98,10 @@ const chatRouter = await read(join(repo, 'functions/chat-router.js'));
 const storeSource = await read(join(repo, 'functions/chat-store.js'));
 const schemaSource = await read(join(repo, 'functions/chat-schema.js'));
 const memoryStoreSource = await read(join(repo, 'functions/memory-store.js'));
+const embeddingSource = await read(join(repo, 'functions/embedding.js'));
+const memoryRecallSource = await read(join(repo, 'functions/memory-recall.js'));
+const memoryRouterSource = await read(join(repo, 'functions/memory-router.js'));
+const toolsSource = await read(join(moduleRoot, 'features/tools.js'));
 assert.equal(/_middleware\.full|legacyOnRequest|COAST_CHAT_STORE/.test(middleware + chatRouter + storeSource + schemaSource), false);
 assert.equal(/readLegacy|importLegacy|\bturns\s+WHERE|user_variants|assistant_variants/.test(storeSource), false);
 assert.ok(chatRouter.includes("source: 'd1-json-v4'"));
@@ -105,6 +109,21 @@ assert.ok(storeSource.includes('conversation_states'));
 for (const table of ['conversation_soils', 'memory_pockets', 'memory_entries']) {
   assert.ok(memoryStoreSource.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `missing memory table: ${table}`);
 }
+assert.ok(embeddingSource.includes("AI.run(MEMORY_CONFIG.vector.model, { text: ["));
+assert.ok(embeddingSource.includes('vector.length'));
+assert.equal(/dimensions\s*[:=]\s*\d+/.test(embeddingSource + memoryRecallSource + memoryRouterSource), false, 'embedding dimensions cannot be assumed');
+assert.ok(embeddingSource.includes('COAST_MEMORY_VECTOR.upsert'));
+assert.ok(embeddingSource.includes('COAST_MEMORY_VECTOR.deleteByIds'));
+for (const pool of ['conversation_seeds', 'conversation_memories', 'global_seeds', 'global_memories']) {
+  assert.ok(memoryRecallSource.includes(pool), `missing recall pool: ${pool}`);
+}
+assert.ok(chatRouter.includes('buildMemoryContext'));
+assert.ok(chatRouter.includes("role: 'system'"));
+assert.equal(/memory_edges|sleep|dream|梦边|自动核心/.test(memoryStoreSource + memoryRecallSource + memoryRouterSource), false);
+for (const label of ['思维壤预算', '当前窗口种子召回上限', '总种子召回上限', '当前窗口记忆召回上限', '总记忆召回上限', '清空当前思维壤', '打开待确认袋', '查看向量状态']) {
+  assert.ok(toolsSource.includes(label), `API cottage is missing: ${label}`);
+}
+assert.equal(/小纸条预算 · 预留|种子召回上限 · 预留|记忆召回：暂未接入/.test(toolsSource), false);
 
 const store = await import(pathToFileURL(join(repo, 'functions/chat-store.js')));
 const normalizedState = store.normalizeState({

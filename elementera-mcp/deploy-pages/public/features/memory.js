@@ -51,6 +51,7 @@ export function createMemory({ chat, router, toast }) {
     entries: { conversation: [], global: [] },
     libraryTab: 'conversation',
     filters: { entryType: '', status: '', query: '' },
+    vectorStatus: null,
   };
 
   function currentId() {
@@ -81,14 +82,33 @@ export function createMemory({ chat, router, toast }) {
   }
 
   async function fetchEntries(scope = runtime.libraryTab) {
-    const params = new URLSearchParams({ scope, limit: '100' });
-    if (scope === 'conversation') params.set('conversation_id', currentId());
-    if (runtime.filters.entryType) params.set('entry_type', runtime.filters.entryType);
-    if (runtime.filters.status) params.set('status', runtime.filters.status);
-    if (runtime.filters.query) params.set('q', runtime.filters.query);
-    const data = await requestJson(`${API.memoryEntries}?${params}`);
+    let data;
+    if (runtime.filters.query) {
+      data = await requestJson(API.memorySearch, {
+        method: 'POST',
+        body: JSON.stringify({
+          conversation_id: currentId(),
+          scope,
+          entry_type: runtime.filters.entryType,
+          status: runtime.filters.status,
+          query: runtime.filters.query,
+          limit: 100,
+        }),
+      });
+    } else {
+      const params = new URLSearchParams({ scope, limit: '100' });
+      if (scope === 'conversation') params.set('conversation_id', currentId());
+      if (runtime.filters.entryType) params.set('entry_type', runtime.filters.entryType);
+      if (runtime.filters.status) params.set('status', runtime.filters.status);
+      data = await requestJson(`${API.memoryEntries}?${params}`);
+    }
     runtime.entries[scope] = Array.isArray(data.entries) ? data.entries : [];
     return runtime.entries[scope];
+  }
+
+  async function fetchVectorStatus() {
+    runtime.vectorStatus = await requestJson(API.memoryVectorStatus);
+    return runtime.vectorStatus;
   }
 
   async function onConversationChanged(conversationId) {
@@ -243,7 +263,9 @@ export function createMemory({ chat, router, toast }) {
         <button type="submit">搜索</button>
       </div>
     </form>
-    <p class="feature-note memory-search-status">语义检索未连接 · 当前使用文字搜索</p>`;
+    <p class="feature-note memory-search-status">${runtime.vectorStatus?.index_ready && runtime.vectorStatus?.ai_binding
+      ? '语义检索已连接'
+      : '语义检索未连接 · 当前使用文字搜索'}</p>`;
   }
 
   function memoryView() {
@@ -291,12 +313,33 @@ export function createMemory({ chat, router, toast }) {
     };
   }
 
+  function vectorStatusView() {
+    const status = runtime.vectorStatus || {};
+    const dimensions = status.detected_dimensions == null ? '尚未探测成功' : String(status.detected_dimensions);
+    return {
+      title: '向量状态',
+      subtitle: status.index_ready ? '语义检索已连接' : 'D1 正常 · 语义检索未连接',
+      className: 'memory-vector-status',
+      body: `<section class="feature-group"><div class="feature-card">
+        <div class="feature-row static"><span><strong>Workers AI</strong><small>${status.ai_binding ? '已绑定' : '未绑定'}</small></span></div>
+        <div class="feature-row static"><span><strong>Embedding 模型</strong><small>${escapeHtml(status.embedding_model || '@cf/baai/bge-m3')}</small></span></div>
+        <div class="feature-row static"><span><strong>实际 dimensions</strong><small>${escapeHtml(dimensions)}</small></span></div>
+        <div class="feature-row static"><span><strong>Vectorize</strong><small>${status.index_ready ? 'ready' : '未连接'}</small></span></div>
+        <div class="feature-row static"><span><strong>索引 / binding</strong><small>${escapeHtml(status.index_name || 'elementera-coast-memory-v1')} · ${escapeHtml(status.binding_name || 'COAST_MEMORY_VECTOR')}</small></span></div>
+        <div class="feature-row static"><span><strong>索引队列</strong><small>pending ${Number(status.pending_count || 0)} · ready ${Number(status.ready_count || 0)} · error ${Number(status.error_count || 0)}</small></span></div>
+      </div></section>
+      ${status.probe_error ? `<p class="feature-note">维度探测失败：${escapeHtml(status.probe_error)}</p>` : ''}
+      <div class="button-row"><button type="button" data-action="memory:vector-refresh">重新检查</button></div>`,
+    };
+  }
+
   router.register('thought-soil', soilView);
   router.register('thought-soil-edit', soilEditView);
   router.register('memory-pockets', pocketsView);
   router.register('memory-pocket-action', pocketActionView);
   router.register('memory', memoryView);
   router.register('memory-entry-edit', entryEditView);
+  router.register('memory-vector-status', vectorStatusView);
 
   async function openSoil() {
     const conversationId = currentId();
@@ -313,9 +356,14 @@ export function createMemory({ chat, router, toast }) {
   async function openLibrary(scope = runtime.libraryTab) {
     runtime.libraryTab = scope === 'global' ? 'global' : 'conversation';
     if (runtime.libraryTab === 'conversation') {
-      await Promise.all([fetchSoil(currentId()), fetchPockets(currentId()), fetchEntries('conversation')]);
-    } else await fetchEntries('global');
+      await Promise.all([fetchSoil(currentId()), fetchPockets(currentId()), fetchEntries('conversation'), fetchVectorStatus()]);
+    } else await Promise.all([fetchEntries('global'), fetchVectorStatus()]);
     return router.open('memory');
+  }
+
+  async function showVectorStatus() {
+    await fetchVectorStatus();
+    return router.open('memory-vector-status');
   }
 
   async function clearSoil({ ask = true } = {}) {
@@ -438,6 +486,11 @@ export function createMemory({ chat, router, toast }) {
       return router.refresh({ preserveScroll: false });
     }
     if (name === 'entry-new') return router.open('memory-entry-edit', { scope: runtime.libraryTab });
+    if (name === 'vector-status') return showVectorStatus();
+    if (name === 'vector-refresh') {
+      await fetchVectorStatus();
+      return router.refresh();
+    }
     if (name === 'entry-edit') return router.open('memory-entry-edit', { id: target.dataset.id, scope: runtime.libraryTab });
     const entry = findEntry(target.dataset.id);
     if (name === 'entry-search' && entry) {
@@ -548,6 +601,7 @@ export function createMemory({ chat, router, toast }) {
     onReplyCompleted,
     openPocketAction,
     openPockets,
+    showVectorStatus,
     renderSoilEntry,
   });
 }

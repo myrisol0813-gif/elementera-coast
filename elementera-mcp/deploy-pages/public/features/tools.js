@@ -41,7 +41,7 @@ export function createTools({ storage, router, toast, memory }) {
         ${group('上下文预算', choiceRow('recentTurns', '最近上下文轮数') + choiceRow('contextBudget', '上下文 token 预算', '预算值，当前不做精确 tokenizer 计算。'))}
         ${group('输出偏好', choiceRow('outputLength', '回答长度', '默认由模型按话题判断长度；这里只作为临时偏好。') + choiceRow('creativity', '表达倾向'))}
         ${group('思维壤与记忆召回', numberRow('soilBudget', '思维壤预算', 200, 2400, 100, '只限制递入聊天的轻量便签长度。') + numberRow('conversationSeedLimit', '当前窗口种子召回上限', 0, 6, 1, '默认最多 3 粒。') + numberRow('globalSeedLimit', '总种子召回上限', 0, 6, 1, '默认最多 1 粒。') + numberRow('conversationMemoryLimit', '当前窗口记忆召回上限', 0, 6, 1, '默认最多 2 条。') + numberRow('globalMemoryLimit', '总记忆召回上限', 0, 6, 1, '默认最多 1 条。'))}
-        ${group('应急清理', '<button class="danger-row" type="button" data-action="tools:clear-context"><strong>清空 API 临时上下文</strong><small>用于重置请求前临时拼装；不会删除聊天记录。</small></button><button class="danger-row" type="button" data-action="tools:clear-soil"><strong>清空当前思维壤</strong><small>不会删除聊天、种子或记忆。</small></button><button class="feature-row" type="button" data-action="tools:open-pockets"><span><strong>打开待确认袋</strong><small>确认落袋内容的去向。</small></span><span>›</span></button>')}`,
+        ${group('应急清理', '<button class="danger-row" type="button" data-action="tools:clear-context"><strong>清空 API 临时上下文</strong><small>用于重置请求前临时拼装；不会删除聊天记录。</small></button><button class="danger-row" type="button" data-action="tools:clear-soil"><strong>清空当前思维壤</strong><small>不会删除聊天、种子或记忆。</small></button><button class="feature-row" type="button" data-action="tools:open-pockets"><span><strong>打开待确认袋</strong><small>确认落袋内容的去向。</small></span><span>›</span></button><button class="feature-row" type="button" data-action="tools:vector-status"><span><strong>查看向量状态</strong><small>检查 Workers AI 维度与 Vectorize 连接。</small></span><span>›</span></button>')}`,
     };
   }
 
@@ -124,6 +124,7 @@ export function createTools({ storage, router, toast, memory }) {
       if (cleared) toast('当前思维壤已清空。');
     });
     if (name === 'open-pockets') return memory.openPockets();
+    if (name === 'vector-status') return memory.showVectorStatus();
     if (name === 'check-session') return checkSession();
     if (name === 'send-sandbox') return sendSandbox();
   }

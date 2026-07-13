@@ -12,6 +12,9 @@ export const API = Object.freeze({
   memorySoilOrganize: '/api/memory/soil/organize',
   memoryPockets: '/api/memory/pockets',
   memoryEntries: '/api/memory/entries',
+  memorySearch: '/api/memory/search',
+  memoryRecall: '/api/memory/recall',
+  memoryVectorStatus: '/api/memory/vector-status',
 });
 
 export class ApiError extends Error {

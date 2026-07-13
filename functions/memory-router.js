@@ -1,6 +1,10 @@
 import { ChatStoreError, readConversationState, readProfile, sanitizeId } from './chat-store.js';
+import { deleteEntryVector, syncEntryVector, vectorStatus } from './embedding.js';
 import { apiError, json, readJson } from './http.js';
+import { buildMemoryContext, searchMemory } from './memory-recall.js';
+import { MEMORY_CONFIG } from './memory-config.js';
 import {
+  MEMORY_OWNER_ID,
   MemoryStoreError,
   createEntry,
   createPocket,
@@ -120,7 +124,8 @@ async function organizeSoil(request, env) {
   const state = await readConversationState(env.COAST_CHAT_DB, conversationId);
   const turns = completedTurns(state);
   if (!turns.length) return json({ ok: true, skipped: true, reason: 'no_completed_turns', soil: oldSoil });
-  const scheduledTurn = turns.length === 1 || (turns.length - 1) % 4 === 0;
+  const scheduledTurn = turns.length === 1
+    || (turns.length - 1) % MEMORY_CONFIG.soil.autoRefreshEveryTurns === 0;
   const latestAssistantAt = Date.parse(turns.at(-1)?.assistant?.created_at || '');
   const soilUpdatedAt = Date.parse(oldSoil.updated_at || '');
   if (!force && (!scheduledTurn || (oldSoil.revision > 1 && Number.isFinite(latestAssistantAt) && soilUpdatedAt >= latestAssistantAt))) {
@@ -162,7 +167,9 @@ async function pockets(request, env, url) {
   const pocketId = sanitizeId(parts[0], 'pocket');
   if (parts[1] === 'resolve') {
     if (request.method !== 'POST') return methodNotAllowed('POST');
-    return json({ ok: true, ...await resolvePocket(env.COAST_CHAT_DB, pocketId, await body(request)) });
+    const result = await resolvePocket(env.COAST_CHAT_DB, pocketId, await body(request));
+    if (result.entry) result.entry = (await syncEntryVector(env, env.COAST_CHAT_DB, result.entry)).entry;
+    return json({ ok: true, ...result });
   }
   if (request.method === 'PATCH') return json({ ok: true, pocket: await patchPocket(env.COAST_CHAT_DB, pocketId, await body(request)) });
   if (request.method === 'DELETE') return json({ ok: true, pocket: await deletePocket(env.COAST_CHAT_DB, pocketId), deleted: true });
@@ -184,14 +191,50 @@ async function entries(request, env, url) {
       });
       return json({ ok: true, ...result });
     }
-    if (request.method === 'POST') return json({ ok: true, entry: await createEntry(env.COAST_CHAT_DB, await body(request)) }, 201);
+    if (request.method === 'POST') {
+      const entry = await createEntry(env.COAST_CHAT_DB, await body(request));
+      return json({ ok: true, entry: (await syncEntryVector(env, env.COAST_CHAT_DB, entry)).entry }, 201);
+    }
     return methodNotAllowed('GET, POST');
   }
   const entryId = sanitizeId(suffix.split('/')[0], 'memory');
   if (request.method === 'GET') return json({ ok: true, entry: await getEntry(env.COAST_CHAT_DB, entryId) });
-  if (request.method === 'PATCH') return json({ ok: true, ...await patchEntry(env.COAST_CHAT_DB, entryId, await body(request)) });
-  if (request.method === 'DELETE') return json({ ok: true, entry: await deleteEntry(env.COAST_CHAT_DB, entryId), deleted: true });
+  if (request.method === 'PATCH') {
+    const result = await patchEntry(env.COAST_CHAT_DB, entryId, await body(request));
+    result.entry = (await syncEntryVector(env, env.COAST_CHAT_DB, result.entry)).entry;
+    return json({ ok: true, ...result });
+  }
+  if (request.method === 'DELETE') {
+    const entry = await deleteEntry(env.COAST_CHAT_DB, entryId);
+    const vector = await deleteEntryVector(env, entry);
+    return json({ ok: true, entry, vector, deleted: true });
+  }
   return methodNotAllowed('GET, PATCH, DELETE');
+}
+
+async function search(request, env) {
+  if (request.method !== 'POST') return methodNotAllowed('POST');
+  return json({ ok: true, ...await searchMemory(env, MEMORY_OWNER_ID, await body(request)) });
+}
+
+async function recall(request, env) {
+  if (request.method !== 'POST') return methodNotAllowed('POST');
+  const value = await body(request);
+  const conversationId = sanitizeId(value.conversation_id || '', 'conversation');
+  const result = await buildMemoryContext(env, MEMORY_OWNER_ID, conversationId, value.query || '', {
+    recent_entry_ids: value.recent_entry_ids,
+    mode: value.mode || 'chat',
+    settings: value.settings,
+    conversation_turns: value.conversation_turns,
+  });
+  return json({
+    ok: true,
+    conversation_seeds: result.conversation_seeds,
+    global_seeds: result.global_seeds,
+    conversation_memories: result.conversation_memories,
+    global_memories: result.global_memories,
+    trace: result.trace,
+  });
 }
 
 export function isMemoryApiPath(pathname) {
@@ -200,7 +243,10 @@ export function isMemoryApiPath(pathname) {
     || pathname === `${MEMORY_PATH}/pockets`
     || pathname.startsWith(`${MEMORY_PATH}/pockets/`)
     || pathname === `${MEMORY_PATH}/entries`
-    || pathname.startsWith(`${MEMORY_PATH}/entries/`);
+    || pathname.startsWith(`${MEMORY_PATH}/entries/`)
+    || pathname === `${MEMORY_PATH}/search`
+    || pathname === `${MEMORY_PATH}/recall`
+    || pathname === `${MEMORY_PATH}/vector-status`;
 }
 
 export async function routeMemoryApi(request, env) {
@@ -209,6 +255,12 @@ export async function routeMemoryApi(request, env) {
   try {
     if (url.pathname === `${MEMORY_PATH}/soil`) return await soil(request, env, url);
     if (url.pathname === `${MEMORY_PATH}/soil/organize`) return await organizeSoil(request, env);
+    if (url.pathname === `${MEMORY_PATH}/search`) return await search(request, env);
+    if (url.pathname === `${MEMORY_PATH}/recall`) return await recall(request, env);
+    if (url.pathname === `${MEMORY_PATH}/vector-status`) {
+      if (request.method !== 'GET') return methodNotAllowed('GET');
+      return json({ ok: true, ...await vectorStatus(env) });
+    }
     if (url.pathname === `${MEMORY_PATH}/pockets` || url.pathname.startsWith(`${MEMORY_PATH}/pockets/`)) {
       return await pockets(request, env, url);
     }

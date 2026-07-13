@@ -1,6 +1,7 @@
 import { ensureChatSchema, getConversation, sanitizeId } from './chat-store.js';
+import { MEMORY_CONFIG } from './memory-config.js';
 
-export const MEMORY_OWNER_ID = 'owner';
+export const MEMORY_OWNER_ID = MEMORY_CONFIG.owner;
 
 const MAX_SOURCE_TEXT = 12000;
 const MAX_TITLE = 120;
@@ -8,7 +9,7 @@ const MAX_LIFE_CORE = 2000;
 const MAX_HINT = 1200;
 const MAX_ENTRY_CONTENT = 6000;
 const MAX_SOIL_TEXT = 4000;
-const MAX_HAND_SEEDS = 7;
+const MAX_HAND_SEEDS = MEMORY_CONFIG.soil.maxHandSeeds;
 const POCKET_SOURCE_TYPES = new Set(['message', 'turn', 'selection', 'soil']);
 const POCKET_STATUSES = new Set(['pending', 'confirmed', 'discarded', 'stone']);
 const ENTRY_TYPES = new Set(['seed', 'memory']);
@@ -635,6 +636,103 @@ export async function resolvePocket(db, id, value = {}) {
     pocket: pocketFromRow({ ...pocket, status: 'confirmed', resolved_entry_id: entry.id, updated_at: timestamp }),
     entry: await getEntry(db, entry.id),
   };
+}
+
+export async function updateEmbeddingState(db, id, value = {}) {
+  await ensureMemorySchema(db);
+  const row = await requireEntryRow(db, id);
+  const status = ['pending', 'ready', 'error'].includes(value.embedding_status)
+    ? value.embedding_status
+    : row.embedding_status;
+  const timestamp = Date.now();
+  await run(db, `UPDATE memory_entries SET
+    vector_id = ?, embedding_model = ?, embedding_version = ?, embedding_status = ?,
+    embedded_at = ?, updated_at = ?
+    WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, [
+    value.vector_id === undefined ? row.vector_id : value.vector_id,
+    value.embedding_model === undefined ? row.embedding_model : value.embedding_model,
+    value.embedding_version === undefined ? row.embedding_version : value.embedding_version,
+    status,
+    value.embedded_at === undefined ? row.embedded_at : value.embedded_at,
+    timestamp,
+    row.id,
+    MEMORY_OWNER_ID,
+  ]);
+  return getEntry(db, row.id);
+}
+
+export async function embeddingCounts(db) {
+  await ensureMemorySchema(db);
+  const rows = await all(db, `SELECT embedding_status, COUNT(*) AS count
+    FROM memory_entries
+    WHERE user_id = ? AND deleted_at IS NULL AND user_confirmed = 1
+      AND status IN ('active', 'dormant')
+    GROUP BY embedding_status`, [MEMORY_OWNER_ID]);
+  const counts = { pending: 0, ready: 0, error: 0 };
+  for (const row of rows) {
+    if (Object.prototype.hasOwnProperty.call(counts, row.embedding_status)) counts[row.embedding_status] = Number(row.count || 0);
+  }
+  return counts;
+}
+
+export async function pendingEmbeddingEntries(db, limit = 4) {
+  await ensureMemorySchema(db);
+  const rows = await all(db, `SELECT * FROM memory_entries
+    WHERE user_id = ? AND user_confirmed = 1 AND deleted_at IS NULL
+      AND status IN ('active', 'dormant')
+      AND (embedding_status = 'pending' OR (embedding_status = 'error' AND updated_at < ?))
+    ORDER BY updated_at ASC
+    LIMIT ?`, [MEMORY_OWNER_ID, Date.now() - MEMORY_CONFIG.vector.retryAfterMs, Math.min(20, Math.max(1, Number(limit) || 4))]);
+  return rows.map(entryFromRow);
+}
+
+export async function listRecallPool(db, { conversation_id: conversationIdValue, entry_type: entryTypeValue, scope: scopeValue } = {}) {
+  await ensureMemorySchema(db);
+  const entryType = normalizeEntryType(entryTypeValue);
+  const scope = normalizeScope(scopeValue);
+  const conditions = [
+    'user_id = ?',
+    'entry_type = ?',
+    'scope = ?',
+    "status IN ('active', 'dormant')",
+    'user_confirmed = 1',
+    'deleted_at IS NULL',
+  ];
+  const params = [MEMORY_OWNER_ID, entryType, scope];
+  if (scope === 'conversation') {
+    const conversationId = sanitizeId(conversationIdValue, 'conversation');
+    await getConversation(db, conversationId);
+    conditions.push('conversation_id = ?');
+    params.push(conversationId);
+  } else conditions.push('conversation_id IS NULL');
+  const rows = await all(db, `SELECT * FROM memory_entries
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY updated_at DESC
+    LIMIT 240`, params);
+  return rows.map(entryFromRow);
+}
+
+export async function entriesByIds(db, ids = []) {
+  await ensureMemorySchema(db);
+  const clean = [...new Set((Array.isArray(ids) ? ids : []).map((id) => sanitizeId(id, 'memory')).filter(Boolean))].slice(0, 100);
+  if (!clean.length) return [];
+  const placeholders = clean.map(() => '?').join(',');
+  const rows = await all(db, `SELECT * FROM memory_entries
+    WHERE user_id = ? AND id IN (${placeholders}) AND user_confirmed = 1
+      AND status IN ('active', 'dormant') AND deleted_at IS NULL`, [MEMORY_OWNER_ID, ...clean]);
+  const order = new Map(clean.map((id, index) => [id, index]));
+  return rows.map(entryFromRow).sort((left, right) => order.get(left.id) - order.get(right.id));
+}
+
+export async function markEntriesRecalled(db, ids = []) {
+  await ensureMemorySchema(db);
+  const clean = [...new Set((Array.isArray(ids) ? ids : []).map((id) => sanitizeId(id, 'memory')).filter(Boolean))].slice(0, 20);
+  if (!clean.length) return;
+  const timestamp = Date.now();
+  await db.batch(clean.map((id) => db.prepare(`UPDATE memory_entries
+    SET recall_count = recall_count + 1, last_recalled_at = ?
+    WHERE id = ? AND user_id = ? AND deleted_at IS NULL`)
+    .bind(timestamp, id, MEMORY_OWNER_ID)));
 }
 
 export const memoryLimits = Object.freeze({

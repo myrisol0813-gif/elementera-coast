@@ -38,6 +38,7 @@ let profile = {
 let conversations = [{ id: 'conv-1', title: '新聊天', created_at: now(), updated_at: now(), deleted_at: null, title_manual: false, title_generated_at: null }];
 const histories = new Map([['conv-1', { version: 4, updated_at: now(), turns: [] }]]);
 let formalChatRequests = 0;
+const formalChatBodies = [];
 const soils = new Map();
 const memoryPockets = [];
 const memoryEntries = [];
@@ -95,7 +96,8 @@ globalThis.fetch = async (input, options = {}) => {
   }
   if (url.pathname === '/api/chat') {
     formalChatRequests += 1;
-    return response({ ok: true, model: body.model, message: { role: 'assistant', content: `mock: ${body.messages.at(-1)?.content || ''}` } });
+    formalChatBodies.push(body);
+    return response({ ok: true, model: body.model, message: { role: 'assistant', content: `mock: ${body.messages.at(-1)?.content || ''}` }, memory: { selected_entry_ids: [`mock-memory-${formalChatRequests}`], vector_enabled: false } });
   }
   if (url.pathname === '/api/chat/title') {
     const conversation = conversations.find((item) => item.id === body.conversation_id);
@@ -159,6 +161,31 @@ globalThis.fetch = async (input, options = {}) => {
     const pocket = memoryPockets.find((item) => item.id === id);
     Object.assign(pocket, body);
     return response({ ok: true, pocket });
+  }
+  if (url.pathname === '/api/memory/vector-status') {
+    return response({
+      ok: true,
+      ai_binding: true,
+      vector_binding: false,
+      embedding_model: '@cf/baai/bge-m3',
+      detected_dimensions: 37,
+      index_ready: false,
+      index_name: 'elementera-coast-memory-v1',
+      binding_name: 'COAST_MEMORY_VECTOR',
+      pending_count: memoryEntries.length,
+      ready_count: 0,
+      error_count: 0,
+    });
+  }
+  if (url.pathname === '/api/memory/search') {
+    const query = String(body.query || '').toLowerCase();
+    const entries = memoryEntries.filter((entry) => !entry.deleted_at
+      && entry.scope === body.scope
+      && (body.scope !== 'conversation' || entry.conversation_id === body.conversation_id)
+      && (!body.entry_type || entry.entry_type === body.entry_type)
+      && (!body.status || entry.status === body.status)
+      && (!query || `${entry.title} ${entry.life_core} ${entry.content}`.toLowerCase().includes(query)));
+    return response({ ok: true, entries, trace: { vector_enabled: false, candidates: { vector: 0, keyword: entries.length }, selected: entries.map((entry) => entry.id), reasons: {} } });
   }
   if (url.pathname === '/api/memory/entries') {
     if (method === 'POST') {
@@ -253,6 +280,7 @@ input.dispatchEvent(new window.Event('input', { bubbles: true }));
 document.querySelector('#composerActionButton').click();
 await waitFor(() => document.querySelector('.message.assistant')?.textContent.includes('mock: a1'), 'assistant reply');
 assert.equal(formalChatRequests, 1, 'the existing right-hand button still submits chat');
+assert.equal(formalChatBodies[0].conversation_id, 'conv-1');
 await waitFor(() => document.querySelector('.thought-soil-entry')?.textContent.includes('1 粒手持种'), 'thought soil entry');
 document.querySelector('.thought-soil-entry').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'thought-soil', 'thought soil route');
@@ -278,6 +306,7 @@ prompts.push('a1 edited');
 document.querySelector('.message.user [data-action="chat:edit-user"]').click();
 await waitFor(() => document.querySelector('.message.user .variant-switch')?.textContent.includes('2/2'), 'user variant');
 await waitFor(() => document.querySelector('.message.assistant')?.textContent.includes('mock: a1 edited'), 'edited assistant');
+assert.ok(formalChatBodies[1].recent_entry_ids.includes('mock-memory-1'), 'the next turn must carry cooldown ids, not memory contents');
 assert.equal(document.querySelectorAll('.message.assistant').length, 1);
 document.querySelector('.message.assistant').dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory-pocket-action', 'message pocket action');
@@ -330,6 +359,24 @@ document.querySelector('[name="life_core"]').value = '只在明确相关时递�
 document.querySelector('[data-submit="memory:entry-save"]').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory', 'manual memory saved');
 assert.ok(memoryEntries.some((entry) => entry.title === '总库家具' && entry.scope === 'global'));
+document.querySelector('[data-action="router:back"]').click();
+await tick();
+
+document.querySelector('[data-action="settings:wolf"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'wolf', 'wolf settings route');
+document.querySelector('[data-action="tools:run-control"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'run-control', 'API cottage route');
+for (const label of ['思维壤预算', '当前窗口种子召回上限', '总记忆召回上限', '查看向量状态']) {
+  assert.ok(document.querySelector('#overlayRoot').textContent.includes(label));
+}
+document.querySelector('[data-action="tools:vector-status"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory-vector-status', 'vector status route');
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('37'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('未连接'));
+for (const route of ['run-control', 'wolf']) {
+  document.querySelector('[data-action="router:back"]').click();
+  await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === route, `back to ${route}`);
+}
 document.querySelector('[data-action="router:back"]').click();
 await tick();
 

@@ -69,6 +69,7 @@ export function createChat({ storage, toast }) {
     openMenuId: '',
     deletedIds: new Set(),
     saveChains: new Map(),
+    recallHistory: new Map(),
     profileChain: Promise.resolve(),
     profile: emptyProfile(),
     generation: null,
@@ -412,6 +413,8 @@ export function createChat({ storage, toast }) {
     const settings = runtime.runSettings() || {};
     const maxTokens = settings.outputLength === 'long' ? 1200 : settings.outputLength === 'short' ? 350 : 600;
     const temperature = settings.creativity === 'stable' ? 0.3 : settings.creativity === 'expansive' ? 1 : 0.7;
+    const cooldown = Math.min(8, Math.max(0, Number(settings.seedCooldownTurns ?? 2)));
+    const recentEntryIds = (runtime.recallHistory.get(conversationId) || []).slice(-cooldown).flat();
     let patch;
     let generated = false;
     try {
@@ -419,12 +422,17 @@ export function createChat({ storage, toast }) {
         method: 'POST',
         signal: controller.signal,
         body: JSON.stringify({
+          conversation_id: conversationId,
           model: runtime.profile.current_chat_model || DEFAULT_MODEL,
           messages: contextMessages(appended.state, turnId),
-          settings: { max_tokens: maxTokens, temperature },
+          recent_entry_ids: recentEntryIds,
+          settings: { ...settings, max_tokens: maxTokens, temperature },
         }),
       });
       patch = { content: data?.message?.content || '模型没有返回文本。', errorDetail: '' };
+      const selected = Array.isArray(data?.memory?.selected_entry_ids) ? data.memory.selected_entry_ids.map(String) : [];
+      const history = runtime.recallHistory.get(conversationId) || [];
+      runtime.recallHistory.set(conversationId, [...history, selected].slice(-8));
       generated = true;
     } catch (error) {
       patch = error.name === 'AbortError'
@@ -514,6 +522,7 @@ export function createChat({ storage, toast }) {
     }
     runtime.conversations = runtime.conversations.filter((item) => item.id !== conversationId);
     runtime.histories.delete(conversationId);
+    runtime.recallHistory.delete(conversationId);
     if (!runtime.conversations.length) runtime.conversations = [await createConversation('新聊天')];
     if (runtime.currentId === conversationId) await loadConversation(runtime.conversations[0].id);
     else renderConversationList();
