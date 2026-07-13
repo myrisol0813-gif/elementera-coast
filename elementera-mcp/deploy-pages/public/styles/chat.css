@@ -106,8 +106,7 @@
   color: var(--accent);
 }
 
-.action-button.is-active[data-reaction="liked"] .icon,
-.action-button.is-active[data-reaction="favorite"] .icon {
+.action-button.is-active .reaction-fill {
   fill: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
@@ -311,7 +310,6 @@
 
 @media (max-width: 560px) {
   :root {
-    --topbar-height: 68px;
     --composer-height: 82px;
   }
 
@@ -334,4 +332,3 @@
     padding-inline: 14px;
   }
 }
-

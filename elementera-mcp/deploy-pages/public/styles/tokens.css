@@ -15,7 +15,7 @@
   --success: #2f855a;
   --shadow: 0 18px 48px rgba(0, 0, 0, 0.14);
   --sidebar-width: min(86vw, 320px);
-  --topbar-height: 72px;
+  --topbar-height: 52px;
   --composer-height: 92px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
@@ -107,4 +107,3 @@ select:focus-visible {
   color: var(--muted);
   text-align: center;
 }
-

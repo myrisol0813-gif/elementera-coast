@@ -17,11 +17,11 @@
   z-index: 10;
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 8px;
+  align-items: center;
+  gap: 3px;
   min-width: 0;
   height: calc(var(--topbar-height) + var(--safe-top));
-  padding: var(--safe-top) max(14px, var(--safe-right)) 12px max(14px, var(--safe-left));
+  padding: var(--safe-top) max(8px, var(--safe-right)) 0 max(8px, var(--safe-left));
   border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg) 94%, transparent);
   backdrop-filter: blur(18px);
@@ -41,9 +41,9 @@
 }
 
 .icon-button {
-  width: 42px;
-  height: 42px;
-  padding: 9px;
+  width: 38px;
+  height: 38px;
+  padding: 7px;
   border-radius: 12px;
 }
 
@@ -52,18 +52,22 @@
 }
 
 .model-button {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   min-width: 0;
-  padding: 4px 2px;
+  overflow: hidden;
+  padding: 6px 4px;
   border: 0;
   background: transparent;
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .model-title,
 .model-name {
   display: inline;
-  max-width: 46vw;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -71,12 +75,14 @@
 }
 
 .model-title {
-  font-size: 18px;
-  font-weight: 650;
+  flex: 0 0 auto;
+  font-size: 17px;
+  font-weight: 500;
 }
 
 .model-name {
-  margin-left: 7px;
+  flex: 0 1 auto;
+  min-width: 0;
   color: var(--muted);
   font-size: 15px;
 }
@@ -84,7 +90,8 @@
 .topbar-actions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  justify-content: flex-end;
+  gap: 3px;
 }
 
 .scrim {
@@ -335,4 +342,3 @@
     grid-template-columns: minmax(0, 1fr) auto;
   }
 }
-

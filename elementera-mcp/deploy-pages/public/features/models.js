@@ -19,8 +19,18 @@ export function createModels({ chat, router, toast }) {
     return allModels().find((model) => model.id === modelId) || null;
   }
 
+  function inferredModelName(modelId) {
+    const raw = String(modelId || '').split('/').at(-1)?.replace(/:free$/i, '') || '';
+    return raw.split(/[-_]+/).filter(Boolean).map((part) => {
+      if (part.toLowerCase() === 'gpt') return 'GPT';
+      if (/^[a-z]\d+[a-z]?$/i.test(part) || /^\d+[a-z]+$/i.test(part)) return part.toUpperCase();
+      if (/^\d/.test(part)) return part;
+      return `${part.charAt(0).toUpperCase()}${part.slice(1)}`;
+    }).join(' ');
+  }
+
   function modelName(modelId) {
-    return modelById(modelId)?.name || modelId || '未选择模型';
+    return modelById(modelId)?.name || inferredModelName(modelId) || '未选择模型';
   }
 
   function modelKind(modelId, model = modelById(modelId)) {
@@ -35,7 +45,7 @@ export function createModels({ chat, router, toast }) {
     const kind = modelKind(modelId);
     const name = modelName(modelId);
     const label = kind === 'OpenAI'
-      ? `OpenAI: ${name} ›`
+      ? `${name.replace(/^GPT(?:[-:\s]+)?/i, '') || name} ›`
       : kind === 'Free'
         ? `Free: ${name.replace(/NVIDIA\s*/i, '').replace(/ · free$/i, '')} ›`
         : `${name} ›`;

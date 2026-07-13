@@ -12,7 +12,7 @@ const read = (path) => readFile(path, 'utf8');
 const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-01"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-02"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 for (const id of ['coastStatus', 'mainRooms', 'localRoomWindows', 'localRoomWindowList', 'chatConversationSection', 'chatConversationList']) {
@@ -70,6 +70,18 @@ for (const name of ['edit', 'trash', 'copy', 'like', 'refresh', 'heart']) {
 assert.equal(chatSource.includes('localStorage'), false, 'main chat cannot use browser history storage');
 assert.equal(chatSource.includes('history sync'), false);
 assert.ok(chatSource.includes('runtime.deletedIds.add(conversationId)'));
+
+const tokenStyles = await read(join(moduleRoot, 'styles/tokens.css'));
+const shellStyles = await read(join(moduleRoot, 'styles/shell.css'));
+const iconSource = await read(join(moduleRoot, 'core/icons.js'));
+assert.equal((tokenStyles.match(/--topbar-height:/g) || []).length, 1, 'top bar height must have one owner');
+assert.match(tokenStyles, /--topbar-height:\s*52px;/);
+assert.match(shellStyles, /\.topbar\s*\{[\s\S]*?align-items:\s*center;/);
+assert.equal(/action-(copy|edit|heart|like|refresh|trash)\.svg/.test(iconSource + shellStyles), false, 'icons cannot fall back to retired assets');
+assert.equal(/stroke=["']#000/i.test(iconSource), false, 'inline icons must inherit the active theme color');
+for (const historicalPath of ['M12.2 6.4H25.2', 'M8 24l2-6', 'r="10.7"', 'M9.5 27H6.5', 'M23.8 13.3', 'M10.4 10.8']) {
+  assert.ok(iconSource.includes(historicalPath), `missing restored Xiaohan icon path: ${historicalPath}`);
+}
 
 const middleware = await read(join(repo, 'functions/_middleware.js'));
 const chatRouter = await read(join(repo, 'functions/chat-router.js'));

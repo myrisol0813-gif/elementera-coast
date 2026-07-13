@@ -1,13 +1,13 @@
-const CACHE_NAME = 'elementera-coast-app-01';
+const CACHE_NAME = 'elementera-coast-app-02';
 const CORE = Object.freeze([
   '/',
   '/index.html',
   '/manifest.json',
-  '/public/styles/tokens.css?v=coast-app-01',
-  '/public/styles/shell.css?v=coast-app-01',
-  '/public/styles/chat.css?v=coast-app-01',
-  '/public/styles/features.css?v=coast-app-01',
-  '/public/app.js?v=coast-app-01',
+  '/public/styles/tokens.css?v=coast-app-02',
+  '/public/styles/shell.css?v=coast-app-02',
+  '/public/styles/chat.css?v=coast-app-02',
+  '/public/styles/features.css?v=coast-app-02',
+  '/public/app.js?v=coast-app-02',
   '/public/core/api.js',
   '/public/core/dom.js',
   '/public/core/icons.js',

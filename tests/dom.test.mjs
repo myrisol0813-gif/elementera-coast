@@ -115,6 +115,9 @@ assert.equal(document.querySelectorAll('#coastStatus').length, 1);
 assert.equal(document.querySelectorAll('#mainRooms').length, 1);
 assert.match(document.querySelector('#coastStatus').textContent, /同轨第\s+\d+\s+日/);
 assert.ok(document.querySelectorAll('svg.icon').length >= 15);
+assert.equal(document.querySelector('#newChatButton svg').getAttribute('viewBox'), '0 0 32 32');
+assert.equal(document.querySelector('[data-action="settings:wolf"] svg').getAttribute('viewBox'), '0 0 128 128');
+assert.equal(document.querySelector('#modelName').textContent, '4.1 Nano ›');
 
 const input = document.querySelector('#promptInput');
 input.value = 'a1';
@@ -124,6 +127,10 @@ await waitFor(() => document.querySelector('.message.assistant')?.textContent.in
 assert.equal(document.querySelectorAll('.message.user .action-button').length, 2);
 assert.equal(document.querySelectorAll('.message.assistant .action-button').length, 5);
 assert.equal(document.querySelectorAll('.message .action-button svg').length, 7);
+assert.deepEqual(
+  [...document.querySelectorAll('.message .action-button svg')].map((svg) => svg.getAttribute('viewBox')),
+  Array(7).fill('0 0 32 32'),
+);
 
 document.querySelector('.message.assistant [data-action="chat:like"]').click();
 await tick();
