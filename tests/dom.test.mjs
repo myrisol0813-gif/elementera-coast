@@ -43,6 +43,8 @@ const soils = new Map();
 const memoryPockets = [];
 const memoryEntries = [];
 const landingStatuses = new Map();
+const landingBodies = [];
+const soilOrganizeBodies = [];
 
 function soilFor(conversationId) {
   if (!soils.has(conversationId)) soils.set(conversationId, {
@@ -100,6 +102,7 @@ globalThis.fetch = async (input, options = {}) => {
       const key = `${url.searchParams.get('conversation_id')}::${url.searchParams.get('model')}`;
       return response({ ok: true, landing: landingStatuses.get(key) || { sent: false } });
     }
+    landingBodies.push(body);
     const state = structuredClone(histories.get(body.conversation_id) || { version: 4, updated_at: now(), turns: [] });
     const turnId = `landing-turn-${++sequence}`;
     state.turns.push({
@@ -154,6 +157,7 @@ globalThis.fetch = async (input, options = {}) => {
     return response({ ok: true, soil: soilFor(conversationId) });
   }
   if (url.pathname === '/api/memory/soil/organize') {
+    soilOrganizeBodies.push(body);
     const soil = {
       ...soilFor(body.conversation_id),
       current_text: '继续测试当前窗口',
@@ -409,8 +413,19 @@ document.querySelector('[data-action="settings:wolf"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'wolf', 'wolf settings route');
 document.querySelector('[data-action="tools:run-control"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'run-control', 'API cottage route');
-for (const label of ['思维壤预算', '当前窗口种子召回上限', '总记忆召回上限', '查看向量状态']) {
+for (const label of ['上下文预算（粗略）', '思维壤预算', '思维壤自动整理间隔', '手持种上限', '种子冷却轮数', '没东西聊时当前种子上限', '当前窗口种子召回上限', '总记忆召回上限', '查看向量状态']) {
   assert.ok(document.querySelector('#overlayRoot').textContent.includes(label));
+}
+for (const [name, value] of [
+  ['seedCooldownTurns', '0'],
+  ['conversationSeedStallLimit', '6'],
+  ['autoRefreshEveryTurns', '5'],
+  ['maxHandSeeds', '3'],
+]) {
+  const control = document.querySelector(`[name="${name}"]`);
+  assert.ok(control, `${name} control must exist`);
+  control.value = value;
+  control.dispatchEvent(new window.Event('input', { bubbles: true }));
 }
 document.querySelector('[data-action="tools:vector-status"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory-vector-status', 'vector status route');
@@ -478,6 +493,13 @@ const assistantsBeforeLetter = document.querySelectorAll('.message.assistant').l
 document.querySelector('[data-action="letters:send-island"]').click();
 await waitFor(() => document.querySelector('#overlayRoot').hidden, 'landing letter response closes panel');
 await waitFor(() => document.querySelectorAll('.message.assistant').length === assistantsBeforeLetter + 1, 'landing assistant reply');
+await waitFor(() => soilOrganizeBodies.some((item) => item.trigger === 'landing'), 'landing soil refresh');
+const landingSoil = soilOrganizeBodies.findLast((item) => item.trigger === 'landing');
+assert.deepEqual(landingBodies.at(-1).recent_entry_ids, [], 'zero cooldown must send no cooldown ids');
+assert.equal(landingSoil.settings.seedCooldownTurns, 0);
+assert.equal(landingSoil.settings.conversationSeedStallLimit, 6);
+assert.equal(landingSoil.settings.autoRefreshEveryTurns, 5);
+assert.equal(landingSoil.settings.maxHandSeeds, 3);
 assert.equal(document.querySelectorAll('.message.user').length, visibleUsersBeforeLetter, 'hidden landing input must not render a user bubble');
 assert.ok(document.querySelector('.message.assistant:last-of-type')?.textContent.includes('我把登岛信读完了。'));
 const landingTurn = histories.get('conv-1').turns.at(-1);

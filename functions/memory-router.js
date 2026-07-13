@@ -2,7 +2,7 @@ import { ChatStoreError, readConversationState, readProfile, sanitizeId } from '
 import { deleteEntryVector, syncEntryVector, vectorStatus } from './embedding.js';
 import { apiError, json, readJson } from './http.js';
 import { buildMemoryContext, searchMemory } from './memory-recall.js';
-import { MEMORY_CONFIG } from './memory-config.js';
+import { soilSettings } from './memory-config.js';
 import {
   MEMORY_OWNER_ID,
   MemoryStoreError,
@@ -72,7 +72,7 @@ function parseStrictJson(value) {
   }
 }
 
-function soilPrompt(turns, oldSoil) {
+function soilPrompt(turns, oldSoil, maxHandSeeds) {
   const recent = turns.slice(-8).map((branch, index) => ({
     turn: index + 1,
     user: String(branch.user.content || '').slice(0, 3000),
@@ -86,7 +86,7 @@ function soilPrompt(turns, oldSoil) {
   "do_not_repeat": "已经确认、不应重复铺陈的内容",
   "pocket_candidates": ["暂时不用但还有再生力的小东西"]
 }
-hand_seeds 最多 7 粒。不要创建长期记忆，不要替用户做决定，不要复述整段聊天。
+hand_seeds 最多 ${maxHandSeeds} 粒。不要创建长期记忆，不要替用户做决定，不要复述整段聊天。
 
 旧思维壤：
 ${JSON.stringify({
@@ -115,6 +115,7 @@ async function organizeSoil(request, env) {
   const value = await body(request);
   const conversationId = conversationIdFrom(new URL(request.url), value);
   const force = value.force === true;
+  const settings = soilSettings(value.settings || {});
   const oldSoil = await readSoil(env.COAST_CHAT_DB, conversationId);
   if (!force && oldSoil.manual_locked) throw new MemoryStoreError('soil_locked', '思维壤已由小寒手动锁定。', 409);
   if (!force && !oldSoil.auto_refresh_enabled) {
@@ -126,7 +127,7 @@ async function organizeSoil(request, env) {
   if (!turns.length) return json({ ok: true, skipped: true, reason: 'no_completed_turns', soil: oldSoil });
   const scheduledTurn = value.trigger === 'landing'
     || turns.length === 1
-    || (turns.length - 1) % MEMORY_CONFIG.soil.autoRefreshEveryTurns === 0;
+    || (turns.length - 1) % settings.autoRefreshEveryTurns === 0;
   const latestAssistantAt = Date.parse(turns.at(-1)?.assistant?.created_at || '');
   const soilUpdatedAt = Date.parse(oldSoil.updated_at || '');
   if (!force && (!scheduledTurn || (oldSoil.revision > 1 && Number.isFinite(latestAssistantAt) && soilUpdatedAt >= latestAssistantAt))) {
@@ -136,13 +137,13 @@ async function organizeSoil(request, env) {
   const profile = await readProfile(env.COAST_CHAT_DB);
   const result = await performFormalChat(env, {
     model: profile.current_chat_model || 'openai/gpt-4.1-nano',
-    messages: [{ role: 'user', content: soilPrompt(turns, oldSoil) }],
+    messages: [{ role: 'user', content: soilPrompt(turns, oldSoil, settings.maxHandSeeds) }],
     settings: { max_tokens: 900, temperature: 0.2 },
   });
   const organized = parseStrictJson(result?.message?.content);
   const soilValue = {
     current_text: organized.current_text,
-    hand_seeds: normalizeHandSeeds(organized.hand_seeds),
+    hand_seeds: normalizeHandSeeds(organized.hand_seeds).slice(0, settings.maxHandSeeds),
     do_not_repeat: organized.do_not_repeat,
     pocket_candidates: organized.pocket_candidates,
     manual_locked: oldSoil.manual_locked,

@@ -392,6 +392,19 @@ export function createChat({ storage, toast }) {
     return messages.slice(-count);
   }
 
+  function chatRequestContext(conversationId) {
+    const current = runtime.runSettings() || {};
+    const maxTokens = current.outputLength === 'long' ? 1200 : current.outputLength === 'short' ? 350 : 600;
+    const temperature = current.creativity === 'stable' ? 0.3 : current.creativity === 'expansive' ? 1 : 0.7;
+    const cooldown = Math.min(8, Math.max(0, Number(current.seedCooldownTurns ?? 2)));
+    return {
+      settings: { ...current, max_tokens: maxTokens, temperature },
+      recentEntryIds: cooldown
+        ? (runtime.recallHistory.get(conversationId) || []).slice(-cooldown).flat()
+        : [],
+    };
+  }
+
   async function generate(conversationId, turnId) {
     if (runtime.generation || runtime.deletedIds.has(conversationId)) return;
     const original = runtime.histories.get(conversationId);
@@ -410,11 +423,7 @@ export function createChat({ storage, toast }) {
     composerState();
     saveHistory(conversationId, appended.state).catch(() => undefined);
 
-    const settings = runtime.runSettings() || {};
-    const maxTokens = settings.outputLength === 'long' ? 1200 : settings.outputLength === 'short' ? 350 : 600;
-    const temperature = settings.creativity === 'stable' ? 0.3 : settings.creativity === 'expansive' ? 1 : 0.7;
-    const cooldown = Math.min(8, Math.max(0, Number(settings.seedCooldownTurns ?? 2)));
-    const recentEntryIds = (runtime.recallHistory.get(conversationId) || []).slice(-cooldown).flat();
+    const requestContext = chatRequestContext(conversationId);
     let patch;
     let generated = false;
     try {
@@ -425,8 +434,8 @@ export function createChat({ storage, toast }) {
           conversation_id: conversationId,
           model: runtime.profile.current_chat_model || DEFAULT_MODEL,
           messages: contextMessages(appended.state, turnId),
-          recent_entry_ids: recentEntryIds,
-          settings: { ...settings, max_tokens: maxTokens, temperature },
+          recent_entry_ids: requestContext.recentEntryIds,
+          settings: requestContext.settings,
         }),
       });
       patch = { content: data?.message?.content || '模型没有返回文本。', errorDetail: '' };
@@ -463,11 +472,7 @@ export function createChat({ storage, toast }) {
     const pendingSave = runtime.saveChains.get(conversationId);
     if (pendingSave) await pendingSave;
 
-    const settings = runtime.runSettings() || {};
-    const maxTokens = settings.outputLength === 'long' ? 1200 : settings.outputLength === 'short' ? 350 : 600;
-    const temperature = settings.creativity === 'stable' ? 0.3 : settings.creativity === 'expansive' ? 1 : 0.7;
-    const cooldown = Math.min(8, Math.max(0, Number(settings.seedCooldownTurns ?? 2)));
-    const recentEntryIds = (runtime.recallHistory.get(conversationId) || []).slice(-cooldown).flat();
+    const requestContext = chatRequestContext(conversationId);
     const controller = new AbortController();
     runtime.generation = { conversationId, turnId: '', userIndex: -1, assistantIndex: -1, controller };
     composerState();
@@ -479,8 +484,8 @@ export function createChat({ storage, toast }) {
           conversation_id: conversationId,
           model: modelId,
           letter_text: letterText,
-          recent_entry_ids: recentEntryIds,
-          settings: { ...settings, max_tokens: maxTokens, temperature },
+          recent_entry_ids: requestContext.recentEntryIds,
+          settings: requestContext.settings,
         }),
       });
       setHistory(conversationId, data.history || {});

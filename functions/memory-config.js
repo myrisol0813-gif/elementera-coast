@@ -43,3 +43,12 @@ export function recallSettings(value = {}) {
     soilBudget: integer(value.soilBudget, MEMORY_CONFIG.soil.contextBudget, 200, 2400),
   };
 }
+
+export function soilSettings(value = {}) {
+  const defaults = MEMORY_CONFIG.soil;
+  return {
+    autoRefreshEveryTurns: integer(value.autoRefreshEveryTurns, defaults.autoRefreshEveryTurns, 1, 12),
+    maxHandSeeds: integer(value.maxHandSeeds, defaults.maxHandSeeds, 1, 7),
+    soilBudget: integer(value.soilBudget, defaults.contextBudget, 200, 2400),
+  };
+}

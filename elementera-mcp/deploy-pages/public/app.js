@@ -29,7 +29,7 @@ const router = createRouter(q('#overlayRoot'), {
   onOpen: () => shell.closeSidebar(),
 });
 const chat = createChat({ storage, toast });
-const memory = createMemory({ chat, router, toast });
+const memory = createMemory({ chat, router, toast, storage });
 const models = createModels({ chat, router, toast });
 const tools = createTools({ storage, router, toast, memory });
 const settings = createSettings({ storage, shell, chat, router, toast });

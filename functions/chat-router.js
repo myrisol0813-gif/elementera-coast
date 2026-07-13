@@ -148,19 +148,85 @@ async function formalChat(request, env) {
     console.error('[chat-memory:recall]', error);
   }
 
-  const recent = softContext ? messages.slice(-19) : messages;
+  const assembled = budgetChatMessages(messages, softContext, value.settings);
   const result = await performFormalChat(env, {
     model: value.model,
-    messages: softContext ? [{ role: 'system', content: softContext }, ...recent] : recent,
+    messages: assembled.messages,
     settings: value.settings,
-  }, { allowSystem: Boolean(softContext) });
+  }, { allowSystem: assembled.messages[0]?.role === 'system' });
   return json({
     ...result,
+    context: assembled.trace,
     memory: {
       selected_entry_ids: memory?.trace?.selected || [],
       vector_enabled: Boolean(memory?.trace?.vector_enabled),
     },
   });
+}
+
+function integer(value, fallback, min, max) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.trunc(number))) : fallback;
+}
+
+export function estimateContextTokens(value) {
+  let wide = 0;
+  let narrow = 0;
+  for (const character of String(value || '')) {
+    if (/[㐀-鿿豈-﫿぀-ヿ가-힯]/u.test(character)) wide += 1;
+    else narrow += 1;
+  }
+  return wide + Math.ceil(narrow / 4);
+}
+
+function messageTokens(message) {
+  return estimateContextTokens(message?.content) + 4;
+}
+
+export function budgetChatMessages(messages, softContext = '', rawSettings = {}) {
+  const recentTurns = integer(rawSettings.recentTurns, 8, 1, 20);
+  const budget = integer(rawSettings.contextBudget, 6000, 256, 12000);
+  const hasSoftContext = Boolean(String(softContext || '').trim());
+  const historyLimit = Math.min(recentTurns * 2, hasSoftContext ? 19 : 20);
+  const source = (Array.isArray(messages) ? messages : [])
+    .filter((message) => ['user', 'assistant'].includes(message?.role) && typeof message.content === 'string')
+    .slice(-historyLimit);
+  const lastUserIndex = source.findLastIndex((message) => message.role === 'user');
+  const kept = source.map((message, index) => ({ message, index }));
+  let includeSoftContext = hasSoftContext;
+  const trimmed = { assistants: 0, users: 0, soft_context: false };
+  const total = () => kept.reduce((sum, item) => sum + messageTokens(item.message), 0)
+    + (includeSoftContext ? messageTokens({ content: softContext }) : 0);
+  const removeOldest = (role) => {
+    const position = kept.findIndex((item) => item.message.role === role
+      && !(role === 'user' && item.index === lastUserIndex));
+    if (position < 0) return false;
+    kept.splice(position, 1);
+    return true;
+  };
+
+  while (total() > budget && removeOldest('assistant')) trimmed.assistants += 1;
+  while (total() > budget && removeOldest('user')) trimmed.users += 1;
+  if (total() > budget && includeSoftContext) {
+    includeSoftContext = false;
+    trimmed.soft_context = true;
+  }
+
+  const result = kept.map((item) => item.message);
+  if (includeSoftContext) result.unshift({ role: 'system', content: softContext });
+  const estimatedTokens = total();
+  return {
+    messages: result,
+    trace: {
+      mode: 'estimated_characters',
+      budget,
+      estimated_tokens: estimatedTokens,
+      recent_turns: recentTurns,
+      current_user_preserved: lastUserIndex >= 0 && kept.some((item) => item.index === lastUserIndex),
+      over_budget: estimatedTokens > budget,
+      trimmed,
+    },
+  };
 }
 
 function activeStateMessages(state) {
@@ -207,9 +273,7 @@ async function landingLetter(request, env) {
   }
 
   const state = await readConversationState(env.COAST_CHAT_DB, targetConversationId);
-  const recentTurns = Math.min(20, Math.max(1, Number(value.settings?.recentTurns || 8)));
-  const previous = activeStateMessages(state).slice(-(recentTurns * 2 - 1));
-  const messages = [...previous, { role: 'user', content: letterText }];
+  const messages = [...activeStateMessages(state), { role: 'user', content: letterText }];
   const lastUser = messages.at(-1);
   let memory = null;
   let softContext = '';
@@ -224,12 +288,12 @@ async function landingLetter(request, env) {
   } catch (error) {
     console.error('[chat-memory:landing-recall]', error);
   }
-  const recent = softContext ? messages.slice(-19) : messages.slice(-20);
+  const assembled = budgetChatMessages(messages, softContext, value.settings);
   const generated = await performFormalChat(env, {
     model: modelId,
-    messages: softContext ? [{ role: 'system', content: softContext }, ...recent] : recent,
+    messages: assembled.messages,
     settings: value.settings,
-  }, { allowSystem: Boolean(softContext) });
+  }, { allowSystem: assembled.messages[0]?.role === 'system' });
   const assistantText = generated?.message?.content || '';
   if (!assistantText.trim()) throw new ChatStoreError('empty_model_reply', '模型读完了信，但没有返回文字。', 502);
 
@@ -246,6 +310,7 @@ async function landingLetter(request, env) {
     conversation: await getConversation(env.COAST_CHAT_DB, targetConversationId),
     history: { ...saved.state, conversation_id: targetConversationId },
     landing: saved.landing,
+    context: assembled.trace,
     memory: {
       selected_entry_ids: memory?.trace?.selected || [],
       vector_enabled: Boolean(memory?.trace?.vector_enabled),

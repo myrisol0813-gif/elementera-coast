@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { createConversation } from '../functions/chat-store.js';
-import { routeChatApi } from '../functions/chat-router.js';
+import { budgetChatMessages, estimateContextTokens, routeChatApi } from '../functions/chat-router.js';
+import { soilSettings } from '../functions/memory-config.js';
 import {
   deleteEntryVector,
   detectEmbeddingDimensions,
@@ -55,6 +56,30 @@ class D1Database {
 const db = new D1Database();
 const conversationA = await createConversation(db, 'A');
 const conversationB = await createConversation(db, 'B');
+
+assert.equal(estimateContextTokens('海岸'), 2);
+assert.equal(estimateContextTokens('coast'), 2);
+const assistantFirst = budgetChatMessages([
+  { role: 'user', content: '旧'.repeat(80) },
+  { role: 'assistant', content: 'a'.repeat(2000) },
+  { role: 'user', content: '现在' },
+], '记'.repeat(80), { recentTurns: 8, contextBudget: 256 });
+assert.equal(assistantFirst.trace.trimmed.assistants, 1, 'old assistant content is trimmed first');
+assert.equal(assistantFirst.trace.trimmed.users, 0);
+assert.equal(assistantFirst.trace.trimmed.soft_context, false);
+assert.deepEqual(assistantFirst.messages.map((message) => message.role), ['system', 'user', 'user']);
+const preserveCurrent = budgetChatMessages([
+  { role: 'user', content: '旧'.repeat(300) },
+  { role: 'assistant', content: 'a'.repeat(2000) },
+  { role: 'user', content: '当前输入' },
+], '记'.repeat(300), { recentTurns: 8, contextBudget: 256 });
+assert.deepEqual(preserveCurrent.messages, [{ role: 'user', content: '当前输入' }]);
+assert.equal(preserveCurrent.trace.current_user_preserved, true);
+assert.deepEqual(soilSettings({ autoRefreshEveryTurns: 99, maxHandSeeds: 0 }), {
+  autoRefreshEveryTurns: 12,
+  maxHandSeeds: 1,
+  soilBudget: 1200,
+});
 
 const originalA = await readSoil(db, conversationA.id);
 const originalB = await readSoil(db, conversationB.id);
@@ -315,7 +340,7 @@ const chatResponse = await routeChatApi(new Request('https://coast.test/api/chat
     conversation_id: conversationA.id,
     model: 'openai/gpt-4.1-nano',
     messages: [{ role: 'user', content: '潮汐钥匙' }],
-    settings: { conversationSeedLimit: 3, globalSeedLimit: 1, max_tokens: 80, temperature: 0.2 },
+    settings: { recentTurns: 2, contextBudget: 2000, conversationSeedLimit: 3, globalSeedLimit: 1, max_tokens: 80, temperature: 0.2 },
   }),
 }), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
 const chatData = await chatResponse.json();
@@ -327,5 +352,8 @@ assert.match(providerPayload.messages[0].content, /当前窗口种子/);
 assert.match(providerPayload.messages[0].content, /当前用户输入优先/);
 assert.deepEqual(providerPayload.messages.at(-1), { role: 'user', content: '潮汐钥匙' });
 assert.ok(chatData.memory.selected_entry_ids.length > 0);
+assert.equal(chatData.context.mode, 'estimated_characters');
+assert.equal(chatData.context.budget, 2000);
+assert.equal(chatData.context.recent_turns, 2);
 
 console.log('memory: ok');

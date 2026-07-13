@@ -1,5 +1,5 @@
 import { embedText, hasAiBinding, hasVectorBinding, queryVector, syncPendingEntries } from './embedding.js';
-import { MEMORY_CONFIG, recallSettings } from './memory-config.js';
+import { MEMORY_CONFIG, recallSettings, soilSettings } from './memory-config.js';
 import {
   entriesByIds,
   listEntries,
@@ -188,6 +188,7 @@ function memoryLine(entry) {
 
 export function formatMemoryContext(result, rawSettings = {}) {
   const settings = recallSettings(rawSettings);
+  const soilControl = soilSettings(rawSettings);
   const soil = result?.soil || {};
   const blocks = [];
   const soilLines = [
@@ -195,7 +196,7 @@ export function formatMemoryContext(result, rawSettings = {}) {
     `当前：${clipped(soil.current_text, settings.soilBudget) || '未整理'}`,
   ];
   if (soil.hand_seeds?.length) {
-    soilLines.push('手持种：', ...soil.hand_seeds.slice(0, 7).map((seed) => `- ${clipped(seed.name, 80)}｜${clipped(seed.life_core, 320)}`));
+    soilLines.push('手持种：', ...soil.hand_seeds.slice(0, soilControl.maxHandSeeds).map((seed) => `- ${clipped(seed.name, 80)}｜${clipped(seed.life_core, 320)}`));
   }
   if (soil.do_not_repeat) soilLines.push(`勿复读：${clipped(soil.do_not_repeat, 600)}`);
   const soilPriority = '请只作为当前对话方向参考；当前用户输入优先。';

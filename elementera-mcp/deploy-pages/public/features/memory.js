@@ -32,8 +32,8 @@ function seedLines(seeds) {
   ].join('｜')).join('\n');
 }
 
-function parseSeedLines(value) {
-  return String(value || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 7).map((line) => {
+function parseSeedLines(value, limit) {
+  return String(value || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, limit).map((line) => {
     const [name = '', lifeCore = '', usageHint = '', avoidHint = ''] = line.split(/[｜|]/).map((part) => part.trim());
     return {
       name: name || lifeCore,
@@ -44,7 +44,7 @@ function parseSeedLines(value) {
   });
 }
 
-export function createMemory({ chat, router, toast }) {
+export function createMemory({ chat, router, toast, storage }) {
   const runtime = {
     soils: new Map(),
     pockets: new Map(),
@@ -56,6 +56,15 @@ export function createMemory({ chat, router, toast }) {
 
   function currentId() {
     return chat.getCurrentConversationId();
+  }
+
+  function settings() {
+    return storage.read().runControl;
+  }
+
+  function maxHandSeeds() {
+    const value = Number(settings().maxHandSeeds);
+    return Number.isFinite(value) ? Math.min(7, Math.max(1, Math.trunc(value))) : 7;
   }
 
   function currentSoil() {
@@ -123,18 +132,20 @@ export function createMemory({ chat, router, toast }) {
 
   function renderSoilEntry(conversationId) {
     const soil = runtime.soils.get(conversationId) || emptySoil(conversationId);
-    return `<div class="thought-soil-row"><button class="thought-soil-entry" type="button" data-action="memory:soil">思维壤 · ${soil.hand_seeds.length} 粒手持种 <span aria-hidden="true">›</span></button></div>`;
+    return `<div class="thought-soil-row"><button class="thought-soil-entry" type="button" data-action="memory:soil">思维壤 · ${Math.min(soil.hand_seeds.length, maxHandSeeds())} 粒手持种 <span aria-hidden="true">›</span></button></div>`;
   }
 
   function soilBody(soil) {
-    const seeds = soil.hand_seeds.length
-      ? soil.hand_seeds.map((seed) => `<div class="feature-row static"><span><strong>${escapeHtml(seed.name || seed.life_core)}</strong><small>${escapeHtml(seed.life_core || '')}${seed.usage_hint ? `<br>使用：${escapeHtml(seed.usage_hint)}` : ''}${seed.avoid_hint ? `<br>避免：${escapeHtml(seed.avoid_hint)}` : ''}</small></span></div>`).join('')
+    const limit = maxHandSeeds();
+    const activeSeeds = soil.hand_seeds.slice(0, limit);
+    const seeds = activeSeeds.length
+      ? activeSeeds.map((seed) => `<div class="feature-row static"><span><strong>${escapeHtml(seed.name || seed.life_core)}</strong><small>${escapeHtml(seed.life_core || '')}${seed.usage_hint ? `<br>使用：${escapeHtml(seed.usage_hint)}` : ''}${seed.avoid_hint ? `<br>避免：${escapeHtml(seed.avoid_hint)}` : ''}</small></span></div>`).join('')
       : '<p>还没有手持种。</p>';
     const candidates = soil.pocket_candidates.length
       ? `<ul>${soil.pocket_candidates.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
       : '<p>还没有可落袋内容。</p>';
     return `${section('当前', textBlock(soil.current_text, '还没有整理当前方向。'))}
-      ${section(`手持种 · ${soil.hand_seeds.length}/7`, seeds)}
+      ${section(`手持种 · ${activeSeeds.length}/${limit}`, seeds)}
       ${section('勿复读', textBlock(soil.do_not_repeat))}
       ${section('可落袋', candidates)}
       <section class="feature-group"><div class="feature-card">
@@ -449,7 +460,7 @@ export function createMemory({ chat, router, toast }) {
     if (name === 'soil-organize') {
       const data = await requestJson(API.memorySoilOrganize, {
         method: 'POST',
-        body: JSON.stringify({ conversation_id: currentId(), force: true }),
+        body: JSON.stringify({ conversation_id: currentId(), force: true, settings: settings() }),
       });
       runtime.soils.set(currentId(), data.soil);
       chat.renderMessages();
@@ -568,7 +579,7 @@ export function createMemory({ chat, router, toast }) {
       method: 'PUT',
       body: JSON.stringify({
         current_text: field('current_text'),
-        hand_seeds: parseSeedLines(field('hand_seeds')),
+        hand_seeds: parseSeedLines(field('hand_seeds'), maxHandSeeds()),
         do_not_repeat: field('do_not_repeat'),
         pocket_candidates: field('pocket_candidates').split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
         manual_locked: true,
@@ -584,7 +595,7 @@ export function createMemory({ chat, router, toast }) {
     try {
       const data = await requestJson(API.memorySoilOrganize, {
         method: 'POST',
-        body: JSON.stringify({ conversation_id: conversationId, force: false, trigger }),
+        body: JSON.stringify({ conversation_id: conversationId, force: false, trigger, settings: settings() }),
       });
       if (data.soil) runtime.soils.set(conversationId, data.soil);
       if (currentId() === conversationId) chat.renderMessages();

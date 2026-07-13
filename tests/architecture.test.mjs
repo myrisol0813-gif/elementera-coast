@@ -123,9 +123,12 @@ assert.ok(chatRouter.includes("'/api/chat/landing-letter'"));
 assert.ok(schemaSource.includes('conversation_landing_letters'));
 assert.ok(chatSource.includes('branch.user && !branch.user.hidden'));
 assert.equal(/memory_edges|sleep|dream|梦边|自动核心/.test(memoryStoreSource + memoryRecallSource + memoryRouterSource), false);
-for (const label of ['思维壤预算', '当前窗口种子召回上限', '总种子召回上限', '当前窗口记忆召回上限', '总记忆召回上限', '清空当前思维壤', '打开待确认袋', '查看向量状态']) {
+for (const label of ['上下文预算（粗略）', '思维壤预算', '思维壤自动整理间隔', '手持种上限', '种子冷却轮数', '没东西聊时当前种子上限', '当前窗口种子召回上限', '总种子召回上限', '当前窗口记忆召回上限', '总记忆召回上限', '清空当前思维壤', '打开待确认袋', '查看向量状态']) {
   assert.ok(toolsSource.includes(label), `API cottage is missing: ${label}`);
 }
+assert.ok(chatRouter.includes('budgetChatMessages'));
+assert.ok(memoryRouterSource.includes('settings.autoRefreshEveryTurns'));
+assert.ok(memoryRouterSource.includes('settings.maxHandSeeds'));
 assert.equal(/小纸条预算 · 预留|种子召回上限 · 预留|记忆召回：暂未接入/.test(toolsSource), false);
 
 const store = await import(pathToFileURL(join(repo, 'functions/chat-store.js')));
