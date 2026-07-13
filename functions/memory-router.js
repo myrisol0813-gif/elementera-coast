@@ -2,13 +2,19 @@ import { ChatStoreError, readConversationState, readProfile, sanitizeId } from '
 import { apiError, json, readJson } from './http.js';
 import {
   MemoryStoreError,
+  createEntry,
   createPocket,
+  deleteEntry,
   deletePocket,
+  getEntry,
   hasMemoryDatabase,
+  listEntries,
   listPockets,
   normalizeHandSeeds,
+  patchEntry,
   patchPocket,
   readSoil,
+  resolvePocket,
   writeSoil,
 } from './memory-store.js';
 import { ModelRequestError, performFormalChat } from './models.js';
@@ -152,17 +158,49 @@ async function pockets(request, env, url) {
     if (request.method === 'POST') return json({ ok: true, pocket: await createPocket(env.COAST_CHAT_DB, await body(request)) }, 201);
     return methodNotAllowed('GET, POST');
   }
-  const pocketId = sanitizeId(suffix.split('/')[0], 'pocket');
+  const parts = suffix.split('/');
+  const pocketId = sanitizeId(parts[0], 'pocket');
+  if (parts[1] === 'resolve') {
+    if (request.method !== 'POST') return methodNotAllowed('POST');
+    return json({ ok: true, ...await resolvePocket(env.COAST_CHAT_DB, pocketId, await body(request)) });
+  }
   if (request.method === 'PATCH') return json({ ok: true, pocket: await patchPocket(env.COAST_CHAT_DB, pocketId, await body(request)) });
   if (request.method === 'DELETE') return json({ ok: true, pocket: await deletePocket(env.COAST_CHAT_DB, pocketId), deleted: true });
   return methodNotAllowed('PATCH, DELETE');
+}
+
+async function entries(request, env, url) {
+  const suffix = decodeURIComponent(url.pathname.slice(`${MEMORY_PATH}/entries`.length).replace(/^\//, ''));
+  if (!suffix) {
+    if (request.method === 'GET') {
+      const result = await listEntries(env.COAST_CHAT_DB, {
+        conversation_id: url.searchParams.get('conversation_id') || '',
+        entry_type: url.searchParams.get('entry_type') || '',
+        scope: url.searchParams.get('scope') || '',
+        status: url.searchParams.get('status') || '',
+        q: url.searchParams.get('q') || '',
+        limit: url.searchParams.get('limit') || '',
+        cursor: url.searchParams.get('cursor') || '',
+      });
+      return json({ ok: true, ...result });
+    }
+    if (request.method === 'POST') return json({ ok: true, entry: await createEntry(env.COAST_CHAT_DB, await body(request)) }, 201);
+    return methodNotAllowed('GET, POST');
+  }
+  const entryId = sanitizeId(suffix.split('/')[0], 'memory');
+  if (request.method === 'GET') return json({ ok: true, entry: await getEntry(env.COAST_CHAT_DB, entryId) });
+  if (request.method === 'PATCH') return json({ ok: true, ...await patchEntry(env.COAST_CHAT_DB, entryId, await body(request)) });
+  if (request.method === 'DELETE') return json({ ok: true, entry: await deleteEntry(env.COAST_CHAT_DB, entryId), deleted: true });
+  return methodNotAllowed('GET, PATCH, DELETE');
 }
 
 export function isMemoryApiPath(pathname) {
   return pathname === `${MEMORY_PATH}/soil`
     || pathname === `${MEMORY_PATH}/soil/organize`
     || pathname === `${MEMORY_PATH}/pockets`
-    || pathname.startsWith(`${MEMORY_PATH}/pockets/`);
+    || pathname.startsWith(`${MEMORY_PATH}/pockets/`)
+    || pathname === `${MEMORY_PATH}/entries`
+    || pathname.startsWith(`${MEMORY_PATH}/entries/`);
 }
 
 export async function routeMemoryApi(request, env) {
@@ -171,7 +209,10 @@ export async function routeMemoryApi(request, env) {
   try {
     if (url.pathname === `${MEMORY_PATH}/soil`) return await soil(request, env, url);
     if (url.pathname === `${MEMORY_PATH}/soil/organize`) return await organizeSoil(request, env);
-    return await pockets(request, env, url);
+    if (url.pathname === `${MEMORY_PATH}/pockets` || url.pathname.startsWith(`${MEMORY_PATH}/pockets/`)) {
+      return await pockets(request, env, url);
+    }
+    return await entries(request, env, url);
   } catch (error) {
     if (error instanceof MemoryStoreError || error instanceof ChatStoreError || error instanceof ModelRequestError) {
       return apiError(error.type, error.message, error.status, error.details || {});

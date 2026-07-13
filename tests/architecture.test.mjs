@@ -22,6 +22,8 @@ for (const label of ['同轨第', '距 8.12', '距 8.13', '无线电波的两端
   assert.ok(index.includes(label), `missing UI contract: ${label}`);
 }
 assert.equal(/modules\/legacy|p3-chat-core|conversation-controller|shell-controller/.test(index), false);
+assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
+assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(join(pages, 'service-worker.js'));
 assert.ok(worker.includes("url.pathname.startsWith('/api/')"));
@@ -64,12 +66,16 @@ for (const file of moduleFiles) {
 }
 
 const chatSource = await read(join(moduleRoot, 'features/chat.js'));
+const memorySource = await read(join(moduleRoot, 'features/memory.js'));
+const roomsSource = await read(join(moduleRoot, 'features/rooms.js'));
 for (const name of ['edit', 'trash', 'copy', 'like', 'refresh', 'heart']) {
   assert.ok(chatSource.includes(`'${name}'`), `chat icon ${name} is missing`);
 }
 assert.equal(chatSource.includes('localStorage'), false, 'main chat cannot use browser history storage');
 assert.equal(chatSource.includes('history sync'), false);
 assert.ok(chatSource.includes('runtime.deletedIds.add(conversationId)'));
+assert.equal((memorySource.match(/router\.register\('memory'/g) || []).length, 1, 'memory route must have one owner');
+assert.equal(roomsSource.includes("router.register('memory'"), false, 'rooms cannot retain the memory placeholder route');
 
 const tokenStyles = await read(join(moduleRoot, 'styles/tokens.css'));
 const shellStyles = await read(join(moduleRoot, 'styles/shell.css'));
@@ -91,10 +97,14 @@ const middleware = await read(join(repo, 'functions/_middleware.js'));
 const chatRouter = await read(join(repo, 'functions/chat-router.js'));
 const storeSource = await read(join(repo, 'functions/chat-store.js'));
 const schemaSource = await read(join(repo, 'functions/chat-schema.js'));
+const memoryStoreSource = await read(join(repo, 'functions/memory-store.js'));
 assert.equal(/_middleware\.full|legacyOnRequest|COAST_CHAT_STORE/.test(middleware + chatRouter + storeSource + schemaSource), false);
 assert.equal(/readLegacy|importLegacy|\bturns\s+WHERE|user_variants|assistant_variants/.test(storeSource), false);
 assert.ok(chatRouter.includes("source: 'd1-json-v4'"));
 assert.ok(storeSource.includes('conversation_states'));
+for (const table of ['conversation_soils', 'memory_pockets', 'memory_entries']) {
+  assert.ok(memoryStoreSource.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `missing memory table: ${table}`);
+}
 
 const store = await import(pathToFileURL(join(repo, 'functions/chat-store.js')));
 const normalizedState = store.normalizeState({

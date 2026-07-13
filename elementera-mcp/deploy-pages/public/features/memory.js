@@ -48,6 +48,9 @@ export function createMemory({ chat, router, toast }) {
   const runtime = {
     soils: new Map(),
     pockets: new Map(),
+    entries: { conversation: [], global: [] },
+    libraryTab: 'conversation',
+    filters: { entryType: '', status: '', query: '' },
   };
 
   function currentId() {
@@ -75,6 +78,17 @@ export function createMemory({ chat, router, toast }) {
     const pockets = Array.isArray(data.pockets) ? data.pockets : [];
     runtime.pockets.set(conversationId, pockets);
     return pockets;
+  }
+
+  async function fetchEntries(scope = runtime.libraryTab) {
+    const params = new URLSearchParams({ scope, limit: '100' });
+    if (scope === 'conversation') params.set('conversation_id', currentId());
+    if (runtime.filters.entryType) params.set('entry_type', runtime.filters.entryType);
+    if (runtime.filters.status) params.set('status', runtime.filters.status);
+    if (runtime.filters.query) params.set('q', runtime.filters.query);
+    const data = await requestJson(`${API.memoryEntries}?${params}`);
+    runtime.entries[scope] = Array.isArray(data.entries) ? data.entries : [];
+    return runtime.entries[scope];
   }
 
   async function onConversationChanged(conversationId) {
@@ -147,6 +161,10 @@ export function createMemory({ chat, router, toast }) {
       ${textBlock(pocket.source_text)}
       ${pocket.suggested_life_core ? `<p><strong>生命核：</strong>${escapeHtml(pocket.suggested_life_core)}</p>` : ''}
       <div class="button-row">
+        <button type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="conversation_seed">当前窗口种子</button>
+        <button type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="global_seed">总种子</button>
+        <button type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="conversation_memory">当前窗口记忆</button>
+        <button type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="global_memory">总记忆</button>
         <button type="button" data-action="memory:pocket-edit" data-id="${escapeAttribute(pocket.id)}">编辑</button>
         <button type="button" data-action="memory:pocket-stone" data-id="${escapeAttribute(pocket.id)}">转石头</button>
         <button type="button" data-action="memory:pocket-discard" data-id="${escapeAttribute(pocket.id)}">丢弃</button>
@@ -180,16 +198,135 @@ export function createMemory({ chat, router, toast }) {
     };
   }
 
+  function entryCard(entry) {
+    const scopeAction = entry.scope === 'conversation'
+      ? `<button type="button" data-action="memory:entry-promote" data-id="${escapeAttribute(entry.id)}">提升到总库</button>`
+      : `<button type="button" data-action="memory:entry-copy-current" data-id="${escapeAttribute(entry.id)}">复制到当前窗口</button>`;
+    const coreAction = entry.entry_type === 'memory'
+      ? `<button type="button" data-action="memory:entry-core" data-id="${escapeAttribute(entry.id)}" data-core="${entry.memory_level === 'core' ? '0' : '1'}">${entry.memory_level === 'core' ? '取消 core' : '标记 core'}</button>`
+      : '';
+    return `<article class="feature-card feature-prose memory-entry-card" data-entry-id="${escapeAttribute(entry.id)}">
+      <div class="memory-entry-meta"><span>${entry.entry_type === 'seed' ? '种子' : '记忆'}</span><span>${escapeHtml(entry.status)}</span>${entry.memory_level === 'core' ? '<span>core</span>' : ''}</div>
+      <h2>${escapeHtml(entry.title)}</h2>
+      <p><strong>生命核：</strong>${escapeHtml(entry.life_core)}</p>
+      ${entry.content ? textBlock(entry.content) : ''}
+      ${entry.usage_hint ? `<p><strong>使用：</strong>${escapeHtml(entry.usage_hint)}</p>` : ''}
+      ${entry.avoid_hint ? `<p><strong>避免：</strong>${escapeHtml(entry.avoid_hint)}</p>` : ''}
+      <div class="button-row">
+        <button type="button" data-action="memory:entry-edit" data-id="${escapeAttribute(entry.id)}">编辑</button>
+        <button type="button" data-action="memory:entry-search" data-id="${escapeAttribute(entry.id)}">搜索</button>
+        <button type="button" data-action="memory:entry-archive" data-id="${escapeAttribute(entry.id)}">封存</button>
+        <button type="button" data-action="memory:entry-stone" data-id="${escapeAttribute(entry.id)}">转石头</button>
+        ${scopeAction}${coreAction}
+        <button type="button" data-action="memory:entry-delete" data-id="${escapeAttribute(entry.id)}">删除</button>
+      </div>
+    </article>`;
+  }
+
+  function entryGroup(title, entries, empty) {
+    return `<section class="feature-group"><h2>${escapeHtml(title)}</h2>${entries.length
+      ? `<div class="memory-entry-list">${entries.map(entryCard).join('')}</div>`
+      : `<div class="feature-card"><p class="feature-empty">${escapeHtml(empty)}</p></div>`}</section>`;
+  }
+
+  function libraryControls() {
+    const { entryType, status, query } = runtime.filters;
+    return `<div class="memory-tabs" role="tablist" aria-label="记忆范围">
+      <button class="${runtime.libraryTab === 'conversation' ? 'is-active' : ''}" type="button" data-action="memory:tab" data-scope="conversation">当前窗口</button>
+      <button class="${runtime.libraryTab === 'global' ? 'is-active' : ''}" type="button" data-action="memory:tab" data-scope="global">总库</button>
+    </div>
+    <form class="form-stack memory-search-form" data-submit="memory:search">
+      <label>搜索<input name="query" type="search" value="${escapeAttribute(query)}" placeholder="搜索标题、生命核或内容"></label>
+      <div class="form-grid">
+        <label>类型<select name="entry_type"><option value="" ${!entryType ? 'selected' : ''}>种子与记忆</option><option value="seed" ${entryType === 'seed' ? 'selected' : ''}>种子</option><option value="memory" ${entryType === 'memory' ? 'selected' : ''}>记忆</option></select></label>
+        <label>状态<select name="status"><option value="" ${!status ? 'selected' : ''}>全部状态</option><option value="active" ${status === 'active' ? 'selected' : ''}>active</option><option value="dormant" ${status === 'dormant' ? 'selected' : ''}>dormant</option><option value="archived" ${status === 'archived' ? 'selected' : ''}>archived</option><option value="stone" ${status === 'stone' ? 'selected' : ''}>stone</option></select></label>
+        <button type="submit">搜索</button>
+      </div>
+    </form>
+    <p class="feature-note memory-search-status">语义检索未连接 · 当前使用文字搜索</p>`;
+  }
+
+  function memoryView() {
+    const entries = runtime.entries[runtime.libraryTab] || [];
+    const seeds = entries.filter((entry) => entry.entry_type === 'seed');
+    const memories = entries.filter((entry) => entry.entry_type === 'memory');
+    const current = runtime.libraryTab === 'conversation';
+    const local = current ? `<section class="feature-group"><div class="feature-card">
+      <button class="feature-row" type="button" data-action="memory:soil"><span><strong>思维壤 · ${currentSoil().hand_seeds.length} 粒手持种</strong><small>${escapeHtml(currentSoil().current_text || '当前窗口还没有整理方向。')}</small></span><span>›</span></button>
+      <button class="feature-row" type="button" data-action="memory:pockets"><span><strong>待确认袋 · ${currentPockets().length}</strong><small>只有确认后才会进入正式库。</small></span><span>›</span></button>
+    </div></section>` : '';
+    return {
+      title: '轨迹记忆',
+      subtitle: current ? '当前窗口 · 近岸苗圃与本窗家具' : '总库 · 远岸苗圃与公共家具',
+      className: 'memory-library',
+      headerAction: '<button class="feature-head-action" type="button" data-action="memory:entry-new">新增</button>',
+      body: `${libraryControls()}${local}
+        ${entryGroup(current ? '当前窗口种子' : '总种子库', seeds, '这里还没有种子。')}
+        ${entryGroup(current ? '当前窗口记忆' : '总记忆库', memories, '这里还没有记忆。')}`,
+    };
+  }
+
+  function findEntry(id) {
+    return [...runtime.entries.conversation, ...runtime.entries.global].find((entry) => entry.id === id) || null;
+  }
+
+  function entryEditView({ id = '', scope = runtime.libraryTab } = {}) {
+    const entry = id ? findEntry(id) : null;
+    const entryType = entry?.entry_type || 'memory';
+    return {
+      title: entry ? '编辑种子 / 记忆' : '新增种子 / 记忆',
+      subtitle: scope === 'global' ? '总库' : '当前窗口',
+      className: 'memory-entry-edit',
+      body: `<form class="form-stack" data-submit="memory:entry-save" data-id="${escapeAttribute(entry?.id || '')}" data-scope="${escapeAttribute(entry?.scope || scope)}">
+        <label>类型<select name="entry_type" ${entry ? 'disabled' : ''}><option value="seed" ${entryType === 'seed' ? 'selected' : ''}>种子</option><option value="memory" ${entryType === 'memory' ? 'selected' : ''}>记忆</option></select></label>
+        <label>标题<input name="title" maxlength="120" value="${escapeAttribute(entry?.title || '')}" required></label>
+        <label>生命核<textarea name="life_core" rows="5" required>${escapeHtml(entry?.life_core || '')}</textarea></label>
+        <label>正文<textarea name="content" rows="8">${escapeHtml(entry?.content || '')}</textarea></label>
+        <label>使用提示<textarea name="usage_hint" rows="4">${escapeHtml(entry?.usage_hint || '')}</textarea></label>
+        <label>避免提示<textarea name="avoid_hint" rows="4">${escapeHtml(entry?.avoid_hint || '')}</textarea></label>
+        <label>状态<select name="status"><option value="active" ${entry?.status === 'active' || (!entry && entryType === 'memory') ? 'selected' : ''}>active</option><option value="dormant" ${entry?.status === 'dormant' || (!entry && entryType === 'seed') ? 'selected' : ''}>dormant</option><option value="archived" ${entry?.status === 'archived' ? 'selected' : ''}>archived</option><option value="stone" ${entry?.status === 'stone' ? 'selected' : ''}>stone</option></select></label>
+        <label>记忆级别<select name="memory_level"><option value="ordinary" ${entry?.memory_level !== 'core' ? 'selected' : ''}>ordinary</option><option value="core" ${entry?.memory_level === 'core' ? 'selected' : ''}>core（只对记忆生效）</option></select></label>
+        <button class="primary-wide" type="submit">保存</button>
+      </form>`,
+    };
+  }
+
   router.register('thought-soil', soilView);
   router.register('thought-soil-edit', soilEditView);
   router.register('memory-pockets', pocketsView);
   router.register('memory-pocket-action', pocketActionView);
+  router.register('memory', memoryView);
+  router.register('memory-entry-edit', entryEditView);
 
   async function openSoil() {
     const conversationId = currentId();
     if (!conversationId) return;
     if (!runtime.soils.has(conversationId)) await onConversationChanged(conversationId);
     return router.open('thought-soil');
+  }
+
+  async function openPockets() {
+    await fetchPockets(currentId());
+    return router.open('memory-pockets');
+  }
+
+  async function openLibrary(scope = runtime.libraryTab) {
+    runtime.libraryTab = scope === 'global' ? 'global' : 'conversation';
+    if (runtime.libraryTab === 'conversation') {
+      await Promise.all([fetchSoil(currentId()), fetchPockets(currentId()), fetchEntries('conversation')]);
+    } else await fetchEntries('global');
+    return router.open('memory');
+  }
+
+  async function clearSoil({ ask = true } = {}) {
+    if (ask && !confirm('清空当前思维壤？种子库、记忆库和聊天记录不会被删除。')) return false;
+    const data = await requestJson(`${API.memorySoil}?conversation_id=${encodeURIComponent(currentId())}`, {
+      method: 'PUT',
+      body: JSON.stringify({ current_text: '', hand_seeds: [], do_not_repeat: '', pocket_candidates: [], manual_locked: true }),
+    });
+    runtime.soils.set(currentId(), data.soil);
+    chat.renderMessages();
+    return true;
   }
 
   function openPocketAction({ turnId, role }) {
@@ -220,22 +357,45 @@ export function createMemory({ chat, router, toast }) {
     return data.pocket;
   }
 
+  async function resolveCurrentPocket(id, action) {
+    const pocket = currentPockets().find((item) => item.id === id);
+    if (!pocket) return;
+    await requestJson(`${API.memoryPockets}/${encodeURIComponent(id)}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({
+        action,
+        title: pocket.suggested_title,
+        life_core: pocket.suggested_life_core || pocket.source_text,
+        content: pocket.source_text,
+        usage_hint: pocket.suggested_usage_hint,
+      }),
+    });
+    runtime.pockets.set(currentId(), currentPockets().filter((item) => item.id !== id));
+    if (['conversation_seed', 'conversation_memory'].includes(action)) await fetchEntries('conversation');
+    if (['global_seed', 'global_memory'].includes(action)) await fetchEntries('global');
+    await router.refresh();
+    toast(action === 'stone' ? '已经转成石头。' : action === 'discard' ? '已经丢弃。' : '已经放进正式库。');
+  }
+
+  async function updateEntry(id, patch) {
+    const data = await requestJson(`${API.memoryEntries}/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    });
+    await fetchEntries(runtime.libraryTab);
+    return data;
+  }
+
   async function handleAction(name, target) {
+    if (name === 'open') return openLibrary('conversation');
     if (name === 'soil') return openSoil();
     if (name === 'done') return router.back();
     if (name === 'soil-edit') return router.open('thought-soil-edit');
     if (name === 'pockets') {
-      await fetchPockets(currentId());
-      return router.open('memory-pockets');
+      return openPockets();
     }
     if (name === 'soil-clear') {
-      if (!confirm('清空当前思维壤？种子库、记忆库和聊天记录不会被删除。')) return;
-      const data = await requestJson(`${API.memorySoil}?conversation_id=${encodeURIComponent(currentId())}`, {
-        method: 'PUT',
-        body: JSON.stringify({ current_text: '', hand_seeds: [], do_not_repeat: '', pocket_candidates: [], manual_locked: true }),
-      });
-      runtime.soils.set(currentId(), data.soil);
-      chat.renderMessages();
+      if (!await clearSoil()) return;
       return router.refresh();
     }
     if (name === 'soil-organize') {
@@ -257,6 +417,7 @@ export function createMemory({ chat, router, toast }) {
       return router.refresh();
     }
     if (name === 'pocket-save') return savePocket(target.dataset.turn, target.dataset.source);
+    if (name === 'pocket-resolve') return resolveCurrentPocket(target.dataset.id, target.dataset.destination);
     if (name === 'pocket-edit') {
       const pocket = currentPockets().find((item) => item.id === target.dataset.id);
       if (!pocket) return;
@@ -269,16 +430,87 @@ export function createMemory({ chat, router, toast }) {
       return patchCurrentPocket(pocket.id, { suggested_title: title, suggested_life_core: lifeCore, suggested_usage_hint: usageHint });
     }
     if (name === 'pocket-stone' || name === 'pocket-discard') {
-      const status = name === 'pocket-stone' ? 'stone' : 'discarded';
-      await patchCurrentPocket(target.dataset.id, { status });
-      runtime.pockets.set(currentId(), currentPockets().filter((item) => item.id !== target.dataset.id));
+      return resolveCurrentPocket(target.dataset.id, name === 'pocket-stone' ? 'stone' : 'discard');
+    }
+    if (name === 'tab') {
+      runtime.libraryTab = target.dataset.scope === 'global' ? 'global' : 'conversation';
+      await fetchEntries(runtime.libraryTab);
+      return router.refresh({ preserveScroll: false });
+    }
+    if (name === 'entry-new') return router.open('memory-entry-edit', { scope: runtime.libraryTab });
+    if (name === 'entry-edit') return router.open('memory-entry-edit', { id: target.dataset.id, scope: runtime.libraryTab });
+    const entry = findEntry(target.dataset.id);
+    if (name === 'entry-search' && entry) {
+      runtime.filters.query = entry.title || entry.life_core;
+      await fetchEntries(runtime.libraryTab);
+      return router.refresh({ preserveScroll: false });
+    }
+    if (name === 'entry-archive') {
+      await updateEntry(target.dataset.id, { status: 'archived' });
+      return router.refresh();
+    }
+    if (name === 'entry-stone') {
+      await updateEntry(target.dataset.id, { status: 'stone' });
+      return router.refresh();
+    }
+    if (name === 'entry-promote') {
+      await updateEntry(target.dataset.id, { scope: 'global' });
+      toast('已经提升到总库。');
+      return router.refresh();
+    }
+    if (name === 'entry-copy-current') {
+      await updateEntry(target.dataset.id, { scope: 'conversation', conversation_id: currentId() });
+      toast('已经复制到当前窗口。');
+      return router.refresh();
+    }
+    if (name === 'entry-core') {
+      await updateEntry(target.dataset.id, { memory_level: target.dataset.core === '1' ? 'core' : 'ordinary' });
+      return router.refresh();
+    }
+    if (name === 'entry-delete') {
+      if (!confirm('删除这条种子或记忆？这是软删除，不会物理清空 D1。')) return;
+      await requestJson(`${API.memoryEntries}/${encodeURIComponent(target.dataset.id)}`, { method: 'DELETE' });
+      await fetchEntries(runtime.libraryTab);
       return router.refresh();
     }
   }
 
   async function handleSubmit(name, form) {
-    if (name !== 'soil-save') return;
     const field = (fieldName) => q(`[name="${fieldName}"]`, form)?.value || '';
+    if (name === 'search') {
+      runtime.filters = {
+        query: field('query').trim(),
+        entryType: field('entry_type'),
+        status: field('status'),
+      };
+      await fetchEntries(runtime.libraryTab);
+      return router.refresh({ preserveScroll: false });
+    }
+    if (name === 'entry-save') {
+      const id = form.dataset.id;
+      const entryType = field('entry_type') || findEntry(id)?.entry_type || 'memory';
+      const payload = {
+        entry_type: entryType,
+        scope: form.dataset.scope,
+        conversation_id: form.dataset.scope === 'conversation' ? currentId() : null,
+        title: field('title'),
+        life_core: field('life_core'),
+        content: field('content'),
+        usage_hint: field('usage_hint'),
+        avoid_hint: field('avoid_hint'),
+        status: field('status') || (entryType === 'seed' ? 'dormant' : 'active'),
+        memory_level: field('memory_level') || 'ordinary',
+      };
+      await requestJson(id ? `${API.memoryEntries}/${encodeURIComponent(id)}` : API.memoryEntries, {
+        method: id ? 'PATCH' : 'POST',
+        body: JSON.stringify(payload),
+      });
+      await fetchEntries(runtime.libraryTab);
+      await router.back();
+      toast('种子 / 记忆已保存。');
+      return;
+    }
+    if (name !== 'soil-save') return;
     const data = await requestJson(`${API.memorySoil}?conversation_id=${encodeURIComponent(currentId())}`, {
       method: 'PUT',
       body: JSON.stringify({
@@ -309,11 +541,13 @@ export function createMemory({ chat, router, toast }) {
   }
 
   return Object.freeze({
+    clearSoil,
     handleAction,
     handleSubmit,
     onConversationChanged,
     onReplyCompleted,
     openPocketAction,
+    openPockets,
     renderSoilEntry,
   });
 }

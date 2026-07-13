@@ -61,13 +61,6 @@ export function createRooms({ storage, router, toast }) {
   }
 
   router.register('local-room', roomView);
-  router.register('memory', () => ({
-    title: '轨迹记忆',
-    subtitle: '记忆库暂未接入',
-    className: 'memory-room',
-    body: '<section class="feature-card feature-prose"><h2>记忆库暂未接入</h2><p>这里会在接入正式记忆后显示可整理的轨迹。</p><p>当前不读取、不写入、不检索任何记忆数据。</p></section>',
-  }));
-
   async function open(kind, roomId = '') {
     if (!ROOM_COPY[kind]) return;
     const room = activeRoom(kind, roomId);
@@ -111,7 +104,6 @@ export function createRooms({ storage, router, toast }) {
 
   function handleAction(name, target) {
     if (name === 'open' || name === 'window') return open(target.dataset.kind, target.dataset.id || '');
-    if (name === 'memory') return router.open('memory');
     if (name === 'new') return newRoom(target.dataset.kind);
   }
 
@@ -127,4 +119,3 @@ export function createRooms({ storage, router, toast }) {
 
   return Object.freeze({ start, handleAction, handleSubmit, renderWindowList });
 }
-

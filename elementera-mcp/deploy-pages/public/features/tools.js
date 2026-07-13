@@ -7,7 +7,7 @@ const FREE_MODELS = Object.freeze([
   ['nvidia/nemotron-3-ultra-550b-a55b:free', 'NVIDIA Nemotron 3 Ultra · free'],
 ]);
 
-export function createTools({ storage, router, toast }) {
+export function createTools({ storage, router, toast, memory }) {
   let sandboxModel = DEFAULT_FREE;
 
   const choices = Object.freeze({
@@ -40,8 +40,8 @@ export function createTools({ storage, router, toast }) {
       body: `<p class="feature-note">这些设置保存在统一的本地状态中，并直接供主聊天请求读取。</p>
         ${group('上下文预算', choiceRow('recentTurns', '最近上下文轮数') + choiceRow('contextBudget', '上下文 token 预算', '预算值，当前不做精确 tokenizer 计算。'))}
         ${group('输出偏好', choiceRow('outputLength', '回答长度', '默认由模型按话题判断长度；这里只作为临时偏好。') + choiceRow('creativity', '表达倾向'))}
-        ${group('小纸条与种子 · 预留', numberRow('scratchpadBudget', '小纸条预算 · 预留', 0, 2400, 100, '当前只保存预算，不生成小纸条。') + numberRow('seedRecallLimit', '种子召回上限 · 预留', 0, 6, 1, '当前不召回真实种子。') + '<div class="control-info"><strong>记忆召回：暂未接入</strong><p>未来默认自动低频，由模型按相关性判断。</p></div>')}
-        ${group('应急清理', '<button class="danger-row" type="button" data-action="tools:clear-context"><strong>清空 API 临时上下文</strong><small>用于重置请求前临时拼装；不会删除聊天记录。</small></button><button class="disabled-row" type="button" disabled><strong>清空当前小纸条 · 暂未接入</strong><small>当前没有真实小纸条。</small></button><button class="disabled-row" type="button" disabled><strong>清空待确认袋 · 暂未接入</strong><small>当前没有待确认袋。</small></button>')}`,
+        ${group('思维壤与记忆召回', numberRow('soilBudget', '思维壤预算', 200, 2400, 100, '只限制递入聊天的轻量便签长度。') + numberRow('conversationSeedLimit', '当前窗口种子召回上限', 0, 6, 1, '默认最多 3 粒。') + numberRow('globalSeedLimit', '总种子召回上限', 0, 6, 1, '默认最多 1 粒。') + numberRow('conversationMemoryLimit', '当前窗口记忆召回上限', 0, 6, 1, '默认最多 2 条。') + numberRow('globalMemoryLimit', '总记忆召回上限', 0, 6, 1, '默认最多 1 条。'))}
+        ${group('应急清理', '<button class="danger-row" type="button" data-action="tools:clear-context"><strong>清空 API 临时上下文</strong><small>用于重置请求前临时拼装；不会删除聊天记录。</small></button><button class="danger-row" type="button" data-action="tools:clear-soil"><strong>清空当前思维壤</strong><small>不会删除聊天、种子或记忆。</small></button><button class="feature-row" type="button" data-action="tools:open-pockets"><span><strong>打开待确认袋</strong><small>确认落袋内容的去向。</small></span><span>›</span></button>')}`,
     };
   }
 
@@ -120,6 +120,10 @@ export function createTools({ storage, router, toast }) {
       toast('API 临时上下文已清空。');
       return;
     }
+    if (name === 'clear-soil') return memory.clearSoil().then((cleared) => {
+      if (cleared) toast('当前思维壤已清空。');
+    });
+    if (name === 'open-pockets') return memory.openPockets();
     if (name === 'check-session') return checkSession();
     if (name === 'send-sandbox') return sendSandbox();
   }
@@ -130,7 +134,11 @@ export function createTools({ storage, router, toast }) {
       return;
     }
     if (name !== 'setting') return;
-    const numeric = ['recentTurns', 'contextBudget', 'scratchpadBudget', 'seedRecallLimit'].includes(target.name);
+    const numeric = [
+      'recentTurns', 'contextBudget', 'soilBudget', 'autoRefreshEveryTurns', 'maxHandSeeds',
+      'conversationSeedLimit', 'conversationSeedStallLimit', 'globalSeedLimit',
+      'conversationMemoryLimit', 'globalMemoryLimit', 'seedCooldownTurns',
+    ].includes(target.name);
     storage.update((state) => {
       state.runControl[target.name] = numeric ? Number(target.value) : target.value;
     });
@@ -138,4 +146,3 @@ export function createTools({ storage, router, toast }) {
 
   return Object.freeze({ handleAction, handleInput, getSettings: () => storage.read().runControl });
 }
-

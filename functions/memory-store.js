@@ -6,10 +6,15 @@ const MAX_SOURCE_TEXT = 12000;
 const MAX_TITLE = 120;
 const MAX_LIFE_CORE = 2000;
 const MAX_HINT = 1200;
+const MAX_ENTRY_CONTENT = 6000;
 const MAX_SOIL_TEXT = 4000;
 const MAX_HAND_SEEDS = 7;
 const POCKET_SOURCE_TYPES = new Set(['message', 'turn', 'selection', 'soil']);
 const POCKET_STATUSES = new Set(['pending', 'confirmed', 'discarded', 'stone']);
+const ENTRY_TYPES = new Set(['seed', 'memory']);
+const ENTRY_SCOPES = new Set(['conversation', 'global']);
+const ENTRY_STATUSES = new Set(['active', 'dormant', 'archived', 'stone', 'discarded']);
+const MEMORY_LEVELS = new Set(['ordinary', 'core']);
 const schemaPromises = new WeakMap();
 
 export class MemoryStoreError extends Error {
@@ -92,9 +97,44 @@ async function initializeMemorySchema(db) {
     deleted_at INTEGER DEFAULT NULL,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id)
   )`);
+  await run(db, `CREATE TABLE IF NOT EXISTS memory_entries (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL DEFAULT 'owner',
+    entry_type TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    conversation_id TEXT DEFAULT NULL,
+    title TEXT NOT NULL,
+    life_core TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    usage_hint TEXT NOT NULL DEFAULT '',
+    avoid_hint TEXT NOT NULL DEFAULT '',
+    source_type TEXT NOT NULL DEFAULT 'manual',
+    source_ref_json TEXT NOT NULL DEFAULT '{}',
+    promoted_from_id TEXT DEFAULT NULL,
+    memory_level TEXT NOT NULL DEFAULT 'ordinary',
+    status TEXT NOT NULL DEFAULT 'active',
+    user_confirmed INTEGER NOT NULL DEFAULT 1,
+    recall_count INTEGER NOT NULL DEFAULT 0,
+    last_recalled_at INTEGER DEFAULT NULL,
+    vector_id TEXT DEFAULT NULL,
+    embedding_model TEXT DEFAULT NULL,
+    embedding_version TEXT DEFAULT NULL,
+    embedding_status TEXT NOT NULL DEFAULT 'pending',
+    embedded_at INTEGER DEFAULT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted_at INTEGER DEFAULT NULL,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+  )`);
   await run(db, 'CREATE INDEX IF NOT EXISTS idx_soils_updated ON conversation_soils(updated_at)');
   await run(db, `CREATE INDEX IF NOT EXISTS idx_pockets_conversation_status
     ON memory_pockets(conversation_id, status, created_at)`);
+  await run(db, `CREATE INDEX IF NOT EXISTS idx_entries_scope_type
+    ON memory_entries(user_id, scope, entry_type, status, updated_at)`);
+  await run(db, `CREATE INDEX IF NOT EXISTS idx_entries_conversation
+    ON memory_entries(conversation_id, entry_type, status, updated_at)`);
+  await run(db, `CREATE INDEX IF NOT EXISTS idx_entries_recall
+    ON memory_entries(last_recalled_at, recall_count)`);
 }
 
 export async function ensureMemorySchema(db) {
@@ -308,10 +348,300 @@ export async function deletePocket(db, id) {
   return { ...pocketFromRow(row), deleted_at: iso(timestamp) };
 }
 
+function entryFromRow(row) {
+  return {
+    id: row.id,
+    entry_type: row.entry_type,
+    scope: row.scope,
+    conversation_id: row.conversation_id || null,
+    title: row.title || '',
+    life_core: row.life_core || '',
+    content: row.content || '',
+    usage_hint: row.usage_hint || '',
+    avoid_hint: row.avoid_hint || '',
+    source_type: row.source_type || 'manual',
+    source_ref: sourceRef(parseJson(row.source_ref_json, {})),
+    promoted_from_id: row.promoted_from_id || null,
+    memory_level: row.memory_level || 'ordinary',
+    status: row.status,
+    user_confirmed: Number(row.user_confirmed || 0) === 1,
+    recall_count: Number(row.recall_count || 0),
+    last_recalled_at: iso(row.last_recalled_at),
+    vector_id: row.vector_id || null,
+    embedding_model: row.embedding_model || null,
+    embedding_version: row.embedding_version || null,
+    embedding_status: row.embedding_status || 'pending',
+    embedded_at: iso(row.embedded_at),
+    created_at: iso(row.created_at),
+    updated_at: iso(row.updated_at),
+    deleted_at: iso(row.deleted_at),
+  };
+}
+
+async function requireEntryRow(db, id) {
+  const entryId = sanitizeId(id, 'memory');
+  const row = await first(db, `SELECT * FROM memory_entries
+    WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, [entryId, MEMORY_OWNER_ID]);
+  if (!row) throw new MemoryStoreError('entry_not_found', '种子或记忆不存在。', 404);
+  return row;
+}
+
+function normalizeEntryType(value) {
+  const entryType = String(value || 'memory');
+  if (!ENTRY_TYPES.has(entryType)) throw new MemoryStoreError('invalid_entry_type', '种子或记忆类型无效。');
+  return entryType;
+}
+
+function normalizeScope(value) {
+  const scope = String(value || 'conversation');
+  if (!ENTRY_SCOPES.has(scope)) throw new MemoryStoreError('invalid_entry_scope', '记忆范围无效。');
+  return scope;
+}
+
+function normalizeStatus(value, fallback = 'active') {
+  const status = String(value || fallback);
+  if (!ENTRY_STATUSES.has(status)) throw new MemoryStoreError('invalid_entry_status', '种子或记忆状态无效。');
+  return status;
+}
+
+function normalizeMemoryLevel(value, entryType) {
+  const level = String(value || 'ordinary');
+  if (!MEMORY_LEVELS.has(level)) throw new MemoryStoreError('invalid_memory_level', '记忆保护级别无效。');
+  return entryType === 'memory' ? level : 'ordinary';
+}
+
+async function normalizedEntry(db, value = {}, defaults = {}) {
+  const entryType = normalizeEntryType(value.entry_type ?? defaults.entry_type);
+  const scope = normalizeScope(value.scope ?? defaults.scope);
+  const conversationId = scope === 'conversation'
+    ? sanitizeId(value.conversation_id ?? defaults.conversation_id, 'conversation')
+    : null;
+  if (conversationId) await getConversation(db, conversationId);
+  const title = clip(value.title ?? defaults.title, MAX_TITLE);
+  const lifeCore = clip(value.life_core ?? defaults.life_core, MAX_LIFE_CORE);
+  if (!title || !lifeCore) throw new MemoryStoreError('entry_fields_required', '标题与生命核不能为空。');
+  return {
+    id: sanitizeId(value.id ?? defaults.id ?? crypto.randomUUID(), 'memory'),
+    entry_type: entryType,
+    scope,
+    conversation_id: conversationId,
+    title,
+    life_core: lifeCore,
+    content: clip(value.content ?? defaults.content, MAX_ENTRY_CONTENT),
+    usage_hint: clip(value.usage_hint ?? defaults.usage_hint, MAX_HINT),
+    avoid_hint: clip(value.avoid_hint ?? defaults.avoid_hint, MAX_HINT),
+    source_type: clip(value.source_type ?? defaults.source_type ?? 'manual', 40) || 'manual',
+    source_ref: sourceRef(value.source_ref ?? defaults.source_ref),
+    promoted_from_id: value.promoted_from_id ?? defaults.promoted_from_id ?? null,
+    memory_level: normalizeMemoryLevel(value.memory_level ?? defaults.memory_level, entryType),
+    status: normalizeStatus(value.status ?? defaults.status, entryType === 'seed' ? 'dormant' : 'active'),
+  };
+}
+
+function insertEntryStatement(db, entry, timestamp) {
+  return db.prepare(`INSERT INTO memory_entries (
+    id, user_id, entry_type, scope, conversation_id, title, life_core, content,
+    usage_hint, avoid_hint, source_type, source_ref_json, promoted_from_id,
+    memory_level, status, user_confirmed, recall_count, last_recalled_at,
+    vector_id, embedding_model, embedding_version, embedding_status, embedded_at,
+    created_at, updated_at, deleted_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, NULL, NULL, NULL, NULL, 'pending', NULL, ?, ?, NULL)`).bind(
+    entry.id,
+    MEMORY_OWNER_ID,
+    entry.entry_type,
+    entry.scope,
+    entry.conversation_id,
+    entry.title,
+    entry.life_core,
+    entry.content,
+    entry.usage_hint,
+    entry.avoid_hint,
+    entry.source_type,
+    JSON.stringify(entry.source_ref),
+    entry.promoted_from_id,
+    entry.memory_level,
+    entry.status,
+    timestamp,
+    timestamp,
+  );
+}
+
+export async function getEntry(db, id) {
+  await ensureMemorySchema(db);
+  return entryFromRow(await requireEntryRow(db, id));
+}
+
+export async function createEntry(db, value = {}) {
+  await ensureMemorySchema(db);
+  const entry = await normalizedEntry(db, value);
+  await insertEntryStatement(db, entry, Date.now()).run();
+  return getEntry(db, entry.id);
+}
+
+export async function listEntries(db, options = {}) {
+  await ensureMemorySchema(db);
+  const conditions = ['user_id = ?', 'deleted_at IS NULL'];
+  const params = [MEMORY_OWNER_ID];
+  if (options.entry_type) {
+    conditions.push('entry_type = ?');
+    params.push(normalizeEntryType(options.entry_type));
+  }
+  if (options.scope) {
+    const scope = normalizeScope(options.scope);
+    conditions.push('scope = ?');
+    params.push(scope);
+    if (scope === 'conversation') {
+      const conversationId = sanitizeId(options.conversation_id, 'conversation');
+      await getConversation(db, conversationId);
+      conditions.push('conversation_id = ?');
+      params.push(conversationId);
+    } else {
+      conditions.push('conversation_id IS NULL');
+    }
+  }
+  if (options.status) {
+    conditions.push('status = ?');
+    params.push(normalizeStatus(options.status));
+  }
+  const query = clip(options.q, 240);
+  if (query) {
+    conditions.push('(title LIKE ? OR life_core LIKE ? OR content LIKE ? OR usage_hint LIKE ?)');
+    const pattern = `%${query}%`;
+    params.push(pattern, pattern, pattern, pattern);
+  }
+  const limit = Math.min(100, Math.max(1, Number(options.limit) || 40));
+  const offset = Math.max(0, Number(options.cursor) || 0);
+  const rows = await all(db, `SELECT * FROM memory_entries
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY updated_at DESC, created_at DESC
+    LIMIT ? OFFSET ?`, [...params, limit + 1, offset]);
+  const more = rows.length > limit;
+  return {
+    entries: rows.slice(0, limit).map(entryFromRow),
+    next_cursor: more ? String(offset + limit) : null,
+  };
+}
+
+export async function patchEntry(db, id, value = {}) {
+  await ensureMemorySchema(db);
+  const row = await requireEntryRow(db, id);
+  const requestedScope = value.scope == null ? row.scope : normalizeScope(value.scope);
+  if (row.scope === 'global' && requestedScope === 'conversation') {
+    const copy = await createEntry(db, {
+      entry_type: row.entry_type,
+      scope: 'conversation',
+      conversation_id: value.conversation_id,
+      title: value.title ?? row.title,
+      life_core: value.life_core ?? row.life_core,
+      content: value.content ?? row.content,
+      usage_hint: value.usage_hint ?? row.usage_hint,
+      avoid_hint: value.avoid_hint ?? row.avoid_hint,
+      source_type: 'manual',
+      source_ref: { copied_from: row.id },
+      promoted_from_id: row.id,
+      memory_level: value.memory_level ?? row.memory_level,
+      status: value.status ?? row.status,
+    });
+    return { entry: copy, copied: true };
+  }
+
+  const conversationId = requestedScope === 'conversation'
+    ? sanitizeId(value.conversation_id ?? row.conversation_id, 'conversation')
+    : null;
+  if (conversationId) await getConversation(db, conversationId);
+  const title = value.title == null ? row.title : clip(value.title, MAX_TITLE);
+  const lifeCore = value.life_core == null ? row.life_core : clip(value.life_core, MAX_LIFE_CORE);
+  if (!title || !lifeCore) throw new MemoryStoreError('entry_fields_required', '标题与生命核不能为空。');
+  const status = value.status == null ? row.status : normalizeStatus(value.status);
+  const memoryLevel = value.memory_level == null
+    ? row.memory_level
+    : normalizeMemoryLevel(value.memory_level, row.entry_type);
+  const timestamp = Date.now();
+  await run(db, `UPDATE memory_entries SET
+    scope = ?, conversation_id = ?, title = ?, life_core = ?, content = ?,
+    usage_hint = ?, avoid_hint = ?, status = ?, memory_level = ?,
+    embedding_status = 'pending', updated_at = ?
+    WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, [
+    requestedScope,
+    conversationId,
+    title,
+    lifeCore,
+    value.content == null ? row.content : clip(value.content, MAX_ENTRY_CONTENT),
+    value.usage_hint == null ? row.usage_hint : clip(value.usage_hint, MAX_HINT),
+    value.avoid_hint == null ? row.avoid_hint : clip(value.avoid_hint, MAX_HINT),
+    status,
+    memoryLevel,
+    timestamp,
+    row.id,
+    MEMORY_OWNER_ID,
+  ]);
+  return { entry: await getEntry(db, row.id), copied: false };
+}
+
+export async function deleteEntry(db, id) {
+  await ensureMemorySchema(db);
+  const row = await requireEntryRow(db, id);
+  const timestamp = Date.now();
+  await run(db, `UPDATE memory_entries SET deleted_at = ?, updated_at = ?
+    WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, [timestamp, timestamp, row.id, MEMORY_OWNER_ID]);
+  return { ...entryFromRow(row), deleted_at: iso(timestamp) };
+}
+
+export async function resolvePocket(db, id, value = {}) {
+  await ensureMemorySchema(db);
+  const pocket = await requirePocketRow(db, id);
+  if (pocket.status !== 'pending') throw new MemoryStoreError('pocket_already_resolved', '这条内容已经离开待确认袋。', 409);
+  const action = String(value.action || '');
+  if (action === 'stone' || action === 'discard') {
+    const status = action === 'stone' ? 'stone' : 'discarded';
+    const timestamp = Date.now();
+    await db.batch([
+      db.prepare(`UPDATE memory_pockets SET status = ?, updated_at = ?
+        WHERE id = ? AND user_id = ? AND status = 'pending' AND deleted_at IS NULL`)
+        .bind(status, timestamp, pocket.id, MEMORY_OWNER_ID),
+    ]);
+    return { pocket: pocketFromRow({ ...pocket, status, updated_at: timestamp }), entry: null };
+  }
+  const destinations = {
+    conversation_seed: ['seed', 'conversation'],
+    global_seed: ['seed', 'global'],
+    conversation_memory: ['memory', 'conversation'],
+    global_memory: ['memory', 'global'],
+  };
+  const destination = destinations[action];
+  if (!destination) throw new MemoryStoreError('invalid_pocket_action', '待确认袋去向无效。');
+  const [entryType, scope] = destination;
+  const entry = await normalizedEntry(db, {
+    entry_type: entryType,
+    scope,
+    conversation_id: scope === 'conversation' ? pocket.conversation_id : null,
+    title: value.title || pocket.suggested_title || pocket.source_text,
+    life_core: value.life_core || pocket.suggested_life_core || pocket.source_text,
+    content: value.content ?? pocket.source_text,
+    usage_hint: value.usage_hint ?? pocket.suggested_usage_hint,
+    avoid_hint: value.avoid_hint,
+    source_type: 'pocket',
+    source_ref: { pocket_id: pocket.id, source_type: pocket.source_type, source_ref: parseJson(pocket.source_ref_json, {}) },
+    memory_level: value.memory_level,
+  });
+  const timestamp = Date.now();
+  await db.batch([
+    insertEntryStatement(db, entry, timestamp),
+    db.prepare(`UPDATE memory_pockets SET status = 'confirmed', resolved_entry_id = ?, updated_at = ?
+      WHERE id = ? AND user_id = ? AND status = 'pending' AND deleted_at IS NULL`)
+      .bind(entry.id, timestamp, pocket.id, MEMORY_OWNER_ID),
+  ]);
+  return {
+    pocket: pocketFromRow({ ...pocket, status: 'confirmed', resolved_entry_id: entry.id, updated_at: timestamp }),
+    entry: await getEntry(db, entry.id),
+  };
+}
+
 export const memoryLimits = Object.freeze({
   sourceText: MAX_SOURCE_TEXT,
   title: MAX_TITLE,
   lifeCore: MAX_LIFE_CORE,
   hint: MAX_HINT,
+  entryContent: MAX_ENTRY_CONTENT,
   handSeeds: MAX_HAND_SEEDS,
 });

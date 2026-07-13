@@ -40,6 +40,7 @@ const histories = new Map([['conv-1', { version: 4, updated_at: now(), turns: []
 let formalChatRequests = 0;
 const soils = new Map();
 const memoryPockets = [];
+const memoryEntries = [];
 
 function soilFor(conversationId) {
   if (!soils.has(conversationId)) soils.set(conversationId, {
@@ -119,18 +120,80 @@ globalThis.fetch = async (input, options = {}) => {
   }
   if (url.pathname === '/api/memory/pockets') {
     if (method === 'POST') {
-      const pocket = { id: `pocket-${memoryPockets.length + 1}`, status: 'pending', ...body };
+      const pocket = { id: `pocket-${memoryPockets.length + 1}`, status: 'pending', suggested_title: body.source_text.slice(0, 40), suggested_life_core: '', suggested_usage_hint: '', ...body };
       memoryPockets.unshift(pocket);
       return response({ ok: true, pocket }, 201);
     }
     const conversationId = url.searchParams.get('conversation_id');
     return response({ ok: true, pockets: memoryPockets.filter((item) => item.conversation_id === conversationId && item.status === (url.searchParams.get('status') || 'pending')) });
   }
+  if (/^\/api\/memory\/pockets\/[^/]+\/resolve$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.split('/').at(-2));
+    const pocket = memoryPockets.find((item) => item.id === id);
+    if (['stone', 'discard'].includes(body.action)) {
+      pocket.status = body.action === 'stone' ? 'stone' : 'discarded';
+      return response({ ok: true, pocket, entry: null });
+    }
+    const global = body.action.startsWith('global_');
+    const entry = {
+      id: `entry-${memoryEntries.length + 1}`,
+      entry_type: body.action.endsWith('_seed') ? 'seed' : 'memory',
+      scope: global ? 'global' : 'conversation',
+      conversation_id: global ? null : pocket.conversation_id,
+      title: body.title || pocket.suggested_title,
+      life_core: body.life_core || pocket.source_text,
+      content: body.content || pocket.source_text,
+      usage_hint: body.usage_hint || '',
+      avoid_hint: body.avoid_hint || '',
+      status: body.action.endsWith('_seed') ? 'dormant' : 'active',
+      memory_level: 'ordinary',
+      embedding_status: 'pending',
+    };
+    memoryEntries.unshift(entry);
+    pocket.status = 'confirmed';
+    pocket.resolved_entry_id = entry.id;
+    return response({ ok: true, pocket, entry });
+  }
   if (url.pathname.startsWith('/api/memory/pockets/')) {
     const id = decodeURIComponent(url.pathname.split('/').at(-1));
     const pocket = memoryPockets.find((item) => item.id === id);
     Object.assign(pocket, body);
     return response({ ok: true, pocket });
+  }
+  if (url.pathname === '/api/memory/entries') {
+    if (method === 'POST') {
+      const entry = { id: `entry-${memoryEntries.length + 1}`, embedding_status: 'pending', memory_level: 'ordinary', ...body };
+      memoryEntries.unshift(entry);
+      return response({ ok: true, entry }, 201);
+    }
+    const scope = url.searchParams.get('scope');
+    const conversationId = url.searchParams.get('conversation_id');
+    const type = url.searchParams.get('entry_type');
+    const status = url.searchParams.get('status');
+    const query = (url.searchParams.get('q') || '').toLowerCase();
+    const entries = memoryEntries.filter((entry) => !entry.deleted_at
+      && (!scope || entry.scope === scope)
+      && (scope !== 'conversation' || entry.conversation_id === conversationId)
+      && (!type || entry.entry_type === type)
+      && (!status || entry.status === status)
+      && (!query || `${entry.title} ${entry.life_core} ${entry.content}`.toLowerCase().includes(query)));
+    return response({ ok: true, entries, next_cursor: null });
+  }
+  if (url.pathname.startsWith('/api/memory/entries/')) {
+    const id = decodeURIComponent(url.pathname.split('/').at(-1));
+    const entry = memoryEntries.find((item) => item.id === id);
+    if (method === 'DELETE') {
+      entry.deleted_at = now();
+      return response({ ok: true, entry, deleted: true });
+    }
+    if (method === 'PATCH' && entry.scope === 'global' && body.scope === 'conversation') {
+      const copy = { ...entry, ...body, id: `entry-${memoryEntries.length + 1}`, promoted_from_id: entry.id };
+      memoryEntries.unshift(copy);
+      return response({ ok: true, entry: copy, copied: true });
+    }
+    Object.assign(entry, body);
+    if (entry.scope === 'global') entry.conversation_id = null;
+    return response({ ok: true, entry, copied: false });
   }
   if (url.pathname === '/api/models') {
     const models = [
@@ -242,6 +305,33 @@ const renamed = [...document.querySelectorAll('#chatConversationList .conversati
 renamed.querySelector('[data-action="chat:menu"]').click();
 renamed.querySelector('[data-action="chat:delete-conversation"]').click();
 await waitFor(() => document.querySelectorAll('#chatConversationList .conversation-row').length === 1, 'delete conversation');
+
+document.querySelector('[data-action="memory:open"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory', 'memory owner route');
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('当前窗口种子'));
+document.querySelector('[data-action="memory:pockets"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory-pockets', 'pending pocket route');
+document.querySelector('[data-action="memory:pocket-resolve"][data-destination="conversation_seed"]').click();
+await waitFor(() => memoryPockets[0].status === 'confirmed', 'resolve pocket to conversation seed');
+document.querySelector('[data-action="router:back"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory', 'return to memory library');
+assert.ok(document.querySelector('.memory-entry-card')?.textContent.includes('mock: a1 edited'));
+document.querySelector('.memory-entry-card [data-action="memory:entry-promote"]').click();
+await waitFor(() => memoryEntries[0].scope === 'global', 'promote entry to global library');
+document.querySelector('[data-action="memory:tab"][data-scope="global"]').click();
+await waitFor(() => document.querySelector('[data-action="memory:tab"][data-scope="global"]').classList.contains('is-active'), 'global memory tab');
+assert.ok(document.querySelector('.memory-entry-card'));
+document.querySelector('.memory-entry-card [data-action="memory:entry-copy-current"]').click();
+await waitFor(() => memoryEntries.some((entry) => entry.promoted_from_id === memoryEntries.find((item) => item.scope === 'global')?.id), 'copy global entry to current window');
+document.querySelector('[data-action="memory:entry-new"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory-entry-edit', 'manual memory editor');
+document.querySelector('[name="title"]').value = '总库家具';
+document.querySelector('[name="life_core"]').value = '只在明确相关时递入';
+document.querySelector('[data-submit="memory:entry-save"]').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory', 'manual memory saved');
+assert.ok(memoryEntries.some((entry) => entry.title === '总库家具' && entry.scope === 'global'));
+document.querySelector('[data-action="router:back"]').click();
+await tick();
 
 document.querySelector('#modelButton').click();
 await waitFor(() => !document.querySelector('#modelQuickPicker').hidden, 'model quick picker');

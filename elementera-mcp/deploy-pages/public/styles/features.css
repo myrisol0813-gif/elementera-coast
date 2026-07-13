@@ -147,6 +147,86 @@
   gap: 12px;
 }
 
+.memory-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 5px;
+  border-radius: 15px;
+  background: var(--surface-soft);
+}
+
+.memory-tabs button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.memory-tabs button.is-active {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.memory-search-form {
+  margin-bottom: 9px;
+  padding: 15px;
+  border-radius: 15px;
+  background: var(--surface-soft);
+}
+
+.memory-search-form input,
+.memory-search-form select,
+.memory-entry-edit .form-stack select {
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 12px;
+  outline: 0;
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.memory-search-form .form-grid button {
+  align-self: end;
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.memory-search-status {
+  margin: 0 4px 18px;
+}
+
+.memory-entry-list {
+  display: grid;
+  gap: 12px;
+}
+
+.memory-entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 9px;
+}
+
+.memory-entry-meta span {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .feature-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

@@ -31,7 +31,7 @@ const router = createRouter(q('#overlayRoot'), {
 const chat = createChat({ storage, toast });
 const memory = createMemory({ chat, router, toast });
 const models = createModels({ chat, router, toast });
-const tools = createTools({ storage, router, toast });
+const tools = createTools({ storage, router, toast, memory });
 const settings = createSettings({ storage, shell, chat, router, toast });
 const rooms = createRooms({ storage, router, toast });
 const daily = createDaily({ storage, router, toast });
@@ -65,7 +65,7 @@ document.addEventListener('click', async (event) => {
     const controller = controllers[namespace];
     if (!controller?.handleAction) return;
     await controller.handleAction(name, target, event);
-    if (namespace === 'chat' && name === 'open') shell.closeSidebar();
+    if ((namespace === 'chat' || namespace === 'memory') && name === 'open') shell.closeSidebar();
   } catch (error) {
     console.error(`[${namespace}:${name}]`, error);
     toast(error?.message || '操作失败，请稍后重试。');

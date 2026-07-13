@@ -3,10 +3,15 @@ import { DatabaseSync } from 'node:sqlite';
 import { createConversation } from '../functions/chat-store.js';
 import {
   createPocket,
+  createEntry,
   deletePocket,
+  deleteEntry,
+  listEntries,
   listPockets,
+  patchEntry,
   patchPocket,
   readSoil,
+  resolvePocket,
   writeSoil,
 } from '../functions/memory-store.js';
 
@@ -24,6 +29,18 @@ class D1Statement {
 class D1Database {
   constructor() { this.database = new DatabaseSync(':memory:'); }
   prepare(sql) { return new D1Statement(this.database, sql); }
+  async batch(statements) {
+    this.database.exec('BEGIN');
+    try {
+      const results = [];
+      for (const statement of statements) results.push(await statement.run());
+      this.database.exec('COMMIT');
+      return results;
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
+  }
 }
 
 const db = new D1Database();
@@ -81,5 +98,60 @@ assert.equal((await listPockets(db, { conversation_id: conversationA.id, status:
 assert.equal((await listPockets(db, { conversation_id: conversationA.id, status: 'stone' })).length, 1);
 await deletePocket(db, pendingA.id);
 assert.equal((await listPockets(db, { conversation_id: conversationA.id, status: 'stone' })).length, 0, 'pocket deletion must be soft but hidden');
+
+const destinations = [
+  ['conversation_seed', 'seed', 'conversation'],
+  ['global_seed', 'seed', 'global'],
+  ['conversation_memory', 'memory', 'conversation'],
+  ['global_memory', 'memory', 'global'],
+];
+const resolved = [];
+for (const [action, entryType, scope] of destinations) {
+  const pocket = await createPocket(db, {
+    conversation_id: conversationA.id,
+    source_type: 'message',
+    source_ref: { conversation_id: conversationA.id, turn_id: action, role: 'user' },
+    source_text: `${action} 的原文`,
+  });
+  const result = await resolvePocket(db, pocket.id, {
+    action,
+    title: `${action} 标题`,
+    life_core: `${action} 生命核`,
+  });
+  assert.equal(result.pocket.status, 'confirmed');
+  assert.equal(result.entry.entry_type, entryType);
+  assert.equal(result.entry.scope, scope);
+  assert.equal(result.entry.conversation_id, scope === 'conversation' ? conversationA.id : null);
+  assert.equal(result.entry.embedding_status, 'pending');
+  resolved.push(result.entry);
+}
+assert.equal((await listPockets(db, { conversation_id: conversationA.id, status: 'pending' })).length, 0);
+
+const currentSeedsA = await listEntries(db, { conversation_id: conversationA.id, scope: 'conversation', entry_type: 'seed' });
+const currentSeedsB = await listEntries(db, { conversation_id: conversationB.id, scope: 'conversation', entry_type: 'seed' });
+assert.equal(currentSeedsA.entries.length, 1);
+assert.equal(currentSeedsB.entries.length, 0, 'conversation entries must not cross windows');
+const globalSeeds = await listEntries(db, { conversation_id: conversationA.id, scope: 'global', entry_type: 'seed' });
+assert.equal(globalSeeds.entries.length, 1, 'global entries must be available independently of a conversation');
+
+const manual = await createEntry(db, {
+  entry_type: 'memory',
+  scope: 'conversation',
+  conversation_id: conversationA.id,
+  title: '手动家具',
+  life_core: '只有用户可以标记为 core',
+  memory_level: 'core',
+});
+assert.equal(manual.memory_level, 'core');
+const promoted = await patchEntry(db, manual.id, { scope: 'global' });
+assert.equal(promoted.entry.scope, 'global');
+assert.equal(promoted.entry.conversation_id, null);
+const copied = await patchEntry(db, promoted.entry.id, { scope: 'conversation', conversation_id: conversationB.id });
+assert.equal(copied.copied, true);
+assert.equal(copied.entry.conversation_id, conversationB.id);
+assert.equal(copied.entry.promoted_from_id, promoted.entry.id);
+assert.equal((await listEntries(db, { conversation_id: conversationA.id, scope: 'global', q: '手动家具' })).entries.length, 1);
+await deleteEntry(db, copied.entry.id);
+assert.equal((await listEntries(db, { conversation_id: conversationB.id, scope: 'conversation', q: '手动家具' })).entries.length, 0, 'entry deletion must be soft but hidden');
 
 console.log('memory: ok');
