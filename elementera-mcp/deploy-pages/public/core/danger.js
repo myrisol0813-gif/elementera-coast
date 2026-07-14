@@ -276,19 +276,3 @@ export function confirmDanger(options) {
   return defaultConfirmer(options);
 }
 
-export function runConfirmedDanger(action) {
-  const previousConfirm = globalThis.confirm;
-  let bypassAvailable = true;
-  globalThis.confirm = (...args) => {
-    if (bypassAvailable) {
-      bypassAvailable = false;
-      return true;
-    }
-    return typeof previousConfirm === 'function' ? previousConfirm(...args) : false;
-  };
-  try {
-    return action();
-  } finally {
-    globalThis.confirm = previousConfirm;
-  }
-}

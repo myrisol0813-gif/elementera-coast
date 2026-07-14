@@ -7,7 +7,6 @@ import {
   createDangerConfirmer,
   dangerConfirmationFor,
   destructiveActions,
-  runConfirmedDanger,
 } from '../elementera-mcp/deploy-pages/public/core/danger.js';
 
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -90,13 +89,9 @@ await nextFrame();
 window.dispatchEvent(new window.Event('popstate'));
 assert.equal(await pending, false, 'mobile/browser back must cancel');
 
-const previousConfirm = globalThis.confirm;
-globalThis.confirm = () => { throw new Error('legacy native confirm leaked through the unified danger gate'); };
-try {
-  const result = runConfirmedDanger(() => confirm('legacy confirm'));
-  assert.equal(result, true, 'already-confirmed destructive actions may pass their legacy native guard once');
-} finally {
-  globalThis.confirm = previousConfirm;
+for (const file of sourceFiles) {
+  const source = await readFile(resolve(pages, file), 'utf8');
+  assert.equal(source.includes('confirm('), false, file + ' must not retain a browser-native confirm path');
 }
 
 console.log('danger: ok');
