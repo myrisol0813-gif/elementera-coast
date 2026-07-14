@@ -126,6 +126,11 @@ function parseStrictJson(value) {
   throw new MemoryStoreError('soil_organize_invalid', '思维壤整理结果格式无效。', 502);
 }
 
+function normalizeSoilMode(value) {
+  const mode = String(value || '').trim().toLowerCase();
+  return ['replace', 'keep', 'clear'].includes(mode) ? mode : '';
+}
+
 function fallbackCurrentText(turns, landing) {
   const latest = turns.at(-1);
   if (landing || latest?.user?.hidden || latest?.user?.input_type === 'landing_letter') {
@@ -151,12 +156,15 @@ function soilPrompt(turns, oldSoil, maxHandSeeds) {
       content: String(branch.assistant.content || '').slice(0, 3000),
     },
   }));
-  return `你只负责整理当前对话的一小捧“思维壤”，不是总结长期记忆，也不是输出思考过程。
+  return `你只负责整理当前对话的一小捧“思维壤”。它是当前窗口的工作台小纸条，不是永久档案馆，不是长期记忆，也不是思考过程。
 请只返回一个 JSON 对象，不要 Markdown，不要解释：
 {
   "current_text": "现在正在聊什么，简短",
+  "hand_seeds_mode": "replace|keep|clear 三选一",
   "hand_seeds": [{"name":"名称","life_core":"生命核","usage_hint":"何时可用","avoid_hint":"如何避免复读"}],
+  "do_not_repeat_mode": "replace|keep|clear 三选一",
   "do_not_repeat": "已经确认、不应重复铺陈的内容",
+  "pocket_candidates_mode": "replace|keep|clear 三选一",
   "pocket_candidates": [{
     "candidate_id": "简短稳定标识",
     "title": "不是原句截取的简短名称",
@@ -168,8 +176,18 @@ function soilPrompt(turns, oldSoil, maxHandSeeds) {
     "source_excerpt": "帮助辨认来源的短摘录"
   }]
 }
-hand_seeds 最多 ${maxHandSeeds} 粒。pocket_candidates 只放“现在不用、但仍有再生力”的内容，并使用上方真实 turn_id；没有候选就返回空数组。
-不要创建长期记忆，不要判断 core，不要把候选升级为 seed 或 memory，不要替用户做决定，不要复述整段聊天。
+
+mode 含义：
+- replace：使用你本轮返回的新纸条。旧纸条可以退出、被改写、合并或替换；新内容比旧内容少也没关系。
+- keep：这一栏原样保留旧思维壤。
+- clear：你明确判断这一栏已经过时、重复、已经落袋或不再适合当前窗口，因此清空这一栏。
+不要把空数组或空字符串当作失败占位。如果你确实要清空，请使用 clear mode；如果你没有要改这一栏，请使用 keep mode。
+
+hand_seeds 不是永久收藏夹，而是“此刻最值得手持”的最多 ${maxHandSeeds} 粒。每轮都可以保留仍有用的旧种、删除过时旧种、替换旧种、合并重复旧种、改写旧种或加入新种。满 ${maxHandSeeds} 粒时主动做取舍。不要因为旧思维壤里已经有旧种就机械保留，也不要害怕让旧纸条退出手持。
+do_not_repeat 也只是当前窗口的工作提醒。已经不再需要防复读的提醒可以改写、合并或 clear。
+pocket_candidates 只放“现在不用、但仍有再生力”的内容，并使用上方真实 turn_id。旧候选会由系统先 upsert 到 pending；已经进入 pending、已经落袋或已经不适合当前窗口的候选可以从思维壤展示层退出，不要为了保留展示而反复挂在手上。当前确实没有候选时使用 pocket_candidates_mode=clear。
+
+你只能整理 current_text、hand_seeds、do_not_repeat、pocket_candidates 这四块临时工作台内容。不要创建或删除长期记忆，不要删除聊天记录、pending pocket、confirmed pocket、seed、memory 或向量索引中的已确认内容；不要判断 core，不要把候选升级为 seed 或 memory，不要替用户做决定，不要复述整段聊天。
 
 旧思维壤：
 ${JSON.stringify({
@@ -268,6 +286,9 @@ async function organizeSoil(request, env) {
   const fallbackExcerpt = [latestTurn?.user?.content, latestTurn?.assistant?.content]
     .map((part) => String(part || '').replace(/\s+/g, ' ').trim())
     .filter(Boolean).join(' / ').slice(0, 360);
+  const handSeedsMode = normalizeSoilMode(organized.hand_seeds_mode);
+  const doNotRepeatMode = normalizeSoilMode(organized.do_not_repeat_mode);
+  const pocketCandidatesMode = normalizeSoilMode(organized.pocket_candidates_mode);
   const organizedHandSeeds = normalizeHandSeeds(organized.hand_seeds).slice(0, settings.maxHandSeeds);
   const organizedDoNotRepeat = String(organized.do_not_repeat || '').trim();
   const organizedPocketCandidates = normalizePocketCandidates(organized.pocket_candidates, {
@@ -278,9 +299,27 @@ async function organizeSoil(request, env) {
   const soilValue = {
     current_text: String(organized.current_text || '').trim()
       || fallback,
-    hand_seeds: organizedHandSeeds.length ? organizedHandSeeds : oldSoil.hand_seeds,
-    do_not_repeat: organizedDoNotRepeat || oldSoil.do_not_repeat,
-    pocket_candidates: organizedPocketCandidates,
+    hand_seeds: handSeedsMode === 'replace'
+      ? organizedHandSeeds
+      : handSeedsMode === 'keep'
+        ? oldSoil.hand_seeds
+        : handSeedsMode === 'clear'
+          ? []
+          : organizedHandSeeds.length ? organizedHandSeeds : oldSoil.hand_seeds,
+    do_not_repeat: doNotRepeatMode === 'replace'
+      ? organizedDoNotRepeat
+      : doNotRepeatMode === 'keep'
+        ? oldSoil.do_not_repeat
+        : doNotRepeatMode === 'clear'
+          ? ''
+          : organizedDoNotRepeat || oldSoil.do_not_repeat,
+    pocket_candidates: pocketCandidatesMode === 'replace'
+      ? organizedPocketCandidates
+      : pocketCandidatesMode === 'keep'
+        ? oldSoil.pocket_candidates
+        : pocketCandidatesMode === 'clear'
+          ? []
+          : organizedPocketCandidates,
     manual_locked: oldSoil.manual_locked,
     auto_refresh_enabled: oldSoil.auto_refresh_enabled,
   };
