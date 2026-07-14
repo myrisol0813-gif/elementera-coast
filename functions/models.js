@@ -425,8 +425,11 @@ export async function* performFormalChatStream(env, input = {}, { allowSystem = 
     if (value?.choices?.[0]?.finish_reason != null) finishReason = String(value.choices[0].finish_reason);
   }
 
+  if (!providerDone && finishReason == null) {
+    throw new ModelRequestError('stream_incomplete', '上游流式响应提前中断。', 502, { model: prepared.modelId });
+  }
   if (!metaSent) yield { event: 'meta', data: { model: actualModel, generation_id: generationId } };
-  yield { event: 'done', data: { finish_reason: finishReason || (providerDone ? null : 'stop') } };
+  yield { event: 'done', data: { finish_reason: finishReason } };
 }
 
 export async function handleModels(request, env) {
