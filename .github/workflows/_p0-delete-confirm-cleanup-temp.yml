@@ -21,10 +21,25 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: node scripts/p0-delete-confirm-cleanup.mjs
+      - name: Apply final cleanup and preserve failure output
+        run: |
+          set +e
+          node scripts/p0-delete-confirm-cleanup.mjs 2>&1 | tee /tmp/p0-cleanup.log
+          STATUS=${PIPESTATUS[0]}
+          set -e
+          if [ "$STATUS" -ne 0 ]; then
+            cat /tmp/p0-cleanup.log > P0_CLEANUP_LOG.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add P0_CLEANUP_LOG.txt
+            git commit -m "test: capture final P0 cleanup failure"
+            git push origin HEAD:p0-delete-confirm-01
+            exit "$STATUS"
+          fi
       - run: npm test
       - name: Commit final verified cleanup
         run: |
+          rm -f P0_CLEANUP_LOG.txt
           rm scripts/p0-delete-confirm-cleanup.mjs
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
