@@ -238,7 +238,7 @@ streamScenarios.push({
   },
 });
 send('取消这一轮');
-await waitFor(() => document.querySelector('.assistant-text')?.textContent.includes('半截保留'), 'cancel partial');
+await waitFor(() => [...document.querySelectorAll('.assistant-text')].at(-1)?.textContent.includes('半截保留'), 'cancel partial');
 document.querySelector('#composerActionButton').click();
 await waitFor(() => historyPutCount === cancelSaves + 1, 'cancel final save');
 assert.equal(activeAssistant().content, '半截保留');
@@ -273,7 +273,7 @@ state.runControl.streamingEnabled = false;
 const jsonRequestIndex = chatBodies.length;
 const jsonSaves = historyPutCount;
 send('关闭流式');
-await waitFor(() => document.querySelector('.assistant-text')?.textContent.includes('json: 关闭流式'), 'non-streaming JSON reply');
+await waitFor(() => [...document.querySelectorAll('.assistant-text')].at(-1)?.textContent.includes('json: 关闭流式'), 'non-streaming JSON reply');
 assert.equal(chatBodies[jsonRequestIndex].stream, undefined, 'streamingEnabled=false must keep the ordinary JSON request path');
 assert.ok(historyPutCount >= jsonSaves + 2, 'the existing JSON path keeps its placeholder and final persistence behavior');
 assert.equal(activeAssistant().usage.total_tokens, 35);

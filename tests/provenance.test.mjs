@@ -8,6 +8,7 @@ import {
   saveGenerationProvenance,
 } from '../functions/provenance-store.js';
 import { createMemory } from '../elementera-mcp/deploy-pages/public/features/memory.js';
+import { createConversation, getConversation, setGeneratedTitle } from '../functions/chat-store.js';
 
 class D1Statement {
   constructor(database, sql, params = []) { this.database = database; this.sql = sql; this.params = params; }
@@ -52,6 +53,11 @@ await saveGenerationProvenance(db, 'pocket', 'pocket-incomplete', {
   generation_source: 'soil',
 });
 assert.equal((await readGenerationProvenance(db, 'pocket', 'pocket-incomplete')).usage, null, 'incomplete usage must never become displayed token metadata');
+
+const titleDb = new D1Database();
+const titledConversation = await createConversation(titleDb, '新聊天');
+await setGeneratedTitle(titleDb, titledConversation.id, '潮线', 'openai/gpt-4.1-nano');
+assert.equal((await getConversation(titleDb, titledConversation.id)).title_model_id, 'openai/gpt-4.1-nano', 'generated title model provenance must persist');
 
 const window = new Window({ url: 'http://coast.test/' });
 for (const name of ['window', 'document', 'navigator', 'HTMLElement', 'HTMLFormElement', 'Event']) {

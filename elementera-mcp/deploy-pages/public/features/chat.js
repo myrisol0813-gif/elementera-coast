@@ -673,7 +673,7 @@ export function createChat({ storage, toast }) {
     } catch (error) {
       const cancelled = error.name === 'AbortError';
       patch = {
-        content: streamingEnabled ? partialContent : (cancelled ? '' : '消息生成失败，请稍后重试。'),
+        content: streamingEnabled ? partialContent : (cancelled ? '已停止生成。' : '消息生成失败，请稍后重试。'),
         errorDetail: cancelled ? '' : `${error.type || 'request_failed'}: ${error.message}`,
         model_id: streamModelId || modelId,
         ...(streamUsage ? { usage: streamUsage } : {}),
