@@ -206,8 +206,7 @@ const footprint = document.querySelector('.generation-footprint');
 assert.equal(footprint.textContent, 'GPT-5.5 · 23 tok');
 assert.match(footprint.getAttribute('title'), /^model_id: openai\/gpt-5\.5\nprompt_tokens: 21\ncompletion_tokens: 2\ntotal_tokens: 23\nfinish_reason: stop\ngeneration_source: chat$/);
 assert.doesNotMatch(footprint.getAttribute('title'), /api[_ -]?key|secret|request body/i, 'generation detail must expose only provenance fields');
-footprint.click();
-await tick();
+await chat.handleAction('generation-detail', footprint);
 assert.match(toastMessages.at(-1), /generation_source: chat/);
 
 const modelOnlySaves = historyPutCount;
