@@ -12,6 +12,13 @@ function group(title, body) {
   return `<section class="feature-group"><h2>${escapeHtml(title)}</h2><div class="feature-card">${body}</div></section>`;
 }
 
+function shortModelName(modelId) {
+  const bare = String(modelId || '').split('/').at(-1)?.replace(/:free$/i, '') || '';
+  if (!bare) return '';
+  if (/^gpt-/i.test(bare)) return bare.replace(/^gpt-/i, 'GPT-').replace(/-(nano|mini|micro)$/i, ' $1');
+  return bare;
+}
+
 export function createSettings({ storage, shell, chat, router, toast }) {
   const preferences = () => storage.read().preferences;
 
@@ -96,11 +103,17 @@ export function createSettings({ storage, shell, chat, router, toast }) {
     body: group('当前结构', line('入口', 'public/app.js ES module') + line('聊天 owner', 'features/chat.js') + line('服务器存储', 'D1 conversation_states JSON v4') + line('旧窗口脚本', '不在加载链中')),
   }));
 
-  router.register('settings-diagnostics', () => ({
-    title: '本地诊断',
-    subtitle: '不发额外网络请求',
-    body: group('状态', line('当前消息', `${chat.getActiveMessages().length} 条`) + line('当前窗口', chat.getCurrentConversationId() || '未载入') + line('serviceWorker', 'serviceWorker' in navigator ? 'available' : 'unavailable') + line('本地状态', 'elementera.local.v1')),
-  }));
+  router.register('settings-diagnostics', () => {
+    const conversation = chat.getCurrentConversation();
+    const titleTrace = conversation?.title_model_id
+      ? `标题 · ${shortModelName(conversation.title_model_id)}`
+      : '未记录';
+    return {
+      title: '本地诊断',
+      subtitle: '不发额外网络请求',
+      body: group('状态', line('当前消息', `${chat.getActiveMessages().length} 条`) + line('当前窗口', chat.getCurrentConversationId() || '未载入') + line('标题生成', titleTrace) + line('serviceWorker', 'serviceWorker' in navigator ? 'available' : 'unavailable') + line('本地状态', 'elementera.local.v1')),
+    };
+  });
 
   router.register('settings-system', () => ({
     title: 'System Prompt 草稿',
@@ -213,4 +226,3 @@ export function createSettings({ storage, shell, chat, router, toast }) {
 
   return Object.freeze({ handleAction });
 }
-
