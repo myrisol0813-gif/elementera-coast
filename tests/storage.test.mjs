@@ -31,6 +31,7 @@ assert.equal(storage.migrationConversations.length, 1);
 assert.equal(storage.migrationConversations[0].id, 'old-window');
 assert.equal(storage.migrationConversations[0].state.turns[0].user.variants[0].content, '结构化旧问题');
 assert.equal(storage.read().rooms.lighthouse.rooms[0].messages[0].text, '旧灯塔草稿');
+assert.equal(storage.read().runControl.streamingEnabled, false, 'streaming must default to disabled');
 assert.equal(storage.read().runControl.seedCooldownTurns, 2);
 assert.equal(storage.read().runControl.conversationSeedStallLimit, 4);
 assert.equal(storage.read().runControl.autoRefreshEveryTurns, 1);
