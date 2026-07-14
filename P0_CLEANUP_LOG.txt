@@ -1,0 +1,17 @@
+file:///home/runner/work/elementera-coast/elementera-coast/scripts/p0-delete-confirm-cleanup.mjs:59
+    `\nfor (const file of sourceFiles) {\n  const source = await readFile(resolve(pages, file), 'utf8');\n  assert.equal(source.includes('confirm('), false, \\`${'${file}'} must not retain a browser-native confirm path\\`);\n}\n`],
+                                                                                                                                                                ^
+
+SyntaxError: Unexpected identifier '$'
+    at compileSourceTextModule (node:internal/modules/esm/utils:318:16)
+    at ModuleLoader.moduleStrategy (node:internal/modules/esm/translators:89:18)
+    at #translate (node:internal/modules/esm/loader:434:20)
+    at afterLoad (node:internal/modules/esm/loader:502:29)
+    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:507:12)
+    at #getOrCreateModuleJobAfterResolve (node:internal/modules/esm/loader:560:36)
+    at afterResolve (node:internal/modules/esm/loader:607:52)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:613:12)
+    at node:internal/modules/esm/loader:632:32
+    at TracingChannel.tracePromise (node:diagnostics_channel:362:14)
+
+Node.js v24.18.0
