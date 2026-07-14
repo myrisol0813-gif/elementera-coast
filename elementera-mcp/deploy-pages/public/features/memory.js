@@ -444,8 +444,7 @@ export function createMemory({ chat, router, toast, storage }) {
     return router.open('memory-vector-status');
   }
 
-  async function clearSoil({ ask = true } = {}) {
-    if (ask && !confirm('清空当前思维壤？种子库、记忆库和聊天记录不会被删除。')) return false;
+  async function clearSoil() {
     const data = await requestJson(`${API.memorySoil}?conversation_id=${encodeURIComponent(currentId())}`, {
       method: 'PUT',
       body: JSON.stringify({ current_text: '', hand_seeds: [], do_not_repeat: '', pocket_candidates: [], manual_locked: true }),
@@ -610,7 +609,6 @@ export function createMemory({ chat, router, toast, storage }) {
       return router.refresh();
     }
     if (name === 'entry-delete') {
-      if (!confirm('删除这条种子或记忆？这是软删除，不会物理清空 D1。')) return;
       await requestJson(`${API.memoryEntries}/${encodeURIComponent(target.dataset.id)}`, { method: 'DELETE' });
       await fetchEntries(runtime.libraryTab);
       return router.refresh();

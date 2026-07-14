@@ -123,7 +123,6 @@ export function createTools({ storage, router, toast, memory }) {
     if (name === 'run-control') return router.open('run-control');
     if (name === 'sandbox') return router.open('api-sandbox');
     if (name === 'clear-context') {
-      if (!confirm('确定清空 API 临时上下文吗？这不会清空现有聊天记录。')) return;
       toast('API 临时上下文已清空。');
       return;
     }
