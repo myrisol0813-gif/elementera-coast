@@ -1,0 +1,19 @@
+
+> test
+> node tests/chat-state.test.mjs && node tests/backend.test.mjs && node tests/storage.test.mjs && node tests/architecture.test.mjs && node tests/memory.test.mjs && node tests/provenance.test.mjs && node tests/streaming.test.mjs && node tests/danger.test.mjs && node tests/dom.test.mjs
+
+chat-state: ok
+backend: ok
+storage: ok
+node:internal/modules/esm/translators:391
+    throw new ERR_UNKNOWN_BUILTIN_MODULE(url);
+          ^
+
+Error [ERR_UNKNOWN_BUILTIN_MODULE]: No such built-in module: node:sqlite
+    at ModuleLoader.builtinStrategy (node:internal/modules/esm/translators:391:11)
+    at #translate (node:internal/modules/esm/loader:497:12)
+    at ModuleLoader.loadAndTranslate (node:internal/modules/esm/loader:544:27) {
+  code: 'ERR_UNKNOWN_BUILTIN_MODULE'
+}
+
+Node.js v20.20.2
