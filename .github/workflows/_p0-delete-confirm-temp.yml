@@ -18,7 +18,7 @@ jobs:
           ref: p0-delete-confirm-01
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
       - run: npm ci
       - run: node scripts/p0-delete-confirm-01.mjs
