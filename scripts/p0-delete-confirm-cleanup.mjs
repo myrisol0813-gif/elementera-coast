@@ -56,7 +56,7 @@ await patch('tests/danger.test.mjs', [
     `  destructiveActions,\n} from '../elementera-mcp/deploy-pages/public/core/danger.js';`],
   ['legacy helper test',
     `\nconst previousConfirm = globalThis.confirm;\nglobalThis.confirm = () => { throw new Error('legacy native confirm leaked through the unified danger gate'); };\ntry {\n  const result = runConfirmedDanger(() => confirm('legacy confirm'));\n  assert.equal(result, true, 'already-confirmed destructive actions may pass their legacy native guard once');\n} finally {\n  globalThis.confirm = previousConfirm;\n}\n`,
-    `\nfor (const file of sourceFiles) {\n  const source = await readFile(resolve(pages, file), 'utf8');\n  assert.equal(source.includes('confirm('), false, \\`${'${file}'} must not retain a browser-native confirm path\\`);\n}\n`],
+    `\nfor (const file of sourceFiles) {\n  const source = await readFile(resolve(pages, file), 'utf8');\n  assert.equal(source.includes('confirm('), false, file + ' must not retain a browser-native confirm path');\n}\n`],
 ]);
 
 console.log('removed legacy native confirms; unified confirmDanger is the only destructive gate');
