@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { handleLogin, unauthorized, verifySession } from '../functions/auth.js';
+import { onRequest } from '../functions/_middleware.js';
 import { buildModelCatalog } from '../functions/models.js';
 
 const encoder = new TextEncoder();
@@ -48,6 +49,40 @@ const opaqueCrossSite = await handleLogin(new Request('https://coast.test/login'
 assert.equal(opaqueCrossSite.status, 403);
 assert.equal(unauthorized(new Request('https://coast.test/api/health')).status, 401);
 assert.equal(unauthorized(new Request('https://coast.test/')).status, 302);
+
+for (const pathname of [
+  '/manifest.json',
+  '/public/icons/icon-16.png',
+  '/public/icons/icon-32.png',
+  '/public/icons/apple-touch-icon.png',
+  '/public/icons/icon-192.png',
+  '/public/icons/icon-512.png',
+  '/public/icons/icon-maskable-512.png',
+]) {
+  let reachedStaticAsset = false;
+  const response = await onRequest({
+    request: new Request(`https://coast.test${pathname}`),
+    env,
+    next: async () => {
+      reachedStaticAsset = true;
+      return new Response('asset');
+    },
+  });
+  assert.equal(response.status, 200, `${pathname} must remain available to PWA installers`);
+  assert.equal(reachedStaticAsset, true, `${pathname} must bypass only the session gate`);
+}
+const protectedAppAsset = await onRequest({
+  request: new Request('https://coast.test/public/app.js'),
+  env,
+  next: async () => { throw new Error('protected app asset must not bypass the session gate'); },
+});
+assert.equal(protectedAppAsset.status, 401);
+const protectedMainHouse = await onRequest({
+  request: new Request('https://coast.test/'),
+  env,
+  next: async () => { throw new Error('main house must not bypass the session gate'); },
+});
+assert.equal(protectedMainHouse.status, 302);
 
 const catalog = buildModelCatalog({
   data: [
