@@ -144,6 +144,11 @@ for (const copy of [
 ]) assert.ok((chatSource + modelsBackendSource).includes(copy), `missing chat state copy: ${copy}`);
 assert.equal((memorySource.match(/router\.register\('memory'/g) || []).length, 1, 'memory route must have one owner');
 assert.equal(roomsSource.includes("router.register('memory'"), false, 'rooms cannot retain the memory placeholder route');
+assert.equal(memorySource.includes('memory:soil-organize'), false, 'manual soil organize action must stay retired');
+assert.equal(memorySource.includes('整理思维壤'), false, 'manual soil organize label must stay retired');
+for (const action of ['memory:soil-edit', 'memory:soil-clear', 'memory:soil-auto']) {
+  assert.ok(memorySource.includes(action), `soil control must remain available: ${action}`);
+}
 
 const tokenStyles = await read(join(moduleRoot, 'styles/tokens.css'));
 const shellStyles = await read(join(moduleRoot, 'styles/shell.css'));

@@ -73,6 +73,7 @@ const db = new D1Database();
 const conversationA = await createConversation(db, 'A');
 const conversationB = await createConversation(db, 'B');
 const conversationC = await createConversation(db, 'C');
+const conversationD = await createConversation(db, 'D');
 
 assert.equal(estimateContextTokens('海岸'), 2);
 assert.equal(estimateContextTokens('coast'), 2);
@@ -650,6 +651,63 @@ const turn = (id, user, assistant, createdAt) => ({
     variantsByUserVariant: { 0: [{ id: `${id}-assistant`, content: assistant, created_at: createdAt }] },
   },
 });
+await writeConversationState(db, conversationD.id, {
+  version: 4,
+  turns: [turn('soil-guard-turn', '守住旧壤', '自动整理不能把旧壤冲空', '2026-07-14T07:59:00.000Z')],
+});
+const guardedCandidate = {
+  candidate_id: 'guarded-old-candidate',
+  title: '下一轮前先落袋的旧候选',
+  life_core: '旧候选必须先进入待确认袋，再允许展示层换壤。',
+  content: '这条候选只存在于旧思维壤，尚未进入 pending。',
+  usage_hint: '验证下一轮自动整理前的 pending 路径。',
+  avoid_hint: '不要依赖模型再次返回它。',
+  source_refs: [{ turn_id: 'soil-guard-turn', role: 'assistant' }],
+  source_excerpt: '自动整理不能把旧壤冲空',
+};
+await writeSoil(db, conversationD.id, {
+  current_text: '守护旧壤字段',
+  hand_seeds: [{ name: '旧手持种', life_core: '空数组不能清除它', usage_hint: '', avoid_hint: '' }],
+  do_not_repeat: '旧的勿复读不能被空字符串清除',
+  pocket_candidates: [guardedCandidate],
+  manual_locked: false,
+  auto_refresh_enabled: true,
+});
+assert.equal((await listPockets(db, { conversation_id: conversationD.id, status: 'pending' })).length, 0);
+providerContent = JSON.stringify({
+  current_text: '',
+  hand_seeds: [],
+  do_not_repeat: '',
+  pocket_candidates: [],
+});
+const guardedSoilResponse = await routeMemoryApi(new Request('https://coast.test/api/memory/soil/organize', {
+  method: 'POST',
+  headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+  body: JSON.stringify({ conversation_id: conversationD.id, force: false, trigger: 'reply' }),
+}), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
+const guardedSoilData = await guardedSoilResponse.json();
+assert.equal(guardedSoilResponse.status, 200);
+assert.equal(guardedSoilData.soil.hand_seeds[0].life_core, '空数组不能清除它', 'an empty model seed list must preserve non-empty old seeds');
+assert.equal(guardedSoilData.soil.do_not_repeat, '旧的勿复读不能被空字符串清除', 'an empty model do-not-repeat value must preserve the old value');
+assert.equal(guardedSoilData.soil.pocket_candidates.length, 0, 'the soil display may still follow the new empty candidate result');
+assert.equal(guardedSoilData.pocket_sync.created, 1, 'old soil candidates must enter pending before the new soil is written');
+const guardedPending = await listPockets(db, { conversation_id: conversationD.id, status: 'pending' });
+assert.equal(guardedPending.length, 1);
+assert.equal(guardedPending[0].life_core, guardedCandidate.life_core);
+
+const manualClearResponse = await routeMemoryApi(new Request(`https://coast.test/api/memory/soil?conversation_id=${conversationD.id}`, {
+  method: 'PUT',
+  headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+  body: JSON.stringify({ current_text: '', hand_seeds: [], do_not_repeat: '', pocket_candidates: [], manual_locked: true }),
+}), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
+const manualClearData = await manualClearResponse.json();
+assert.equal(manualClearResponse.status, 200);
+assert.equal(manualClearData.soil.current_text, '');
+assert.deepEqual(manualClearData.soil.hand_seeds, []);
+assert.equal(manualClearData.soil.do_not_repeat, '');
+assert.deepEqual(manualClearData.soil.pocket_candidates, []);
+assert.equal(manualClearData.soil.manual_locked, true, 'an explicit manual clear must still clear and lock the soil');
+
 await writeConversationState(db, conversationC.id, {
   version: 4,
   turns: [

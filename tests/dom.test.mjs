@@ -413,6 +413,9 @@ assert.ok(document.querySelector('#overlayRoot').textContent.includes('暂放的
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('这条岔路先放下，以后也许还会长。'));
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('这些内容已先放进待确认袋。确认前不会参与召回。'));
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('待确认袋 · 1'));
+assert.equal(document.querySelector('[data-action="memory:soil-organize"]'), null, 'manual soil organize entry must stay retired');
+assert.ok(document.querySelector('[data-action="memory:soil-edit"]'));
+assert.ok(document.querySelector('[data-action="memory:soil-clear"]'));
 document.querySelector('[data-action="memory:done"]').click();
 await tick();
 assert.equal(document.querySelectorAll('.message.user .action-button').length, 2);

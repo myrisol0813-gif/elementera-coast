@@ -248,23 +248,39 @@ async function organizeSoil(request, env) {
   const fallbackExcerpt = [latestTurn?.user?.content, latestTurn?.assistant?.content]
     .map((part) => String(part || '').replace(/\s+/g, ' ').trim())
     .filter(Boolean).join(' / ').slice(0, 360);
+  const organizedHandSeeds = normalizeHandSeeds(organized.hand_seeds).slice(0, settings.maxHandSeeds);
+  const organizedDoNotRepeat = String(organized.do_not_repeat || '').trim();
+  const organizedPocketCandidates = normalizePocketCandidates(organized.pocket_candidates, {
+    allowedTurnIds,
+    fallbackSourceRef: latestTurn?.turn_id ? { turn_id: latestTurn.turn_id, role: 'turn' } : null,
+    fallbackExcerpt,
+  });
   const soilValue = {
     current_text: String(organized.current_text || '').trim()
       || fallback,
-    hand_seeds: normalizeHandSeeds(organized.hand_seeds).slice(0, settings.maxHandSeeds),
-    do_not_repeat: String(organized.do_not_repeat || ''),
-    pocket_candidates: normalizePocketCandidates(organized.pocket_candidates, {
-      allowedTurnIds,
-      fallbackSourceRef: latestTurn?.turn_id ? { turn_id: latestTurn.turn_id, role: 'turn' } : null,
-      fallbackExcerpt,
-    }),
+    hand_seeds: organizedHandSeeds.length ? organizedHandSeeds : oldSoil.hand_seeds,
+    do_not_repeat: organizedDoNotRepeat || oldSoil.do_not_repeat,
+    pocket_candidates: organizedPocketCandidates,
     manual_locked: oldSoil.manual_locked,
     auto_refresh_enabled: oldSoil.auto_refresh_enabled,
   };
+  const previousPocketSync = degradedReason
+    ? null
+    : await upsertSoilPocketCandidates(env.COAST_CHAT_DB, conversationId, oldSoil.pocket_candidates);
   const writtenSoil = await writeSoil(env.COAST_CHAT_DB, conversationId, soilValue, { automatic: true });
-  const pocketSync = degradedReason
+  const currentPocketSync = degradedReason
     ? null
     : await upsertSoilPocketCandidates(env.COAST_CHAT_DB, conversationId, writtenSoil.pocket_candidates);
+  const syncedPockets = new Map();
+  for (const pocket of [...(previousPocketSync?.pockets || []), ...(currentPocketSync?.pockets || [])]) {
+    if (pocket?.id) syncedPockets.set(pocket.id, pocket);
+  }
+  const pocketSync = previousPocketSync && currentPocketSync ? {
+    created: previousPocketSync.created + currentPocketSync.created,
+    updated: previousPocketSync.updated + currentPocketSync.updated,
+    suppressed: previousPocketSync.suppressed + currentPocketSync.suppressed,
+    pockets: [...syncedPockets.values()],
+  } : null;
   return json({
     ok: true,
     degraded: Boolean(degradedReason),

@@ -190,7 +190,6 @@ export function createMemory({ chat, router, toast, storage }) {
       </div></section>
       <div class="button-row">
         <button type="button" data-action="memory:soil-edit">编辑</button>
-        <button type="button" data-action="memory:soil-organize">整理思维壤</button>
         <button type="button" data-action="memory:soil-clear">清空</button>
         ${soil.manual_locked ? '<button type="button" data-action="memory:soil-auto">恢复自动整理</button>' : ''}
       </div>`;
@@ -511,16 +510,6 @@ export function createMemory({ chat, router, toast, storage }) {
     }
     if (name === 'soil-clear') {
       if (!await clearSoil()) return;
-      return router.refresh();
-    }
-    if (name === 'soil-organize') {
-      const data = await requestJson(API.memorySoilOrganize, {
-        method: 'POST',
-        body: JSON.stringify({ conversation_id: currentId(), force: true, settings: settings() }),
-      });
-      runtime.soils.set(currentId(), data.soil);
-      await fetchPockets(currentId());
-      chat.renderMessages();
       return router.refresh();
     }
     if (name === 'soil-auto') {
