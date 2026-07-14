@@ -3,13 +3,25 @@ import { clamp, id, sanitizeId } from '../core/dom.js';
 const MAX_ERROR_DETAIL = 12000;
 const MAX_TURNS = 100;
 const MAX_VARIANTS = 20;
+const GENERATION_SOURCES = new Set(['chat', 'landing', 'relay', 'lighthouse', 'other']);
 
 const now = () => new Date().toISOString();
+
+function normalizeUsage(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const fields = ['prompt_tokens', 'completion_tokens', 'total_tokens'];
+  const values = fields.map((field) => Number(value[field]));
+  if (!values.every((number) => Number.isFinite(number) && number >= 0)) return null;
+  return Object.fromEntries(fields.map((field, index) => [field, Math.trunc(values[index])]));
+}
 
 export function normalizeVariant(value = {}, prefix = 'variant') {
   if (typeof value.content !== 'string') return null;
   const errorDetail = String(value.errorDetail || '').trim().slice(0, MAX_ERROR_DETAIL);
   const finishReason = String(value.finish_reason || '').trim().slice(0, 80);
+  const modelId = String(value.model_id || '').trim().slice(0, 180);
+  const usage = normalizeUsage(value.usage);
+  const generationSource = GENERATION_SOURCES.has(value.generation_source) ? value.generation_source : '';
   return {
     id: sanitizeId(value.id || id(prefix), prefix),
     content: value.content,
@@ -18,7 +30,10 @@ export function normalizeVariant(value = {}, prefix = 'variant') {
     favorite: Boolean(value.favorite),
     ...(value.hidden === true ? { hidden: true } : {}),
     ...(value.input_type === 'landing_letter' ? { input_type: 'landing_letter' } : {}),
+    ...(modelId ? { model_id: modelId } : {}),
+    ...(usage ? { usage } : {}),
     ...(finishReason ? { finish_reason: finishReason } : {}),
+    ...(generationSource ? { generation_source: generationSource } : {}),
     ...(errorDetail ? { errorDetail } : {}),
   };
 }
@@ -179,10 +194,24 @@ export function updateAssistantVariant(value, turnId, userIndex, assistantIndex,
   }
   if ('liked' in patch) variant.liked = Boolean(patch.liked);
   if ('favorite' in patch) variant.favorite = Boolean(patch.favorite);
+  if ('model_id' in patch) {
+    const modelId = String(patch.model_id || '').trim().slice(0, 180);
+    if (modelId) variant.model_id = modelId;
+    else delete variant.model_id;
+  }
+  if ('usage' in patch) {
+    const usage = normalizeUsage(patch.usage);
+    if (usage) variant.usage = usage;
+    else delete variant.usage;
+  }
   if ('finish_reason' in patch) {
     const finishReason = String(patch.finish_reason || '').trim().slice(0, 80);
     if (finishReason) variant.finish_reason = finishReason;
     else delete variant.finish_reason;
+  }
+  if ('generation_source' in patch) {
+    if (GENERATION_SOURCES.has(patch.generation_source)) variant.generation_source = patch.generation_source;
+    else delete variant.generation_source;
   }
   state.updated_at = now();
   return state;
