@@ -56,6 +56,7 @@ async function createLatestSchema(db) {
     deleted_at INTEGER,
     title_manual INTEGER DEFAULT 0,
     title_generated_at INTEGER,
+    title_model_id TEXT,
     archived_at INTEGER
   )`);
   await run(db, `CREATE TABLE IF NOT EXISTS conversation_states (
@@ -92,6 +93,7 @@ async function createLatestSchema(db) {
 
   await ensureColumn(db, 'conversations', 'title_manual', 'INTEGER DEFAULT 0');
   await ensureColumn(db, 'conversations', 'title_generated_at', 'INTEGER DEFAULT NULL');
+  await ensureColumn(db, 'conversations', 'title_model_id', 'TEXT DEFAULT NULL');
   await ensureColumn(db, 'conversations', 'archived_at', 'INTEGER DEFAULT NULL');
 }
 
