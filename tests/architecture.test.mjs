@@ -13,7 +13,7 @@ const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 const headers = await read(join(pages, '_headers'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-07"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-08"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 
@@ -84,7 +84,7 @@ assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(join(pages, 'service-worker.js'));
-assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-07';$/m);
+assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-08';$/m);
 assert.ok(worker.includes("url.pathname.startsWith('/api/')"));
 assert.equal(worker.includes("caches.match('/index.html')"), true);
 assert.equal(worker.includes('modules/legacy'), false);
@@ -174,7 +174,7 @@ assert.equal(/_middleware\.full|legacyOnRequest|COAST_CHAT_STORE/.test(middlewar
 assert.equal(/readLegacy|importLegacy|\bturns\s+WHERE|user_variants|assistant_variants/.test(storeSource), false);
 assert.ok(chatRouter.includes("source: 'd1-json-v4'"));
 assert.ok(storeSource.includes('conversation_states'));
-for (const table of ['conversation_soils', 'memory_pockets', 'memory_entries']) {
+for (const table of ['conversation_soils', 'memory_pockets', 'pocket_recall_memberships', 'memory_entries']) {
   assert.ok(memoryStoreSource.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `missing memory table: ${table}`);
 }
 assert.ok(embeddingSource.includes("AI.run(MEMORY_CONFIG.vector.model, { text: ["));
@@ -182,9 +182,16 @@ assert.ok(embeddingSource.includes('vector.length'));
 assert.equal(/dimensions\s*[:=]\s*\d+/.test(embeddingSource + memoryRecallSource + memoryRouterSource), false, 'embedding dimensions cannot be assumed');
 assert.ok(embeddingSource.includes('COAST_MEMORY_VECTOR.upsert'));
 assert.ok(embeddingSource.includes('COAST_MEMORY_VECTOR.deleteByIds'));
-for (const pool of ['conversation_seeds', 'conversation_memories', 'global_seeds', 'global_memories']) {
+for (const pool of ['conversation_seeds', 'conversation_memories', 'conversation_pockets', 'global_seeds', 'global_memories', 'global_pockets']) {
   assert.ok(memoryRecallSource.includes(pool), `missing recall pool: ${pool}`);
 }
+assert.ok(memoryStoreSource.includes('normalizePocketCandidates'));
+assert.ok(memoryStoreSource.includes('pocketFingerprint'));
+assert.ok(memoryStoreSource.includes("action === 'confirm_pocket'"));
+assert.ok(embeddingSource.includes("`${pocket.id}:conversation`"));
+assert.ok(embeddingSource.includes("`${pocket.id}:global`"));
+assert.ok(memoryRouterSource.includes('upsertSoilPocketCandidates'));
+assert.ok(memorySource.includes('确认落袋'));
 assert.ok(chatRouter.includes('buildMemoryContext'));
 assert.ok(chatRouter.includes("role: 'system'"));
 assert.ok(chatRouter.includes("'/api/chat/landing-letter'"));

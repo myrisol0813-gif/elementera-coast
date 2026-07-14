@@ -184,13 +184,37 @@ globalThis.fetch = async (input, options = {}) => {
     if (body.trigger === 'landing' && current.manual_locked) {
       return response({ ok: true, skipped: true, reason: 'manual_locked', soil: current });
     }
+    const structuredCandidate = {
+      candidate_id: 'mock-unfinished-tide',
+      title: '暂放的潮汐岔路',
+      life_core: '这条岔路现在不用，但以后仍可能长出新的理解。',
+      content: '把当前两轮里关于潮汐岔路的上下文一起保留下来。',
+      usage_hint: '再次谈到这条岔路时重新触碰。',
+      avoid_hint: '不要把它说成已经确认的长期记忆。',
+      source_refs: [{ turn_id: 'mock-active-turn', role: 'turn' }],
+      source_excerpt: '这条岔路先放下，以后也许还会长。',
+    };
+    const discoversPocket = body.conversation_id === 'conv-1' && body.trigger === 'reply';
     const soil = {
       ...current,
       current_text: '继续测试当前窗口',
       hand_seeds: [{ name: '测试种', life_core: '只在需要时轻轻递入', usage_hint: '', avoid_hint: '不要复读' }],
+      pocket_candidates: discoversPocket ? [structuredCandidate] : current.pocket_candidates,
       revision: current.revision + 1,
     };
     soils.set(body.conversation_id, soil);
+    if (discoversPocket && !memoryPockets.some((pocket) => pocket.fingerprint === 'mock:conv-1:unfinished-tide')) {
+      memoryPockets.unshift({
+        id: 'soil-pocket-conv-1',
+        conversation_id: body.conversation_id,
+        source_type: 'soil',
+        source_ref: { conversation_id: body.conversation_id, candidate_id: structuredCandidate.candidate_id },
+        source_text: structuredCandidate.content,
+        fingerprint: 'mock:conv-1:unfinished-tide',
+        status: 'pending',
+        ...structuredCandidate,
+      });
+    }
     return response({ ok: true, soil });
   }
   if (url.pathname === '/api/memory/pockets') {
@@ -208,6 +232,17 @@ globalThis.fetch = async (input, options = {}) => {
     if (['stone', 'discard'].includes(body.action)) {
       pocket.status = body.action === 'stone' ? 'stone' : 'discarded';
       return response({ ok: true, pocket, entry: null });
+    }
+    if (body.action === 'confirm_pocket') {
+      Object.assign(pocket, body, {
+        status: 'confirmed',
+        resolved_entry_id: null,
+        memberships: [
+          { pocket_id: pocket.id, scope: 'conversation', conversation_id: pocket.conversation_id },
+          { pocket_id: pocket.id, scope: 'global', conversation_id: null },
+        ],
+      });
+      return response({ ok: true, pocket, entry: null, memberships: pocket.memberships });
     }
     const global = body.action.startsWith('global_');
     const entry = {
@@ -374,6 +409,10 @@ formalFinishReason = 'stop';
 document.querySelector('.thought-soil-entry').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'thought-soil', 'thought soil route');
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('勿复读'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('暂放的潮汐岔路'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('这条岔路先放下，以后也许还会长。'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('这些内容已先放进待确认袋。确认前不会参与召回。'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('待确认袋 · 1'));
 document.querySelector('[data-action="memory:done"]').click();
 await tick();
 assert.equal(document.querySelectorAll('.message.user .action-button').length, 2);
@@ -402,10 +441,11 @@ document.querySelector('.message.assistant').dispatchEvent(new window.MouseEvent
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory-pocket-action', 'message pocket action');
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('落袋只进入待确认袋，不会自动写入记忆。'));
 document.querySelector('[data-action="memory:pocket-save"][data-source="assistant"]').click();
-await waitFor(() => memoryPockets.length === 1, 'active assistant pocket');
-assert.equal(memoryPockets[0].source_text, 'mock: a1 edited');
-assert.equal(memoryPockets[0].source_ref.user_variant, 1);
-assert.equal(memoryPockets[0].source_ref.role, 'assistant');
+await waitFor(() => memoryPockets.length === 2, 'active assistant pocket');
+const manualPocket = memoryPockets.find((pocket) => pocket.source_type === 'message');
+assert.equal(manualPocket.source_text, 'mock: a1 edited');
+assert.equal(manualPocket.source_ref.user_variant, 1);
+assert.equal(manualPocket.source_ref.role, 'assistant');
 document.querySelector('.message.assistant [data-action="chat:delete-assistant"]').click();
 await tick();
 assert.equal(document.querySelectorAll('.message.assistant').length, 0);
@@ -431,8 +471,20 @@ await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'm
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('当前窗口种子'));
 document.querySelector('[data-action="memory:pockets"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory-pockets', 'pending pocket route');
-document.querySelector('[data-action="memory:pocket-resolve"][data-destination="conversation_seed"]').click();
-await waitFor(() => memoryPockets[0].status === 'confirmed', 'resolve pocket to conversation seed');
+const autoPocketCard = document.querySelector('[data-pocket-id="soil-pocket-conv-1"]');
+assert.ok(autoPocketCard.textContent.includes('暂放的潮汐岔路'));
+assert.ok(autoPocketCard.textContent.includes('生命核：这条岔路现在不用，但以后仍可能长出新的理解。'));
+assert.ok(autoPocketCard.textContent.includes('把当前两轮里关于潮汐岔路的上下文一起保留下来。'));
+assert.ok(autoPocketCard.textContent.includes('来源：这条岔路先放下，以后也许还会长。'));
+assert.ok(autoPocketCard.textContent.includes('使用：再次谈到这条岔路时重新触碰。'));
+assert.ok(autoPocketCard.textContent.includes('避免：不要把它说成已经确认的长期记忆。'));
+assert.ok(autoPocketCard.textContent.includes('确认后会同时进入当前窗口落袋与总落袋。当前窗口更容易召回；总落袋默认低频沉睡。'));
+autoPocketCard.querySelector('[data-action="memory:pocket-resolve"][data-destination="confirm_pocket"]').click();
+await waitFor(() => memoryPockets.find((pocket) => pocket.id === 'soil-pocket-conv-1')?.status === 'confirmed', 'confirm canonical pocket');
+assert.equal(memoryPockets.find((pocket) => pocket.id === 'soil-pocket-conv-1').memberships.length, 2);
+const manualPocketCard = document.querySelector(`[data-pocket-id="${manualPocket.id}"]`);
+manualPocketCard.querySelector('[data-action="memory:pocket-resolve"][data-destination="conversation_seed"]').click();
+await waitFor(() => manualPocket.status === 'confirmed', 'resolve manual pocket to conversation seed');
 document.querySelector('[data-action="router:back"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory', 'return to memory library');
 assert.ok(document.querySelector('.memory-entry-card')?.textContent.includes('mock: a1 edited'));

@@ -1,5 +1,11 @@
 import { MEMORY_CONFIG } from './memory-config.js';
-import { embeddingCounts, pendingEmbeddingEntries, updateEmbeddingState } from './memory-store.js';
+import {
+  embeddingCounts,
+  pendingEmbeddingEntries,
+  pendingEmbeddingPockets,
+  updateEmbeddingState,
+  updatePocketEmbeddingState,
+} from './memory-store.js';
 
 const dimensionPromises = new WeakMap();
 
@@ -74,6 +80,26 @@ function metadata(entry) {
   };
 }
 
+export function pocketVectorIds(pocket) {
+  return [`${pocket.id}:conversation`, `${pocket.id}:global`];
+}
+
+function isCanonicalPocket(pocket) {
+  return pocket?.status === 'confirmed' && !pocket.resolved_entry_id;
+}
+
+function pocketMetadata(pocket, scope) {
+  return {
+    user_id: MEMORY_CONFIG.owner,
+    entry_id: pocket.id,
+    source_entry_id: pocket.id,
+    entry_type: 'pocket',
+    scope,
+    conversation_id: scope === 'conversation' ? pocket.conversation_id : '',
+    status: pocket.status,
+  };
+}
+
 export async function deleteEntryVector(env, entry) {
   if (!entry?.vector_id || !hasVectorBinding(env) || typeof env.COAST_MEMORY_VECTOR.deleteByIds !== 'function') {
     return { deleted: false, reason: 'vector_not_connected' };
@@ -84,6 +110,21 @@ export async function deleteEntryVector(env, entry) {
   } catch (error) {
     console.error('[memory-vector:delete]', error);
     return { deleted: false, reason: 'vector_delete_failed' };
+  }
+}
+
+export async function deletePocketVectors(env, pocket) {
+  const storedIds = Array.isArray(pocket?.vector_ids) ? pocket.vector_ids : [];
+  const ids = [...new Set((storedIds.length ? storedIds : isCanonicalPocket(pocket) ? pocketVectorIds(pocket) : []).filter(Boolean))];
+  if (!ids.length || !hasVectorBinding(env) || typeof env.COAST_MEMORY_VECTOR.deleteByIds !== 'function') {
+    return { deleted: false, ids, reason: 'vector_not_connected' };
+  }
+  try {
+    await env.COAST_MEMORY_VECTOR.deleteByIds(ids);
+    return { deleted: true, ids };
+  } catch (error) {
+    console.error('[pocket-vector:delete]', error);
+    return { deleted: false, ids, reason: 'vector_delete_failed' };
   }
 }
 
@@ -126,11 +167,58 @@ export async function syncEntryVector(env, db, entry) {
   }
 }
 
+export async function syncPocketVectors(env, db, pocket) {
+  if (!pocket || pocket.deleted_at) return { pocket, indexed: false, reason: 'not_confirmed' };
+  if (!isCanonicalPocket(pocket)) {
+    const removal = await deletePocketVectors(env, pocket);
+    const updated = await updatePocketEmbeddingState(db, pocket.id, {
+      vector_ids: removal.deleted ? [] : pocket.vector_ids,
+      embedding_status: removal.deleted ? 'pending' : pocket.embedding_status,
+      embedded_at: removal.deleted ? null : undefined,
+    });
+    return { pocket: updated, indexed: false, reason: 'status_not_recallable' };
+  }
+  if (!hasAiBinding(env) || !hasVectorBinding(env)) return { pocket, indexed: false, reason: 'vector_not_connected' };
+  try {
+    const values = await embedText(env, embeddingText(pocket));
+    const ids = pocketVectorIds(pocket);
+    await env.COAST_MEMORY_VECTOR.upsert([
+      { id: ids[0], values, metadata: pocketMetadata(pocket, 'conversation') },
+      { id: ids[1], values, metadata: pocketMetadata(pocket, 'global') },
+    ]);
+    const updated = await updatePocketEmbeddingState(db, pocket.id, {
+      vector_ids: ids,
+      embedding_model: MEMORY_CONFIG.vector.model,
+      embedding_version: MEMORY_CONFIG.vector.version,
+      embedding_status: 'ready',
+      embedded_at: Date.now(),
+    });
+    return { pocket: updated, indexed: true, dimensions: values.length, vector_ids: ids };
+  } catch (error) {
+    console.error('[pocket-vector:upsert]', error);
+    const updated = await updatePocketEmbeddingState(db, pocket.id, {
+      embedding_model: MEMORY_CONFIG.vector.model,
+      embedding_version: MEMORY_CONFIG.vector.version,
+      embedding_status: 'error',
+    });
+    return { pocket: updated, indexed: false, reason: 'vector_upsert_failed' };
+  }
+}
+
 export async function syncPendingEntries(env, db, limit = 4) {
   if (!hasAiBinding(env) || !hasVectorBinding(env)) return [];
   const entries = await pendingEmbeddingEntries(db, limit);
+  const pockets = await pendingEmbeddingPockets(db, limit);
+  const queue = [
+    ...entries.map((entry) => ({ kind: 'entry', value: entry })),
+    ...pockets.map((pocket) => ({ kind: 'pocket', value: pocket })),
+  ].sort((left, right) => Date.parse(left.value.updated_at || 0) - Date.parse(right.value.updated_at || 0)).slice(0, limit);
   const results = [];
-  for (const entry of entries) results.push(await syncEntryVector(env, db, entry));
+  for (const item of queue) {
+    results.push(item.kind === 'pocket'
+      ? await syncPocketVectors(env, db, item.value)
+      : await syncEntryVector(env, db, item.value));
+  }
   return results;
 }
 
@@ -143,7 +231,7 @@ export async function queryVector(env, query, { topK = 16, filter, values = null
     ...(filter ? { filter } : {}),
   });
   return (Array.isArray(result?.matches) ? result.matches : []).map((match) => ({
-    id: String(match.metadata?.entry_id || match.id || ''),
+    id: String(match.metadata?.source_entry_id || match.metadata?.entry_id || match.id || ''),
     score: Number(match.score || 0),
     metadata: match.metadata || {},
   })).filter((match) => match.id);

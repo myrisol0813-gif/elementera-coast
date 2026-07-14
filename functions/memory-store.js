@@ -9,9 +9,11 @@ const MAX_LIFE_CORE = 2000;
 const MAX_HINT = 1200;
 const MAX_ENTRY_CONTENT = 6000;
 const MAX_SOIL_TEXT = 4000;
+const MAX_SOURCE_EXCERPT = 1200;
 const MAX_HAND_SEEDS = MEMORY_CONFIG.soil.maxHandSeeds;
 const POCKET_SOURCE_TYPES = new Set(['message', 'turn', 'selection', 'soil']);
-const POCKET_STATUSES = new Set(['pending', 'confirmed', 'discarded', 'stone']);
+const POCKET_STATUSES = new Set(['pending', 'confirmed', 'discarded', 'stone', 'archived']);
+const POCKET_MEMBERSHIP_SCOPES = new Set(['conversation', 'global']);
 const ENTRY_TYPES = new Set(['seed', 'memory']);
 const ENTRY_SCOPES = new Set(['conversation', 'global']);
 const ENTRY_STATUSES = new Set(['active', 'dormant', 'archived', 'stone', 'discarded']);
@@ -66,6 +68,17 @@ async function all(db, sql, params = []) {
   return result?.results || [];
 }
 
+async function ensureColumn(db, table, column, declaration) {
+  const columns = await all(db, `PRAGMA table_info(${table})`);
+  if (columns.some((item) => item.name === column)) return;
+  try {
+    await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${declaration}`).run();
+  } catch (error) {
+    const current = await all(db, `PRAGMA table_info(${table})`);
+    if (!current.some((item) => item.name === column)) throw error;
+  }
+}
+
 async function initializeMemorySchema(db) {
   await ensureChatSchema(db);
   await run(db, `CREATE TABLE IF NOT EXISTS conversation_soils (
@@ -91,11 +104,56 @@ async function initializeMemorySchema(db) {
     suggested_title TEXT NOT NULL DEFAULT '',
     suggested_life_core TEXT NOT NULL DEFAULT '',
     suggested_usage_hint TEXT NOT NULL DEFAULT '',
+    suggested_avoid_hint TEXT NOT NULL DEFAULT '',
+    candidate_id TEXT DEFAULT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    life_core TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    usage_hint TEXT NOT NULL DEFAULT '',
+    avoid_hint TEXT NOT NULL DEFAULT '',
+    source_refs_json TEXT NOT NULL DEFAULT '[]',
+    source_excerpt TEXT NOT NULL DEFAULT '',
+    fingerprint TEXT DEFAULT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     resolved_entry_id TEXT DEFAULT NULL,
+    recall_count INTEGER NOT NULL DEFAULT 0,
+    last_recalled_at INTEGER DEFAULT NULL,
+    vector_ids_json TEXT NOT NULL DEFAULT '[]',
+    embedding_model TEXT DEFAULT NULL,
+    embedding_version TEXT DEFAULT NULL,
+    embedding_status TEXT NOT NULL DEFAULT 'pending',
+    embedded_at INTEGER DEFAULT NULL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     deleted_at INTEGER DEFAULT NULL,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+  )`);
+  for (const [column, declaration] of [
+    ['suggested_avoid_hint', "TEXT NOT NULL DEFAULT ''"],
+    ['candidate_id', 'TEXT DEFAULT NULL'],
+    ['title', "TEXT NOT NULL DEFAULT ''"],
+    ['life_core', "TEXT NOT NULL DEFAULT ''"],
+    ['content', "TEXT NOT NULL DEFAULT ''"],
+    ['usage_hint', "TEXT NOT NULL DEFAULT ''"],
+    ['avoid_hint', "TEXT NOT NULL DEFAULT ''"],
+    ['source_refs_json', "TEXT NOT NULL DEFAULT '[]'"],
+    ['source_excerpt', "TEXT NOT NULL DEFAULT ''"],
+    ['fingerprint', 'TEXT DEFAULT NULL'],
+    ['recall_count', 'INTEGER NOT NULL DEFAULT 0'],
+    ['last_recalled_at', 'INTEGER DEFAULT NULL'],
+    ['vector_ids_json', "TEXT NOT NULL DEFAULT '[]'"],
+    ['embedding_model', 'TEXT DEFAULT NULL'],
+    ['embedding_version', 'TEXT DEFAULT NULL'],
+    ['embedding_status', "TEXT NOT NULL DEFAULT 'pending'"],
+    ['embedded_at', 'INTEGER DEFAULT NULL'],
+  ]) await ensureColumn(db, 'memory_pockets', column, declaration);
+  await run(db, `CREATE TABLE IF NOT EXISTS pocket_recall_memberships (
+    pocket_id TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    conversation_id TEXT DEFAULT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (pocket_id, scope),
+    FOREIGN KEY (pocket_id) REFERENCES memory_pockets(id),
     FOREIGN KEY (conversation_id) REFERENCES conversations(id)
   )`);
   await run(db, `CREATE TABLE IF NOT EXISTS memory_entries (
@@ -130,6 +188,11 @@ async function initializeMemorySchema(db) {
   await run(db, 'CREATE INDEX IF NOT EXISTS idx_soils_updated ON conversation_soils(updated_at)');
   await run(db, `CREATE INDEX IF NOT EXISTS idx_pockets_conversation_status
     ON memory_pockets(conversation_id, status, created_at)`);
+  await run(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_pockets_fingerprint
+    ON memory_pockets(user_id, fingerprint)
+    WHERE fingerprint IS NOT NULL AND fingerprint <> ''`);
+  await run(db, `CREATE INDEX IF NOT EXISTS idx_pocket_memberships_scope
+    ON pocket_recall_memberships(scope, conversation_id, pocket_id)`);
   await run(db, `CREATE INDEX IF NOT EXISTS idx_entries_scope_type
     ON memory_entries(user_id, scope, entry_type, status, updated_at)`);
   await run(db, `CREATE INDEX IF NOT EXISTS idx_entries_conversation
@@ -175,9 +238,71 @@ export function normalizeHandSeeds(value) {
     .slice(0, MAX_HAND_SEEDS);
 }
 
-function normalizePocketCandidates(value) {
+function stableCandidateKey(value) {
+  let hash = 2166136261;
+  for (const character of String(value || '').normalize('NFKC')) {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function normalizeCandidateSourceRef(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const turnId = clip(value.turn_id ?? value.turnId, 160);
+  const role = String(value.role || '').trim();
+  if (!turnId || !['user', 'assistant', 'turn'].includes(role)) return null;
+  return { turn_id: turnId, role };
+}
+
+function normalizeCandidateId(value, lifeCore) {
+  const supplied = String(value || '').replace(/[^\w:.-]/g, '_').replace(/^_+|_+$/g, '').slice(0, 160);
+  return supplied || `candidate_${stableCandidateKey(lifeCore)}`;
+}
+
+function normalizePocketCandidate(value, options = {}) {
+  if (typeof value === 'string') {
+    const text = clip(value, MAX_LIFE_CORE);
+    if (!text) return null;
+    return {
+      candidate_id: normalizeCandidateId('', text),
+      title: clip(text, MAX_TITLE),
+      life_core: text,
+      content: clip(text, MAX_ENTRY_CONTENT),
+      usage_hint: '',
+      avoid_hint: '',
+      source_refs: [],
+      source_excerpt: '',
+    };
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const title = clip(value.title ?? value.name, MAX_TITLE);
+  const lifeCore = clip(value.life_core ?? value.lifeCore ?? value.text ?? value.content ?? title, MAX_LIFE_CORE);
+  if (!title && !lifeCore) return null;
+  const allowedTurnIds = options.allowedTurnIds instanceof Set ? options.allowedTurnIds : null;
+  let sourceRefs = (Array.isArray(value.source_refs) ? value.source_refs : [])
+    .map(normalizeCandidateSourceRef)
+    .filter((reference) => reference && (!allowedTurnIds || allowedTurnIds.has(reference.turn_id)))
+    .slice(0, 8);
+  if (!sourceRefs.length && options.fallbackSourceRef) {
+    const fallback = normalizeCandidateSourceRef(options.fallbackSourceRef);
+    if (fallback && (!allowedTurnIds || allowedTurnIds.has(fallback.turn_id))) sourceRefs = [fallback];
+  }
+  return {
+    candidate_id: normalizeCandidateId(value.candidate_id ?? value.candidateId, lifeCore || title),
+    title: title || clip(lifeCore, MAX_TITLE),
+    life_core: lifeCore || title,
+    content: clip(value.content ?? value.text ?? lifeCore ?? title, MAX_ENTRY_CONTENT),
+    usage_hint: clip(value.usage_hint ?? value.usageHint, MAX_HINT),
+    avoid_hint: clip(value.avoid_hint ?? value.avoidHint, MAX_HINT),
+    source_refs: sourceRefs,
+    source_excerpt: clip(value.source_excerpt ?? value.sourceExcerpt ?? options.fallbackExcerpt, MAX_SOURCE_EXCERPT),
+  };
+}
+
+export function normalizePocketCandidates(value, options = {}) {
   return (Array.isArray(value) ? value : [])
-    .map((item) => clip(typeof item === 'string' ? item : item?.text ?? item?.life_core ?? item?.name, MAX_LIFE_CORE))
+    .map((item) => normalizePocketCandidate(item, options))
     .filter(Boolean)
     .slice(0, MAX_HAND_SEEDS);
 }
@@ -254,17 +379,50 @@ function sourceRef(value) {
 }
 
 function pocketFromRow(row) {
+  const reference = sourceRef(parseJson(row.source_ref_json, {}));
+  let sourceRefs = (Array.isArray(parseJson(row.source_refs_json, [])) ? parseJson(row.source_refs_json, []) : [])
+    .map(normalizeCandidateSourceRef)
+    .filter(Boolean)
+    .slice(0, 8);
+  if (!sourceRefs.length) {
+    const legacyReference = normalizeCandidateSourceRef(reference);
+    if (legacyReference) sourceRefs = [legacyReference];
+  }
+  const title = row.title || row.suggested_title || clip(row.source_text, MAX_TITLE);
+  const lifeCore = row.life_core || row.suggested_life_core || row.source_text || title;
+  const content = row.content || row.source_text || lifeCore;
+  const usageHint = row.usage_hint || row.suggested_usage_hint || '';
+  const avoidHint = row.avoid_hint || row.suggested_avoid_hint || '';
   return {
     id: row.id,
+    entry_type: 'pocket',
     conversation_id: row.conversation_id,
     source_type: row.source_type,
-    source_ref: sourceRef(parseJson(row.source_ref_json, {})),
+    source_ref: reference,
     source_text: row.source_text || '',
-    suggested_title: row.suggested_title || '',
-    suggested_life_core: row.suggested_life_core || '',
-    suggested_usage_hint: row.suggested_usage_hint || '',
+    candidate_id: row.candidate_id || normalizeCandidateId('', lifeCore),
+    title,
+    life_core: lifeCore,
+    content,
+    usage_hint: usageHint,
+    avoid_hint: avoidHint,
+    source_refs: sourceRefs,
+    source_excerpt: row.source_excerpt || '',
+    fingerprint: row.fingerprint || null,
+    suggested_title: title,
+    suggested_life_core: lifeCore,
+    suggested_usage_hint: usageHint,
+    suggested_avoid_hint: avoidHint,
     status: row.status,
     resolved_entry_id: row.resolved_entry_id || null,
+    user_confirmed: row.status === 'confirmed',
+    recall_count: Number(row.recall_count || 0),
+    last_recalled_at: iso(row.last_recalled_at),
+    vector_ids: (Array.isArray(parseJson(row.vector_ids_json, [])) ? parseJson(row.vector_ids_json, []) : []).map(String).filter(Boolean),
+    embedding_model: row.embedding_model || null,
+    embedding_version: row.embedding_version || null,
+    embedding_status: row.embedding_status || 'pending',
+    embedded_at: iso(row.embedded_at),
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
     deleted_at: iso(row.deleted_at),
@@ -279,6 +437,11 @@ async function requirePocketRow(db, id) {
   return row;
 }
 
+export async function getPocket(db, id) {
+  await ensureMemorySchema(db);
+  return pocketFromRow(await requirePocketRow(db, id));
+}
+
 export async function createPocket(db, value = {}) {
   await ensureMemorySchema(db);
   const conversationId = sanitizeId(value.conversation_id, 'conversation');
@@ -288,20 +451,51 @@ export async function createPocket(db, value = {}) {
   const sourceText = clip(value.source_text, MAX_SOURCE_TEXT);
   if (!sourceText) throw new MemoryStoreError('source_text_required', '没有可以落袋的内容。');
   const reference = sourceRef(value.source_ref);
+  let sourceRefs = (Array.isArray(value.source_refs) ? value.source_refs : [])
+    .map(normalizeCandidateSourceRef)
+    .filter(Boolean)
+    .slice(0, 8);
+  if (!sourceRefs.length) {
+    const legacyReference = normalizeCandidateSourceRef(reference);
+    if (legacyReference) sourceRefs = [legacyReference];
+  }
+  const title = clip(value.title ?? value.suggested_title ?? sourceText.replace(/\s+/g, ' '), MAX_TITLE);
+  const lifeCore = clip(value.life_core ?? value.suggested_life_core ?? sourceText, MAX_LIFE_CORE);
+  const content = clip(value.content ?? sourceText, MAX_ENTRY_CONTENT);
+  const usageHint = clip(value.usage_hint ?? value.suggested_usage_hint, MAX_HINT);
+  const avoidHint = clip(value.avoid_hint ?? value.suggested_avoid_hint, MAX_HINT);
+  const sourceExcerpt = clip(value.source_excerpt, MAX_SOURCE_EXCERPT);
+  const fingerprint = clip(value.fingerprint, 160) || null;
   const id = sanitizeId(crypto.randomUUID(), 'pocket');
   const timestamp = Date.now();
   await run(db, `INSERT INTO memory_pockets (
     id, user_id, conversation_id, source_type, source_ref_json, source_text,
-    suggested_title, suggested_life_core, suggested_usage_hint, status,
-    resolved_entry_id, created_at, updated_at, deleted_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, '', '', 'pending', NULL, ?, ?, NULL)`, [
+    suggested_title, suggested_life_core, suggested_usage_hint, suggested_avoid_hint,
+    candidate_id, title, life_core, content, usage_hint, avoid_hint,
+    source_refs_json, source_excerpt, fingerprint, status, resolved_entry_id,
+    recall_count, last_recalled_at, vector_ids_json, embedding_model,
+    embedding_version, embedding_status, embedded_at, created_at, updated_at, deleted_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+    'pending', NULL, 0, NULL, '[]', NULL, NULL, 'pending', NULL, ?, ?, NULL)`, [
     id,
     MEMORY_OWNER_ID,
     conversationId,
     sourceType,
     JSON.stringify(reference),
     sourceText,
-    clip(value.suggested_title || sourceText.replace(/\s+/g, ' '), MAX_TITLE),
+    title,
+    lifeCore,
+    usageHint,
+    avoidHint,
+    normalizeCandidateId(value.candidate_id, lifeCore),
+    title,
+    lifeCore,
+    content,
+    usageHint,
+    avoidHint,
+    JSON.stringify(sourceRefs),
+    sourceExcerpt,
+    fingerprint,
     timestamp,
     timestamp,
   ]);
@@ -325,13 +519,44 @@ export async function patchPocket(db, id, value = {}) {
   const row = await requirePocketRow(db, id);
   const status = value.status == null ? row.status : String(value.status);
   if (!POCKET_STATUSES.has(status)) throw new MemoryStoreError('invalid_pocket_status', '待确认袋状态无效。');
+  if (status === 'confirmed' && row.status !== 'confirmed') {
+    throw new MemoryStoreError('pocket_confirm_requires_resolve', '请使用“确认落袋”完成双路径确认。', 409);
+  }
+  const current = pocketFromRow(row);
+  const title = value.title == null && value.suggested_title == null
+    ? current.title : clip(value.title ?? value.suggested_title, MAX_TITLE);
+  const lifeCore = value.life_core == null && value.suggested_life_core == null
+    ? current.life_core : clip(value.life_core ?? value.suggested_life_core, MAX_LIFE_CORE);
+  if (!title || !lifeCore) throw new MemoryStoreError('pocket_fields_required', '落袋标题与生命核不能为空。');
+  const content = value.content == null && value.source_text == null
+    ? current.content : clip(value.content ?? value.source_text, MAX_ENTRY_CONTENT);
+  const usageHint = value.usage_hint == null && value.suggested_usage_hint == null
+    ? current.usage_hint : clip(value.usage_hint ?? value.suggested_usage_hint, MAX_HINT);
+  const avoidHint = value.avoid_hint == null && value.suggested_avoid_hint == null
+    ? current.avoid_hint : clip(value.avoid_hint ?? value.suggested_avoid_hint, MAX_HINT);
+  const sourceRefs = value.source_refs == null
+    ? current.source_refs
+    : (Array.isArray(value.source_refs) ? value.source_refs : []).map(normalizeCandidateSourceRef).filter(Boolean).slice(0, 8);
   const timestamp = Date.now();
   await run(db, `UPDATE memory_pockets SET
-    suggested_title = ?, suggested_life_core = ?, suggested_usage_hint = ?, status = ?, updated_at = ?
+    source_text = ?, suggested_title = ?, suggested_life_core = ?, suggested_usage_hint = ?,
+    suggested_avoid_hint = ?, candidate_id = ?, title = ?, life_core = ?, content = ?,
+    usage_hint = ?, avoid_hint = ?, source_refs_json = ?, source_excerpt = ?,
+    status = ?, embedding_status = 'pending', updated_at = ?
     WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, [
-    value.suggested_title == null ? row.suggested_title : clip(value.suggested_title, MAX_TITLE),
-    value.suggested_life_core == null ? row.suggested_life_core : clip(value.suggested_life_core, MAX_LIFE_CORE),
-    value.suggested_usage_hint == null ? row.suggested_usage_hint : clip(value.suggested_usage_hint, MAX_HINT),
+    content,
+    title,
+    lifeCore,
+    usageHint,
+    avoidHint,
+    value.candidate_id == null ? current.candidate_id : normalizeCandidateId(value.candidate_id, lifeCore),
+    title,
+    lifeCore,
+    content,
+    usageHint,
+    avoidHint,
+    JSON.stringify(sourceRefs),
+    value.source_excerpt == null ? current.source_excerpt : clip(value.source_excerpt, MAX_SOURCE_EXCERPT),
     status,
     timestamp,
     row.id,
@@ -344,9 +569,109 @@ export async function deletePocket(db, id) {
   await ensureMemorySchema(db);
   const row = await requirePocketRow(db, id);
   const timestamp = Date.now();
-  await run(db, `UPDATE memory_pockets SET deleted_at = ?, updated_at = ?
-    WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, [timestamp, timestamp, row.id, MEMORY_OWNER_ID]);
+  await db.batch([
+    db.prepare(`DELETE FROM pocket_recall_memberships WHERE pocket_id = ?`).bind(row.id),
+    db.prepare(`UPDATE memory_pockets SET deleted_at = ?, updated_at = ?
+      WHERE id = ? AND user_id = ? AND deleted_at IS NULL`).bind(timestamp, timestamp, row.id, MEMORY_OWNER_ID),
+  ]);
   return { ...pocketFromRow(row), deleted_at: iso(timestamp) };
+}
+
+function normalizedFingerprintCore(value) {
+  return String(value || '').normalize('NFKC').toLocaleLowerCase('zh-CN').replace(/\s+/g, ' ').trim();
+}
+
+export async function pocketFingerprint(conversationIdValue, lifeCore) {
+  const conversationId = sanitizeId(conversationIdValue, 'conversation');
+  const normalized = normalizedFingerprintCore(lifeCore);
+  if (!normalized) throw new MemoryStoreError('pocket_life_core_required', '可落袋候选缺少生命核。');
+  const bytes = new TextEncoder().encode(`${conversationId}\u0000${normalized}`);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const hexadecimal = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `soil:${hexadecimal}`;
+}
+
+export async function upsertSoilPocketCandidates(db, conversationIdValue, value) {
+  await ensureMemorySchema(db);
+  const conversationId = sanitizeId(conversationIdValue, 'conversation');
+  await getConversation(db, conversationId);
+  const candidates = normalizePocketCandidates(value);
+  const result = { created: 0, updated: 0, suppressed: 0, pockets: [] };
+  for (const candidate of candidates) {
+    const fingerprint = await pocketFingerprint(conversationId, candidate.life_core);
+    let row = await first(db, `SELECT * FROM memory_pockets
+      WHERE user_id = ? AND fingerprint = ?
+      ORDER BY created_at ASC LIMIT 1`, [MEMORY_OWNER_ID, fingerprint]);
+    if (row) {
+      if (row.status === 'pending' && !row.deleted_at) {
+        const pocket = await patchPocket(db, row.id, candidate);
+        result.updated += 1;
+        result.pockets.push(pocket);
+      } else {
+        result.suppressed += 1;
+        result.pockets.push(pocketFromRow(row));
+      }
+      continue;
+    }
+    try {
+      const pocket = await createPocket(db, {
+        conversation_id: conversationId,
+        source_type: 'soil',
+        source_ref: { conversation_id: conversationId, candidate_id: candidate.candidate_id },
+        source_text: candidate.content,
+        ...candidate,
+        fingerprint,
+      });
+      result.created += 1;
+      result.pockets.push(pocket);
+    } catch (error) {
+      row = await first(db, `SELECT * FROM memory_pockets
+        WHERE user_id = ? AND fingerprint = ?
+        ORDER BY created_at ASC LIMIT 1`, [MEMORY_OWNER_ID, fingerprint]);
+      if (!row) throw error;
+      result.suppressed += 1;
+      result.pockets.push(pocketFromRow(row));
+    }
+  }
+  return result;
+}
+
+function membershipFromRow(row) {
+  return {
+    pocket_id: row.pocket_id,
+    scope: row.scope,
+    conversation_id: row.conversation_id || null,
+    created_at: iso(row.created_at),
+  };
+}
+
+export async function listPocketMemberships(db, id) {
+  await ensureMemorySchema(db);
+  const pocket = await getPocket(db, id);
+  const rows = await all(db, `SELECT * FROM pocket_recall_memberships
+    WHERE pocket_id = ? ORDER BY scope ASC`, [pocket.id]);
+  return rows.map(membershipFromRow);
+}
+
+export async function listRecallPocketPool(db, { conversation_id: conversationIdValue, scope: scopeValue } = {}) {
+  await ensureMemorySchema(db);
+  const scope = String(scopeValue || 'conversation');
+  if (!POCKET_MEMBERSHIP_SCOPES.has(scope)) throw new MemoryStoreError('invalid_pocket_scope', '落袋召回范围无效。');
+  const params = [MEMORY_OWNER_ID, scope];
+  let membershipCondition = 'm.conversation_id IS NULL';
+  if (scope === 'conversation') {
+    const conversationId = sanitizeId(conversationIdValue, 'conversation');
+    await getConversation(db, conversationId);
+    membershipCondition = 'm.conversation_id = ?';
+    params.push(conversationId);
+  }
+  const rows = await all(db, `SELECT p.* FROM memory_pockets p
+    INNER JOIN pocket_recall_memberships m ON m.pocket_id = p.id
+    WHERE p.user_id = ? AND m.scope = ? AND ${membershipCondition}
+      AND p.status = 'confirmed' AND p.deleted_at IS NULL
+    ORDER BY p.updated_at DESC
+    LIMIT 240`, params);
+  return rows.map((row) => ({ ...pocketFromRow(row), recall_scope: scope }));
 }
 
 function entryFromRow(row) {
@@ -603,6 +928,60 @@ export async function resolvePocket(db, id, value = {}) {
     ]);
     return { pocket: pocketFromRow({ ...pocket, status, updated_at: timestamp }), entry: null };
   }
+  if (action === 'confirm_pocket') {
+    const current = pocketFromRow(pocket);
+    const title = clip(value.title ?? current.title, MAX_TITLE);
+    const lifeCore = clip(value.life_core ?? current.life_core, MAX_LIFE_CORE);
+    if (!title || !lifeCore) throw new MemoryStoreError('pocket_fields_required', '落袋标题与生命核不能为空。');
+    const content = clip(value.content ?? current.content, MAX_ENTRY_CONTENT);
+    const usageHint = clip(value.usage_hint ?? current.usage_hint, MAX_HINT);
+    const avoidHint = clip(value.avoid_hint ?? current.avoid_hint, MAX_HINT);
+    const sourceRefs = (Array.isArray(value.source_refs) ? value.source_refs : current.source_refs)
+      .map(normalizeCandidateSourceRef).filter(Boolean).slice(0, 8);
+    const sourceExcerpt = clip(value.source_excerpt ?? current.source_excerpt, MAX_SOURCE_EXCERPT);
+    const timestamp = Date.now();
+    await db.batch([
+      db.prepare(`UPDATE memory_pockets SET
+        source_text = ?, suggested_title = ?, suggested_life_core = ?,
+        suggested_usage_hint = ?, suggested_avoid_hint = ?, title = ?, life_core = ?,
+        content = ?, usage_hint = ?, avoid_hint = ?, source_refs_json = ?,
+        source_excerpt = ?, status = 'confirmed', resolved_entry_id = NULL,
+        embedding_status = 'pending', updated_at = ?
+        WHERE id = ? AND user_id = ? AND status = 'pending' AND deleted_at IS NULL`).bind(
+        content,
+        title,
+        lifeCore,
+        usageHint,
+        avoidHint,
+        title,
+        lifeCore,
+        content,
+        usageHint,
+        avoidHint,
+        JSON.stringify(sourceRefs),
+        sourceExcerpt,
+        timestamp,
+        pocket.id,
+        MEMORY_OWNER_ID,
+      ),
+      db.prepare(`INSERT OR IGNORE INTO pocket_recall_memberships
+        (pocket_id, scope, conversation_id, created_at) VALUES (?, 'conversation', ?, ?)`).bind(
+        pocket.id,
+        pocket.conversation_id,
+        timestamp,
+      ),
+      db.prepare(`INSERT OR IGNORE INTO pocket_recall_memberships
+        (pocket_id, scope, conversation_id, created_at) VALUES (?, 'global', NULL, ?)`).bind(
+        pocket.id,
+        timestamp,
+      ),
+    ]);
+    return {
+      pocket: await getPocket(db, pocket.id),
+      memberships: await listPocketMemberships(db, pocket.id),
+      entry: null,
+    };
+  }
   const destinations = {
     conversation_seed: ['seed', 'conversation'],
     global_seed: ['seed', 'global'],
@@ -612,15 +991,16 @@ export async function resolvePocket(db, id, value = {}) {
   const destination = destinations[action];
   if (!destination) throw new MemoryStoreError('invalid_pocket_action', '待确认袋去向无效。');
   const [entryType, scope] = destination;
+  const current = pocketFromRow(pocket);
   const entry = await normalizedEntry(db, {
     entry_type: entryType,
     scope,
     conversation_id: scope === 'conversation' ? pocket.conversation_id : null,
-    title: value.title || pocket.suggested_title || pocket.source_text,
-    life_core: value.life_core || pocket.suggested_life_core || pocket.source_text,
-    content: value.content ?? pocket.source_text,
-    usage_hint: value.usage_hint ?? pocket.suggested_usage_hint,
-    avoid_hint: value.avoid_hint,
+    title: value.title || current.title,
+    life_core: value.life_core || current.life_core,
+    content: value.content ?? current.content,
+    usage_hint: value.usage_hint ?? current.usage_hint,
+    avoid_hint: value.avoid_hint ?? current.avoid_hint,
     source_type: 'pocket',
     source_ref: { pocket_id: pocket.id, source_type: pocket.source_type, source_ref: parseJson(pocket.source_ref_json, {}) },
     memory_level: value.memory_level,
@@ -633,7 +1013,7 @@ export async function resolvePocket(db, id, value = {}) {
       .bind(entry.id, timestamp, pocket.id, MEMORY_OWNER_ID),
   ]);
   return {
-    pocket: pocketFromRow({ ...pocket, status: 'confirmed', resolved_entry_id: entry.id, updated_at: timestamp }),
+    pocket: await getPocket(db, pocket.id),
     entry: await getEntry(db, entry.id),
   };
 }
@@ -661,6 +1041,32 @@ export async function updateEmbeddingState(db, id, value = {}) {
   return getEntry(db, row.id);
 }
 
+export async function updatePocketEmbeddingState(db, id, value = {}) {
+  await ensureMemorySchema(db);
+  const row = await requirePocketRow(db, id);
+  const status = ['pending', 'ready', 'error'].includes(value.embedding_status)
+    ? value.embedding_status
+    : row.embedding_status;
+  const vectorIds = value.vector_ids === undefined
+    ? parseJson(row.vector_ids_json, [])
+    : (Array.isArray(value.vector_ids) ? value.vector_ids : []).map(String).filter(Boolean).slice(0, 2);
+  const timestamp = Date.now();
+  await run(db, `UPDATE memory_pockets SET
+    vector_ids_json = ?, embedding_model = ?, embedding_version = ?, embedding_status = ?,
+    embedded_at = ?, updated_at = ?
+    WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, [
+    JSON.stringify(vectorIds),
+    value.embedding_model === undefined ? row.embedding_model : value.embedding_model,
+    value.embedding_version === undefined ? row.embedding_version : value.embedding_version,
+    status,
+    value.embedded_at === undefined ? row.embedded_at : value.embedded_at,
+    timestamp,
+    row.id,
+    MEMORY_OWNER_ID,
+  ]);
+  return getPocket(db, row.id);
+}
+
 export async function embeddingCounts(db) {
   await ensureMemorySchema(db);
   const rows = await all(db, `SELECT embedding_status, COUNT(*) AS count
@@ -671,6 +1077,14 @@ export async function embeddingCounts(db) {
   const counts = { pending: 0, ready: 0, error: 0 };
   for (const row of rows) {
     if (Object.prototype.hasOwnProperty.call(counts, row.embedding_status)) counts[row.embedding_status] = Number(row.count || 0);
+  }
+  const pocketRows = await all(db, `SELECT embedding_status, COUNT(*) AS count
+    FROM memory_pockets
+    WHERE user_id = ? AND deleted_at IS NULL AND status = 'confirmed'
+      AND resolved_entry_id IS NULL
+    GROUP BY embedding_status`, [MEMORY_OWNER_ID]);
+  for (const row of pocketRows) {
+    if (Object.prototype.hasOwnProperty.call(counts, row.embedding_status)) counts[row.embedding_status] += Number(row.count || 0);
   }
   return counts;
 }
@@ -684,6 +1098,17 @@ export async function pendingEmbeddingEntries(db, limit = 4) {
     ORDER BY updated_at ASC
     LIMIT ?`, [MEMORY_OWNER_ID, Date.now() - MEMORY_CONFIG.vector.retryAfterMs, Math.min(20, Math.max(1, Number(limit) || 4))]);
   return rows.map(entryFromRow);
+}
+
+export async function pendingEmbeddingPockets(db, limit = 4) {
+  await ensureMemorySchema(db);
+  const rows = await all(db, `SELECT * FROM memory_pockets
+    WHERE user_id = ? AND status = 'confirmed' AND deleted_at IS NULL
+      AND resolved_entry_id IS NULL
+      AND (embedding_status = 'pending' OR (embedding_status = 'error' AND updated_at < ?))
+    ORDER BY updated_at ASC
+    LIMIT ?`, [MEMORY_OWNER_ID, Date.now() - MEMORY_CONFIG.vector.retryAfterMs, Math.min(20, Math.max(1, Number(limit) || 4))]);
+  return rows.map(pocketFromRow);
 }
 
 export async function listRecallPool(db, { conversation_id: conversationIdValue, entry_type: entryTypeValue, scope: scopeValue } = {}) {
@@ -729,10 +1154,14 @@ export async function markEntriesRecalled(db, ids = []) {
   const clean = [...new Set((Array.isArray(ids) ? ids : []).map((id) => sanitizeId(id, 'memory')).filter(Boolean))].slice(0, 20);
   if (!clean.length) return;
   const timestamp = Date.now();
-  await db.batch(clean.map((id) => db.prepare(`UPDATE memory_entries
-    SET recall_count = recall_count + 1, last_recalled_at = ?
-    WHERE id = ? AND user_id = ? AND deleted_at IS NULL`)
-    .bind(timestamp, id, MEMORY_OWNER_ID)));
+  await db.batch(clean.flatMap((id) => [
+    db.prepare(`UPDATE memory_entries
+      SET recall_count = recall_count + 1, last_recalled_at = ?
+      WHERE id = ? AND user_id = ? AND deleted_at IS NULL`).bind(timestamp, id, MEMORY_OWNER_ID),
+    db.prepare(`UPDATE memory_pockets
+      SET recall_count = recall_count + 1, last_recalled_at = ?
+      WHERE id = ? AND user_id = ? AND status = 'confirmed' AND deleted_at IS NULL`).bind(timestamp, id, MEMORY_OWNER_ID),
+  ]));
 }
 
 export const memoryLimits = Object.freeze({
@@ -741,5 +1170,6 @@ export const memoryLimits = Object.freeze({
   lifeCore: MAX_LIFE_CORE,
   hint: MAX_HINT,
   entryContent: MAX_ENTRY_CONTENT,
+  sourceExcerpt: MAX_SOURCE_EXCERPT,
   handSeeds: MAX_HAND_SEEDS,
 });

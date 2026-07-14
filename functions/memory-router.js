@@ -1,5 +1,11 @@
 import { ChatStoreError, readConversationState, readProfile, sanitizeId } from './chat-store.js';
-import { deleteEntryVector, syncEntryVector, vectorStatus } from './embedding.js';
+import {
+  deleteEntryVector,
+  deletePocketVectors,
+  syncEntryVector,
+  syncPocketVectors,
+  vectorStatus,
+} from './embedding.js';
 import { apiError, json, readJson } from './http.js';
 import { buildMemoryContext, searchMemory } from './memory-recall.js';
 import { soilSettings } from './memory-config.js';
@@ -11,14 +17,17 @@ import {
   deleteEntry,
   deletePocket,
   getEntry,
+  getPocket,
   hasMemoryDatabase,
   listEntries,
   listPockets,
   normalizeHandSeeds,
+  normalizePocketCandidates,
   patchEntry,
   patchPocket,
   readSoil,
   resolvePocket,
+  upsertSoilPocketCandidates,
   writeSoil,
 } from './memory-store.js';
 import { ModelRequestError, performFormalChat } from './models.js';
@@ -51,7 +60,11 @@ function activeBranch(turn = {}) {
     Math.max(0, Number(turn?.assistant?.activeByUserVariant?.[String(userIndex)] || 0)),
     Math.max(0, assistants.length - 1),
   );
-  return { user: userVariants[userIndex] || null, assistant: assistants[assistantIndex] || null };
+  return {
+    turn_id: String(turn.id || ''),
+    user: userVariants[userIndex] || null,
+    assistant: assistants[assistantIndex] || null,
+  };
 }
 
 function completedTurns(state) {
@@ -122,8 +135,15 @@ function fallbackCurrentText(turns, landing) {
 function soilPrompt(turns, oldSoil, maxHandSeeds) {
   const recent = turns.slice(-8).map((branch, index) => ({
     turn: index + 1,
-    user: String(branch.user.content || '').slice(0, 3000),
-    assistant: String(branch.assistant.content || '').slice(0, 3000),
+    turn_id: branch.turn_id,
+    user: {
+      message_id: String(branch.user.id || ''),
+      content: String(branch.user.content || '').slice(0, 3000),
+    },
+    assistant: {
+      message_id: String(branch.assistant.id || ''),
+      content: String(branch.assistant.content || '').slice(0, 3000),
+    },
   }));
   return `你只负责整理当前对话的一小捧“思维壤”，不是总结长期记忆，也不是输出思考过程。
 请只返回一个 JSON 对象，不要 Markdown，不要解释：
@@ -131,9 +151,19 @@ function soilPrompt(turns, oldSoil, maxHandSeeds) {
   "current_text": "现在正在聊什么，简短",
   "hand_seeds": [{"name":"名称","life_core":"生命核","usage_hint":"何时可用","avoid_hint":"如何避免复读"}],
   "do_not_repeat": "已经确认、不应重复铺陈的内容",
-  "pocket_candidates": ["暂时不用但还有再生力的小东西"]
+  "pocket_candidates": [{
+    "candidate_id": "简短稳定标识",
+    "title": "不是原句截取的简短名称",
+    "life_core": "真正有再生力的核心",
+    "content": "保留足够上下文后的压缩内容",
+    "usage_hint": "什么情况下值得重新碰到",
+    "avoid_hint": "如何避免机械复读或误用",
+    "source_refs": [{"turn_id":"从最近完成轮中原样选择","role":"user|assistant|turn"}],
+    "source_excerpt": "帮助辨认来源的短摘录"
+  }]
 }
-hand_seeds 最多 ${maxHandSeeds} 粒。不要创建长期记忆，不要替用户做决定，不要复述整段聊天。
+hand_seeds 最多 ${maxHandSeeds} 粒。pocket_candidates 只放“现在不用、但仍有再生力”的内容，并使用上方真实 turn_id；没有候选就返回空数组。
+不要创建长期记忆，不要判断 core，不要把候选升级为 seed 或 memory，不要替用户做决定，不要复述整段聊天。
 
 旧思维壤：
 ${JSON.stringify({
@@ -213,20 +243,34 @@ async function organizeSoil(request, env) {
       pocket_candidates: oldSoil.pocket_candidates,
     };
   }
+  const latestTurn = turns.at(-1);
+  const allowedTurnIds = new Set(turns.map((turn) => turn.turn_id).filter(Boolean));
+  const fallbackExcerpt = [latestTurn?.user?.content, latestTurn?.assistant?.content]
+    .map((part) => String(part || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean).join(' / ').slice(0, 360);
   const soilValue = {
     current_text: String(organized.current_text || '').trim()
       || fallback,
     hand_seeds: normalizeHandSeeds(organized.hand_seeds).slice(0, settings.maxHandSeeds),
     do_not_repeat: String(organized.do_not_repeat || ''),
-    pocket_candidates: Array.isArray(organized.pocket_candidates) ? organized.pocket_candidates : [],
+    pocket_candidates: normalizePocketCandidates(organized.pocket_candidates, {
+      allowedTurnIds,
+      fallbackSourceRef: latestTurn?.turn_id ? { turn_id: latestTurn.turn_id, role: 'turn' } : null,
+      fallbackExcerpt,
+    }),
     manual_locked: oldSoil.manual_locked,
     auto_refresh_enabled: oldSoil.auto_refresh_enabled,
   };
+  const writtenSoil = await writeSoil(env.COAST_CHAT_DB, conversationId, soilValue, { automatic: true });
+  const pocketSync = degradedReason
+    ? null
+    : await upsertSoilPocketCandidates(env.COAST_CHAT_DB, conversationId, writtenSoil.pocket_candidates);
   return json({
     ok: true,
     degraded: Boolean(degradedReason),
     reason: degradedReason,
-    soil: await writeSoil(env.COAST_CHAT_DB, conversationId, soilValue, { automatic: true }),
+    soil: writtenSoil,
+    ...(pocketSync ? { pocket_sync: pocketSync } : {}),
   });
 }
 
@@ -249,10 +293,21 @@ async function pockets(request, env, url) {
     if (request.method !== 'POST') return methodNotAllowed('POST');
     const result = await resolvePocket(env.COAST_CHAT_DB, pocketId, await body(request));
     if (result.entry) result.entry = (await syncEntryVector(env, env.COAST_CHAT_DB, result.entry)).entry;
+    if (result.pocket?.status === 'confirmed' && !result.entry) {
+      result.pocket = (await syncPocketVectors(env, env.COAST_CHAT_DB, result.pocket)).pocket;
+    }
     return json({ ok: true, ...result });
   }
-  if (request.method === 'PATCH') return json({ ok: true, pocket: await patchPocket(env.COAST_CHAT_DB, pocketId, await body(request)) });
-  if (request.method === 'DELETE') return json({ ok: true, pocket: await deletePocket(env.COAST_CHAT_DB, pocketId), deleted: true });
+  if (request.method === 'PATCH') {
+    let pocket = await patchPocket(env.COAST_CHAT_DB, pocketId, await body(request));
+    if (pocket.status !== 'pending') pocket = (await syncPocketVectors(env, env.COAST_CHAT_DB, pocket)).pocket;
+    return json({ ok: true, pocket });
+  }
+  if (request.method === 'DELETE') {
+    const current = await getPocket(env.COAST_CHAT_DB, pocketId);
+    const vector = await deletePocketVectors(env, current);
+    return json({ ok: true, pocket: await deletePocket(env.COAST_CHAT_DB, pocketId), vector, deleted: true });
+  }
   return methodNotAllowed('PATCH, DELETE');
 }
 
@@ -313,6 +368,8 @@ async function recall(request, env) {
     global_seeds: result.global_seeds,
     conversation_memories: result.conversation_memories,
     global_memories: result.global_memories,
+    conversation_pockets: result.conversation_pockets,
+    global_pockets: result.global_pockets,
     trace: result.trace,
   });
 }

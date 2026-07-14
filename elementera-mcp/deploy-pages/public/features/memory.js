@@ -44,6 +44,38 @@ function parseSeedLines(value, limit) {
   });
 }
 
+function pocketCandidate(value) {
+  if (typeof value === 'string') {
+    return { title: value, life_core: value, content: value, usage_hint: '', avoid_hint: '', source_refs: [], source_excerpt: '' };
+  }
+  return {
+    title: value?.title || value?.life_core || value?.content || '',
+    life_core: value?.life_core || value?.title || '',
+    content: value?.content || value?.life_core || '',
+    usage_hint: value?.usage_hint || '',
+    avoid_hint: value?.avoid_hint || '',
+    source_refs: Array.isArray(value?.source_refs) ? value.source_refs : [],
+    source_excerpt: value?.source_excerpt || '',
+  };
+}
+
+function pocketCandidateLines(candidates) {
+  return (Array.isArray(candidates) ? candidates : [])
+    .map((item) => pocketCandidate(item).life_core || pocketCandidate(item).title)
+    .filter(Boolean)
+    .join('\n');
+}
+
+function parsePocketCandidateLines(value, existing) {
+  const available = (Array.isArray(existing) ? existing : []).map((item) => ({ item, candidate: pocketCandidate(item), used: false }));
+  return String(value || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const match = available.find((entry) => !entry.used && (entry.candidate.life_core === line || entry.candidate.title === line));
+    if (!match) return line;
+    match.used = true;
+    return match.item;
+  });
+}
+
 export function createMemory({ chat, router, toast, storage }) {
   const runtime = {
     soils: new Map(),
@@ -144,14 +176,17 @@ export function createMemory({ chat, router, toast, storage }) {
       ? activeSeeds.map((seed) => `<div class="feature-row static"><span><strong>${escapeHtml(seed.name || seed.life_core)}</strong><small>${escapeHtml(seed.life_core || '')}${seed.usage_hint ? `<br>使用：${escapeHtml(seed.usage_hint)}` : ''}${seed.avoid_hint ? `<br>避免：${escapeHtml(seed.avoid_hint)}` : ''}</small></span></div>`).join('')
       : '<p>还没有手持种。</p>';
     const candidates = soil.pocket_candidates.length
-      ? `<ul>${soil.pocket_candidates.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`
+      ? `${soil.pocket_candidates.map((item) => {
+        const candidate = pocketCandidate(item);
+        return `<div class="feature-row static"><span><strong>${escapeHtml(candidate.title || '可落袋内容')}</strong><small>${escapeHtml(candidate.life_core)}${candidate.source_excerpt ? `<br>来源：${escapeHtml(candidate.source_excerpt)}` : ''}</small></span></div>`;
+      }).join('')}<p class="feature-note">这些内容已先放进待确认袋。确认前不会参与召回。</p>`
       : '<p>还没有可落袋内容。</p>';
     return `${section('当前', textBlock(soil.current_text, '还没有整理当前方向。'))}
       ${section(`手持种 · ${activeSeeds.length}/${limit}`, seeds)}
       ${section('勿复读', textBlock(soil.do_not_repeat))}
       ${section('可落袋', candidates)}
       <section class="feature-group"><div class="feature-card">
-        <button class="feature-row" type="button" data-action="memory:pockets"><span><strong>待确认袋 · ${currentPockets().length}</strong><small>落袋内容先停在这里，不会自动进入种子或记忆。</small></span><span>›</span></button>
+        <button class="feature-row" type="button" data-action="memory:pockets"><span><strong>待确认袋 · ${currentPockets().length}</strong><small>候选会自动停在这里；确认前不会参与召回。</small></span><span>›</span></button>
       </div></section>
       <div class="button-row">
         <button type="button" data-action="memory:soil-edit">编辑</button>
@@ -182,18 +217,28 @@ export function createMemory({ chat, router, toast, storage }) {
         <label>当前<textarea name="current_text" rows="4">${escapeHtml(soil.current_text)}</textarea></label>
         <label>手持种<textarea name="hand_seeds" rows="8" placeholder="每行：名称｜生命核｜使用提示｜避免提示">${escapeHtml(seedLines(soil.hand_seeds))}</textarea></label>
         <label>勿复读<textarea name="do_not_repeat" rows="4">${escapeHtml(soil.do_not_repeat)}</textarea></label>
-        <label>可落袋<textarea name="pocket_candidates" rows="5" placeholder="每行一项">${escapeHtml(soil.pocket_candidates.join('\n'))}</textarea></label>
+        <label>可落袋<textarea name="pocket_candidates" rows="5" placeholder="每行一项">${escapeHtml(pocketCandidateLines(soil.pocket_candidates))}</textarea></label>
         <button class="primary-wide" type="submit">保存</button>
       </form>`,
     };
   }
 
   function pocketCard(pocket) {
+    const title = pocket.title || pocket.suggested_title || '待确认内容';
+    const lifeCore = pocket.life_core || pocket.suggested_life_core || pocket.source_text || '';
+    const content = pocket.content || pocket.source_text || '';
+    const usageHint = pocket.usage_hint || pocket.suggested_usage_hint || '';
+    const avoidHint = pocket.avoid_hint || pocket.suggested_avoid_hint || '';
     return `<article class="feature-card feature-prose" data-pocket-id="${escapeAttribute(pocket.id)}">
-      <h2>${escapeHtml(pocket.suggested_title || '待确认内容')}</h2>
-      ${textBlock(pocket.source_text)}
-      ${pocket.suggested_life_core ? `<p><strong>生命核：</strong>${escapeHtml(pocket.suggested_life_core)}</p>` : ''}
+      <h2>${escapeHtml(title)}</h2>
+      <p><strong>生命核：</strong>${escapeHtml(lifeCore)}</p>
+      ${textBlock(content)}
+      ${pocket.source_excerpt ? `<p><strong>来源：</strong>${escapeHtml(pocket.source_excerpt)}</p>` : ''}
+      ${usageHint ? `<p><strong>使用：</strong>${escapeHtml(usageHint)}</p>` : ''}
+      ${avoidHint ? `<p><strong>避免：</strong>${escapeHtml(avoidHint)}</p>` : ''}
+      <p class="feature-note">确认后会同时进入当前窗口落袋与总落袋。当前窗口更容易召回；总落袋默认低频沉睡。</p>
       <div class="button-row">
+        <button class="primary-wide" type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="confirm_pocket">确认落袋</button>
         <button type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="conversation_seed">当前窗口种子</button>
         <button type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="global_seed">总种子</button>
         <button type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="conversation_memory">当前窗口记忆</button>
@@ -425,17 +470,26 @@ export function createMemory({ chat, router, toast, storage }) {
       method: 'POST',
       body: JSON.stringify({
         action,
-        title: pocket.suggested_title,
-        life_core: pocket.suggested_life_core || pocket.source_text,
-        content: pocket.source_text,
-        usage_hint: pocket.suggested_usage_hint,
+        title: pocket.title || pocket.suggested_title,
+        life_core: pocket.life_core || pocket.suggested_life_core || pocket.source_text,
+        content: pocket.content || pocket.source_text,
+        usage_hint: pocket.usage_hint || pocket.suggested_usage_hint,
+        avoid_hint: pocket.avoid_hint || pocket.suggested_avoid_hint,
+        source_refs: pocket.source_refs,
+        source_excerpt: pocket.source_excerpt,
       }),
     });
     runtime.pockets.set(currentId(), currentPockets().filter((item) => item.id !== id));
     if (['conversation_seed', 'conversation_memory'].includes(action)) await fetchEntries('conversation');
     if (['global_seed', 'global_memory'].includes(action)) await fetchEntries('global');
     await router.refresh();
-    toast(action === 'stone' ? '已经转成石头。' : action === 'discard' ? '已经丢弃。' : '已经放进正式库。');
+    toast(action === 'stone'
+      ? '已经转成石头。'
+      : action === 'discard'
+        ? '已经丢弃。'
+        : action === 'confirm_pocket'
+          ? '已经确认落袋，两条召回路径都准备好了。'
+          : '已经放进正式库。');
   }
 
   async function updateEntry(id, patch) {
@@ -465,6 +519,7 @@ export function createMemory({ chat, router, toast, storage }) {
         body: JSON.stringify({ conversation_id: currentId(), force: true, settings: settings() }),
       });
       runtime.soils.set(currentId(), data.soil);
+      await fetchPockets(currentId());
       chat.renderMessages();
       return router.refresh();
     }
@@ -482,13 +537,26 @@ export function createMemory({ chat, router, toast, storage }) {
     if (name === 'pocket-edit') {
       const pocket = currentPockets().find((item) => item.id === target.dataset.id);
       if (!pocket) return;
-      const title = prompt('待确认标题', pocket.suggested_title || '');
+      const title = prompt('待确认标题', pocket.title || pocket.suggested_title || '');
       if (title == null) return;
-      const lifeCore = prompt('生命核', pocket.suggested_life_core || pocket.source_text || '');
+      const lifeCore = prompt('生命核', pocket.life_core || pocket.suggested_life_core || pocket.source_text || '');
       if (lifeCore == null) return;
-      const usageHint = prompt('使用提示', pocket.suggested_usage_hint || '');
+      const content = prompt('正文 / 内容', pocket.content || pocket.source_text || '');
+      if (content == null) return;
+      const sourceExcerpt = prompt('来源短摘录', pocket.source_excerpt || '');
+      if (sourceExcerpt == null) return;
+      const usageHint = prompt('使用提示', pocket.usage_hint || pocket.suggested_usage_hint || '');
       if (usageHint == null) return;
-      return patchCurrentPocket(pocket.id, { suggested_title: title, suggested_life_core: lifeCore, suggested_usage_hint: usageHint });
+      const avoidHint = prompt('避免提示', pocket.avoid_hint || pocket.suggested_avoid_hint || '');
+      if (avoidHint == null) return;
+      return patchCurrentPocket(pocket.id, {
+        title,
+        life_core: lifeCore,
+        content,
+        source_excerpt: sourceExcerpt,
+        usage_hint: usageHint,
+        avoid_hint: avoidHint,
+      });
     }
     if (name === 'pocket-stone' || name === 'pocket-discard') {
       return resolveCurrentPocket(target.dataset.id, name === 'pocket-stone' ? 'stone' : 'discard');
@@ -583,7 +651,7 @@ export function createMemory({ chat, router, toast, storage }) {
         current_text: field('current_text'),
         hand_seeds: parseSeedLines(field('hand_seeds'), maxHandSeeds()),
         do_not_repeat: field('do_not_repeat'),
-        pocket_candidates: field('pocket_candidates').split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+        pocket_candidates: parsePocketCandidateLines(field('pocket_candidates'), currentSoil().pocket_candidates),
         manual_locked: true,
       }),
     });
@@ -601,7 +669,7 @@ export function createMemory({ chat, router, toast, storage }) {
         body: JSON.stringify({ conversation_id: conversationId, model: modelId, force: true, trigger, settings: settings() }),
       });
       if (data.soil) runtime.soils.set(conversationId, data.soil);
-      await fetchSoil(conversationId);
+      await Promise.all([fetchSoil(conversationId), fetchPockets(conversationId)]);
       if (currentId() === conversationId) chat.renderMessages();
       return {
         ok: !data.degraded,
@@ -613,7 +681,7 @@ export function createMemory({ chat, router, toast, storage }) {
     } catch (error) {
       if (!['soil_locked'].includes(error?.type)) console.warn('[memory:soil-auto]', error);
       try {
-        await fetchSoil(conversationId);
+        await Promise.all([fetchSoil(conversationId), fetchPockets(conversationId)]);
         if (currentId() === conversationId) chat.renderMessages();
       } catch (fetchError) {
         console.warn(landing ? '[memory:landing-readback]' : '[memory:reply-readback]', fetchError);

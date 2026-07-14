@@ -3,6 +3,7 @@ import { MEMORY_CONFIG, recallSettings, soilSettings } from './memory-config.js'
 import {
   entriesByIds,
   listEntries,
+  listRecallPocketPool,
   listRecallPool,
   markEntriesRecalled,
   readSoil,
@@ -11,8 +12,10 @@ import {
 const POOLS = Object.freeze([
   { key: 'conversation_seeds', scope: 'conversation', entryType: 'seed', threshold: 0.46 },
   { key: 'conversation_memories', scope: 'conversation', entryType: 'memory', threshold: 0.54 },
+  { key: 'conversation_pockets', scope: 'conversation', entryType: 'pocket', threshold: 0.60 },
   { key: 'global_seeds', scope: 'global', entryType: 'seed', threshold: 0.72 },
   { key: 'global_memories', scope: 'global', entryType: 'memory', threshold: 0.76 },
+  { key: 'global_pockets', scope: 'global', entryType: 'pocket', threshold: 0.86 },
 ]);
 
 function lower(value) {
@@ -43,7 +46,7 @@ function isStallQuery(query) {
 }
 
 function isExplicitRecall(query) {
-  return /(你还记得|还记得吗|回想|找一下.*记忆|搜索.*记忆|记忆里|种子库|总记忆)/u.test(String(query || ''));
+  return /(你还记得|还记得吗|回想|找一下.*记忆|搜索.*记忆|记忆里|种子库|总记忆|落袋|袋里|放下的东西)/u.test(String(query || ''));
 }
 
 function poolLimit(pool, settings, { stall, explicit }) {
@@ -53,6 +56,8 @@ function poolLimit(pool, settings, { stall, explicit }) {
   if (pool.key === 'global_seeds') return explicit ? Math.max(3, settings.globalSeedLimit) : settings.globalSeedLimit;
   if (pool.key === 'conversation_memories') return settings.conversationMemoryLimit;
   if (pool.key === 'global_memories') return explicit ? Math.max(5, settings.globalMemoryLimit) : settings.globalMemoryLimit;
+  if (pool.key === 'conversation_pockets') return settings.conversationPocketLimit;
+  if (pool.key === 'global_pockets') return explicit ? Math.max(2, settings.globalPocketLimit) : settings.globalPocketLimit;
   return 0;
 }
 
@@ -66,11 +71,13 @@ function vectorFilter(pool, conversationId) {
 }
 
 async function retrievePool(env, db, pool, conversationId, query, queryValues, recentIds, options) {
-  const entries = await listRecallPool(db, {
-    conversation_id: conversationId,
-    entry_type: pool.entryType,
-    scope: pool.scope,
-  });
+  const entries = pool.entryType === 'pocket'
+    ? await listRecallPocketPool(db, { conversation_id: conversationId, scope: pool.scope })
+    : await listRecallPool(db, {
+      conversation_id: conversationId,
+      entry_type: pool.entryType,
+      scope: pool.scope,
+    });
   let semantic = [];
   let vectorError = null;
   if (queryValues) {
@@ -109,6 +116,8 @@ async function retrievePool(env, db, pool, conversationId, query, queryValues, r
     entries: ranked.slice(0, limit).map((candidate) => candidate.entry),
     trace: {
       pool: pool.key,
+      threshold,
+      limit,
       d1_candidates: entries.length,
       vector_candidates: semantic.length,
       selected: ranked.slice(0, limit).map((candidate) => ({ id: candidate.entry.id, score: candidate.score, reason: candidate.reason })),
@@ -138,13 +147,19 @@ export async function buildMemoryContext(env, owner, conversationId, query, opti
 
   const results = {};
   const traces = [];
+  const selectedAcrossPools = new Set();
   for (const pool of POOLS) {
     const result = await retrievePool(env, db, pool, conversationId, query, queryValues, recentIds, {
       explicit,
       stall,
       settings,
     });
-    results[pool.key] = result.entries;
+    results[pool.key] = result.entries.filter((entry) => {
+      if (selectedAcrossPools.has(entry.id)) return false;
+      selectedAcrossPools.add(entry.id);
+      return true;
+    });
+    result.trace.selected = result.trace.selected.filter((candidate) => results[pool.key].some((entry) => entry.id === candidate.id));
     traces.push(result.trace);
   }
 
@@ -186,6 +201,10 @@ function memoryLine(entry) {
   return `- ${clipped(entry.title, 100)}｜${clipped(entry.life_core, 520)}${entry.avoid_hint ? `｜避免：${clipped(entry.avoid_hint, 240)}` : ''}`;
 }
 
+function pocketLine(entry) {
+  return `- ${clipped(entry.title, 100)}｜${clipped(entry.life_core, 520)}${entry.content ? `｜内容：${clipped(entry.content, 520)}` : ''}${entry.usage_hint ? `｜使用：${clipped(entry.usage_hint, 240)}` : ''}${entry.avoid_hint ? `｜避免：${clipped(entry.avoid_hint, 240)}` : ''}`;
+}
+
 export function formatMemoryContext(result, rawSettings = {}) {
   const settings = recallSettings(rawSettings);
   const soilControl = soilSettings(rawSettings);
@@ -206,9 +225,11 @@ export function formatMemoryContext(result, rawSettings = {}) {
   const optional = ['【可选上下文｜不要求逐条复述】'];
   if (result.conversation_seeds?.length) optional.push('当前窗口种子：', ...result.conversation_seeds.map(seedLine));
   if (result.conversation_memories?.length) optional.push('当前窗口记忆：', ...result.conversation_memories.map(memoryLine));
+  if (result.conversation_pockets?.length) optional.push('当前窗口落袋：', ...result.conversation_pockets.map(pocketLine));
   const global = [
     ...(result.global_seeds || []).map(seedLine),
     ...(result.global_memories || []).map(memoryLine),
+    ...(result.global_pockets || []).map(pocketLine),
   ];
   if (global.length) optional.push('跨窗口可用：', ...global);
   if (optional.length > 1) {
