@@ -1,13 +1,13 @@
-const CACHE_NAME = 'elementera-coast-app-06';
+const CACHE_NAME = 'elementera-coast-app-07';
 const CORE = Object.freeze([
   '/',
   '/index.html',
   '/manifest.json',
-  '/public/styles/tokens.css?v=coast-app-06',
-  '/public/styles/shell.css?v=coast-app-06',
-  '/public/styles/chat.css?v=coast-app-06',
-  '/public/styles/features.css?v=coast-app-06',
-  '/public/app.js?v=coast-app-06',
+  '/public/styles/tokens.css?v=coast-app-07',
+  '/public/styles/shell.css?v=coast-app-07',
+  '/public/styles/chat.css?v=coast-app-07',
+  '/public/styles/features.css?v=coast-app-07',
+  '/public/app.js?v=coast-app-07',
   '/public/core/api.js',
   '/public/core/dom.js',
   '/public/core/icons.js',
@@ -24,6 +24,12 @@ const CORE = Object.freeze([
   '/public/features/settings.js',
   '/public/features/shell.js',
   '/public/features/tools.js',
+  '/public/icons/icon-16.png',
+  '/public/icons/icon-32.png',
+  '/public/icons/apple-touch-icon.png',
+  '/public/icons/icon-192.png',
+  '/public/icons/icon-512.png',
+  '/public/icons/icon-maskable-512.png',
   '/public/icons/gptlike-icon.svg',
 ]);
 

@@ -11,10 +11,68 @@ const read = (path) => readFile(path, 'utf8');
 
 const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
+const headers = await read(join(pages, '_headers'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-06"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-07"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
+
+const manifest = JSON.parse(await read(join(pages, 'manifest.json')));
+assert.deepEqual({
+  id: manifest.id,
+  name: manifest.name,
+  short_name: manifest.short_name,
+  description: manifest.description,
+  start_url: manifest.start_url,
+  scope: manifest.scope,
+  display: manifest.display,
+  orientation: manifest.orientation,
+  background_color: manifest.background_color,
+  theme_color: manifest.theme_color,
+}, {
+  id: '/',
+  name: 'Elementera Coast',
+  short_name: '海岸',
+  description: 'Elementera Coast 主屋',
+  start_url: '/?source=pwa',
+  scope: '/',
+  display: 'standalone',
+  orientation: 'portrait',
+  background_color: '#16204A',
+  theme_color: '#16204A',
+});
+assert.deepEqual(manifest.icons, [
+  { src: '/public/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+  { src: '/public/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+  { src: '/public/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+]);
+for (const expected of [
+  '<meta name="theme-color" content="#16204A">',
+  '<meta name="mobile-web-app-capable" content="yes">',
+  '<meta name="apple-mobile-web-app-capable" content="yes">',
+  '<meta name="apple-mobile-web-app-title" content="海岸">',
+  '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">',
+  '<title>Elementera Coast</title>',
+  '<link rel="manifest" href="/manifest.json" crossorigin="use-credentials">',
+  '<link rel="apple-touch-icon" sizes="180x180" href="/public/icons/apple-touch-icon.png">',
+  '<link rel="icon" type="image/png" sizes="32x32" href="/public/icons/icon-32.png">',
+  '<link rel="icon" type="image/png" sizes="16x16" href="/public/icons/icon-16.png">',
+]) assert.ok(index.includes(expected), `missing PWA head contract: ${expected}`);
+assert.match(headers, /^\/manifest\.json\n[\s\S]*?^  Content-Type: application\/manifest\+json; charset=utf-8$/m);
+
+const expectedIconSizes = new Map([
+  ['icon-16.png', [16, 16]],
+  ['icon-32.png', [32, 32]],
+  ['apple-touch-icon.png', [180, 180]],
+  ['icon-192.png', [192, 192]],
+  ['icon-512.png', [512, 512]],
+  ['icon-maskable-512.png', [512, 512]],
+]);
+for (const [filename, dimensions] of expectedIconSizes) {
+  const icon = await readFile(join(pages, 'public/icons', filename));
+  assert.deepEqual([...icon.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], `${filename} must be a PNG`);
+  assert.deepEqual([icon.readUInt32BE(16), icon.readUInt32BE(20)], dimensions, `${filename} has the wrong dimensions`);
+}
 for (const id of ['coastStatus', 'mainRooms', 'localRoomWindows', 'localRoomWindowList', 'chatConversationSection', 'chatConversationList', 'modelQuickPicker']) {
   assert.equal((index.match(new RegExp(`id="${id}"`, 'g')) || []).length, 1, `${id} must have one owner`);
 }
@@ -26,6 +84,7 @@ assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(join(pages, 'service-worker.js'));
+assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-07';$/m);
 assert.ok(worker.includes("url.pathname.startsWith('/api/')"));
 assert.equal(worker.includes("caches.match('/index.html')"), true);
 assert.equal(worker.includes('modules/legacy'), false);
@@ -36,6 +95,8 @@ for (const url of coreUrls) {
   if (pathname === '/') continue;
   await access(join(pages, pathname.replace(/^\//, '')));
 }
+const appEntry = await read(join(pages, 'public/app.js'));
+assert.ok(appEntry.includes("navigator.serviceWorker.register('/service-worker.js', { scope: '/' })"), 'PWA service worker must own the root scope');
 
 for (const retiredPath of [
   'app.html',
