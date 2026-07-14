@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { handleLogin, unauthorized, verifySession } from '../functions/auth.js';
 import { onRequest } from '../functions/_middleware.js';
-import { buildModelCatalog } from '../functions/models.js';
+import {
+  ModelRequestError,
+  buildModelCatalog,
+  normalizeUsage,
+  performFormalChat,
+  performFormalChatStream,
+} from '../functions/models.js';
 
 const encoder = new TextEncoder();
 const digest = await crypto.subtle.digest('SHA-256', encoder.encode('coast-password'));
@@ -96,5 +102,111 @@ assert.deepEqual(catalog.groups.openai_chat.map((model) => model.id), ['openai/g
 assert.deepEqual(catalog.groups.openai_image.map((model) => model.id), ['openai/gpt-image-2']);
 assert.ok(catalog.groups.free_test.some((model) => model.id === 'vendor/free:free'));
 assert.ok(catalog.groups.free_test.some((model) => model.id === 'nvidia/nemotron-3-super-120b-a12b:free'));
+assert.equal(normalizeUsage({ total_tokens: 99 }), null, 'incomplete provider usage must not be treated as real usage');
+
+const originalFetch = globalThis.fetch;
+const modelCatalogPayload = {
+  data: [{
+    id: 'openai/gpt-4.1-nano',
+    name: 'GPT-4.1 Nano',
+    architecture: { output_modalities: ['text'] },
+    pricing: { prompt: '0.1', completion: '0.2' },
+    supported_parameters: ['temperature'],
+  }],
+};
+const modelEnv = { OPENROUTER_API_KEY: 'test-key' };
+let nonStreamingPayload = null;
+let fetchCount = 0;
+globalThis.fetch = async (url, options = {}) => {
+  fetchCount += 1;
+  if (String(url).includes('/models?')) {
+    return new Response(JSON.stringify(modelCatalogPayload), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+  nonStreamingPayload = JSON.parse(options.body);
+  return new Response(JSON.stringify({
+    model: 'openai/gpt-4.1-nano',
+    choices: [{ message: { role: 'assistant', content: 'JSON reply' }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 11, completion_tokens: 3, total_tokens: 14 },
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+};
+const nonStreaming = await performFormalChat(modelEnv, {
+  model: 'openai/gpt-4.1-nano',
+  messages: [{ role: 'user', content: 'hello' }],
+  settings: { max_tokens: 100, temperature: 0.2 },
+});
+assert.equal(fetchCount, 2);
+assert.equal('stream' in nonStreamingPayload, false, 'non-streaming path must keep the JSON provider request');
+assert.equal(nonStreaming.message.content, 'JSON reply');
+assert.deepEqual(nonStreaming.usage, { prompt_tokens: 11, completion_tokens: 3, total_tokens: 14 });
+assert.equal(nonStreaming.finish_reason, 'stop');
+
+let streamingPayload = null;
+const streamBytes = [
+  ': keepalive\n\n',
+  'data: {"id":"gen-1","model":"openai/gpt-4.1-nano","choices":[{"delta":{"content":"海"}}]}\n\n',
+  'data: {"id":"gen-1","model":"openai/gpt-4.1-nano","choices":[{"delta":{"content":"岸"}}],"usa',
+  'ge":{"prompt_tokens":21,"completion_tokens":2,"total_tokens":23}}\n\n',
+  'data: {"id":"gen-1","model":"openai/gpt-4.1-nano","choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+  'data: [DONE]\n\n',
+];
+globalThis.fetch = async (_url, options = {}) => {
+  streamingPayload = JSON.parse(options.body);
+  const source = new ReadableStream({
+    start(controller) {
+      for (const chunk of streamBytes) controller.enqueue(encoder.encode(chunk));
+      controller.close();
+    },
+  });
+  return new Response(source, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+};
+const streamEvents = [];
+for await (const item of performFormalChatStream(modelEnv, {
+  model: 'openai/gpt-4.1-nano',
+  messages: [{ role: 'user', content: 'stream' }],
+  settings: { max_tokens: 100, temperature: 0.2 },
+})) streamEvents.push(item);
+assert.equal(streamingPayload.stream, true);
+assert.equal(streamingPayload.stream_options.include_usage, true);
+assert.deepEqual(streamEvents.map((item) => item.event), ['meta', 'delta', 'delta', 'usage', 'done']);
+assert.deepEqual(streamEvents[0].data, { model: 'openai/gpt-4.1-nano', generation_id: 'gen-1' });
+assert.equal(streamEvents.filter((item) => item.event === 'delta').map((item) => item.data.content).join(''), '海岸');
+assert.deepEqual(streamEvents.find((item) => item.event === 'usage').data, { prompt_tokens: 21, completion_tokens: 2, total_tokens: 23 });
+assert.equal(streamEvents.at(-1).data.finish_reason, 'stop');
+
+let incompleteError = null;
+globalThis.fetch = async () => new Response(new ReadableStream({
+  start(controller) {
+    controller.enqueue(encoder.encode('data: {"id":"gen-cut","model":"openai/gpt-4.1-nano","choices":[{"delta":{"content":"partial"}}]}\n\n'));
+    controller.close();
+  },
+}), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+try {
+  for await (const _item of performFormalChatStream(modelEnv, {
+    model: 'openai/gpt-4.1-nano', messages: [{ role: 'user', content: 'cut' }],
+  })) { /* consume */ }
+} catch (error) {
+  incompleteError = error;
+}
+assert.ok(incompleteError instanceof ModelRequestError);
+assert.equal(incompleteError.type, 'stream_incomplete');
+
+let providerStreamError = null;
+globalThis.fetch = async () => new Response(new ReadableStream({
+  start(controller) {
+    controller.enqueue(encoder.encode('data: {"error":{"code":503,"message":"secret upstream diagnostic"}}\n\n'));
+    controller.close();
+  },
+}), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+try {
+  for await (const _item of performFormalChatStream(modelEnv, {
+    model: 'openai/gpt-4.1-nano', messages: [{ role: 'user', content: 'error' }],
+  })) { /* consume */ }
+} catch (error) {
+  providerStreamError = error;
+}
+assert.equal(providerStreamError.type, 'provider_unavailable');
+assert.doesNotMatch(providerStreamError.message, /secret upstream diagnostic/i, 'provider raw stream diagnostics must not leak');
+
+globalThis.fetch = originalFetch;
 
 console.log('backend: ok');
