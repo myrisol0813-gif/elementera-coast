@@ -4,12 +4,11 @@ on:
   push:
     branches:
       - p3-chat-trace-stream-01
-  pull_request:
-    branches:
-      - main
+    paths-ignore:
+      - .p3-test-result.json
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   test:
@@ -21,5 +20,39 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npm test
+      - name: Run npm ci and npm test, then publish evidence
+        shell: bash
+        run: |
+          set +e
+          npm ci > /tmp/p3-npm-ci.log 2>&1
+          CI_EXIT=$?
+          TEST_EXIT=99
+          if [ "$CI_EXIT" -eq 0 ]; then
+            npm test > /tmp/p3-npm-test.log 2>&1
+            TEST_EXIT=$?
+          else
+            : > /tmp/p3-npm-test.log
+          fi
+          export CI_EXIT TEST_EXIT
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const clip = (path) => fs.readFileSync(path, 'utf8').slice(-50000);
+          const ciExit = Number(process.env.CI_EXIT);
+          const testExit = Number(process.env.TEST_EXIT);
+          const result = {
+            trigger_sha: process.env.GITHUB_SHA,
+            npm_ci_exit: ciExit,
+            npm_test_exit: testExit,
+            ok: ciExit === 0 && testExit === 0,
+            npm_ci_output: clip('/tmp/p3-npm-ci.log'),
+            npm_test_output: clip('/tmp/p3-npm-test.log'),
+          };
+          fs.writeFileSync('.p3-test-result.json', `${JSON.stringify(result, null, 2)}\n`);
+          NODE
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .p3-test-result.json
+          git commit -m "test: publish p3 verification result" || true
+          git push
+          if [ "$CI_EXIT" -ne 0 ]; then exit "$CI_EXIT"; fi
+          exit "$TEST_EXIT"
