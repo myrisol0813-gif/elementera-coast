@@ -319,7 +319,7 @@ async function organizeSoil(request, env) {
         ? oldSoil.pocket_candidates
         : pocketCandidatesMode === 'clear'
           ? []
-          : organizedPocketCandidates,
+          : organizedPocketCandidates.length ? organizedPocketCandidates : oldSoil.pocket_candidates,
     manual_locked: oldSoil.manual_locked,
     auto_refresh_enabled: oldSoil.auto_refresh_enabled,
   };
