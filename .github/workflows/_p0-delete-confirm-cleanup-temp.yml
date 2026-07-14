@@ -1,0 +1,33 @@
+name: Temporary final P0 danger cleanup verification
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.head_ref == 'p0-delete-confirm-01' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: p0-delete-confirm-01
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/p0-delete-confirm-cleanup.mjs
+      - run: npm test
+      - name: Commit final verified cleanup
+        run: |
+          rm scripts/p0-delete-confirm-cleanup.mjs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "refactor: make confirmDanger the only destructive gate"
+          git push origin HEAD:p0-delete-confirm-01
