@@ -836,7 +836,6 @@ export function createChat({ storage, toast }) {
   }
 
   async function deleteConversation(conversationId) {
-    if (!confirm('删除这个窗口？其他窗口不会受到影响。')) return;
     runtime.deletedIds.add(conversationId);
     closeMenu();
     if (runtime.generation?.conversationId === conversationId) runtime.generation.controller.abort();
