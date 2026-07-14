@@ -1,7 +1,7 @@
 import { apiError, json, readJson, sameOrigin } from './http.js';
 import { buildMemoryContext, formatMemoryContext } from './memory-recall.js';
 import { MEMORY_OWNER_ID } from './memory-store.js';
-import { ModelRequestError, modelErrorResponse, performFormalChat } from './models.js';
+import { ModelRequestError, modelErrorResponse, performFormalChat, performFormalChatStream } from './models.js';
 import {
   ChatStoreError,
   createConversation,
@@ -105,7 +105,10 @@ async function generatedTitle(env, user, assistant) {
     messages: [{ role: 'user', content: prompt }],
     settings: { max_tokens: 40, temperature: 0.2 },
   });
-  return clipGeneratedTitle(result?.message?.content || '');
+  return {
+    title: clipGeneratedTitle(result?.message?.content || ''),
+    model_id: String(result?.model || 'openai/gpt-4.1-nano').slice(0, 180),
+  };
 }
 
 async function title(request, env) {
@@ -117,13 +120,56 @@ async function title(request, env) {
   if (conversation.title_manual || conversation.title_generated_at || !isDefaultTitle(conversation.title)) {
     return json({ ok: true, skipped: true });
   }
-  let nextTitle;
+  let generated;
   try {
-    nextTitle = await generatedTitle(env, value.user, value.assistant);
+    generated = await generatedTitle(env, value.user, value.assistant);
   } catch {
     return json({ ok: true, skipped: true, reason: 'title_generation_failed' });
   }
-  return json({ ok: true, conversation: await setGeneratedTitle(env.COAST_CHAT_DB, conversationId, nextTitle) });
+  return json({
+    ok: true,
+    conversation: await setGeneratedTitle(env.COAST_CHAT_DB, conversationId, generated.title, generated.model_id),
+  });
+}
+
+function sseEvent(event, data) {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+function safeStreamError(error) {
+  if (error instanceof ModelRequestError) return { type: error.type, message: error.message };
+  return { type: 'stream_error', message: '流式生成中断，请稍后重试。' };
+}
+
+function streamFormalChat(request, env, input, assembled, memory) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        for await (const item of performFormalChatStream(env, {
+          model: input.model,
+          messages: assembled.messages,
+          settings: input.settings,
+        }, { allowSystem: assembled.messages[0]?.role === 'system', signal: request.signal })) {
+          controller.enqueue(encoder.encode(sseEvent(item.event, item.data)));
+        }
+      } catch (error) {
+        if (error?.name !== 'AbortError') {
+          controller.enqueue(encoder.encode(sseEvent('error', safeStreamError(error))));
+        }
+      } finally {
+        controller.close();
+      }
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Coast-Memory-Selected': JSON.stringify(memory?.trace?.selected || []),
+    },
+  });
 }
 
 async function formalChat(request, env) {
@@ -154,6 +200,12 @@ async function formalChat(request, env) {
   }
 
   const assembled = budgetChatMessages(messages, softContext, requestSettings);
+  if (value.stream === true) {
+    return streamFormalChat(request, env, {
+      model: value.model,
+      settings: requestSettings,
+    }, assembled, memory);
+  }
   const result = await performFormalChat(env, {
     model: value.model,
     messages: assembled.messages,
@@ -325,10 +377,13 @@ async function landingLetter(request, env) {
   const saved = await writeLandingExchange(env.COAST_CHAT_DB, targetConversationId, {
     state,
     model_id: modelId,
+    assistant_model_id: generated.model || modelId,
     letter_text: letterText,
     letter_hash: await sha256(letterText),
     assistant_text: assistantText,
+    usage: generated.usage,
     finish_reason: generated.finish_reason,
+    generation_source: 'landing',
   });
   return json({
     ok: true,
@@ -336,6 +391,8 @@ async function landingLetter(request, env) {
     conversation: await getConversation(env.COAST_CHAT_DB, targetConversationId),
     history: { ...saved.state, conversation_id: targetConversationId },
     landing: saved.landing,
+    model: generated.model || modelId,
+    usage: generated.usage || null,
     finish_reason: generated.finish_reason || null,
     max_tokens: requestSettings.max_tokens,
     context: assembled.trace,
