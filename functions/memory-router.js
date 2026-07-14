@@ -41,6 +41,77 @@ import {
 const MEMORY_PATH = '/api/memory';
 const BODY_LIMIT = 48 * 1024;
 
+const SOIL_RESPONSE_FORMAT = Object.freeze({
+  type: 'json_schema',
+  json_schema: Object.freeze({
+    name: 'thought_soil',
+    strict: true,
+    schema: Object.freeze({
+      type: 'object',
+      additionalProperties: false,
+      properties: Object.freeze({
+        current_text: Object.freeze({ type: 'string' }),
+        hand_seeds_mode: Object.freeze({ type: 'string', enum: ['replace', 'keep', 'clear'] }),
+        hand_seeds: Object.freeze({
+          type: 'array',
+          items: Object.freeze({
+            type: 'object',
+            additionalProperties: false,
+            properties: Object.freeze({
+              name: Object.freeze({ type: 'string' }),
+              life_core: Object.freeze({ type: 'string' }),
+              usage_hint: Object.freeze({ type: 'string' }),
+              avoid_hint: Object.freeze({ type: 'string' }),
+            }),
+            required: ['name', 'life_core', 'usage_hint', 'avoid_hint'],
+          }),
+        }),
+        do_not_repeat_mode: Object.freeze({ type: 'string', enum: ['replace', 'keep', 'clear'] }),
+        do_not_repeat: Object.freeze({ type: 'string' }),
+        pocket_candidates_mode: Object.freeze({ type: 'string', enum: ['replace', 'keep', 'clear'] }),
+        pocket_candidates: Object.freeze({
+          type: 'array',
+          items: Object.freeze({
+            type: 'object',
+            additionalProperties: false,
+            properties: Object.freeze({
+              candidate_id: Object.freeze({ type: 'string' }),
+              title: Object.freeze({ type: 'string' }),
+              life_core: Object.freeze({ type: 'string' }),
+              content: Object.freeze({ type: 'string' }),
+              usage_hint: Object.freeze({ type: 'string' }),
+              avoid_hint: Object.freeze({ type: 'string' }),
+              source_refs: Object.freeze({
+                type: 'array',
+                items: Object.freeze({
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: Object.freeze({
+                    turn_id: Object.freeze({ type: 'string' }),
+                    role: Object.freeze({ type: 'string', enum: ['user', 'assistant', 'turn'] }),
+                  }),
+                  required: ['turn_id', 'role'],
+                }),
+              }),
+              source_excerpt: Object.freeze({ type: 'string' }),
+            }),
+            required: ['candidate_id', 'title', 'life_core', 'content', 'usage_hint', 'avoid_hint', 'source_refs', 'source_excerpt'],
+          }),
+        }),
+      }),
+      required: [
+        'current_text',
+        'hand_seeds_mode',
+        'hand_seeds',
+        'do_not_repeat_mode',
+        'do_not_repeat',
+        'pocket_candidates_mode',
+        'pocket_candidates',
+      ],
+    }),
+  }),
+});
+
 function methodNotAllowed(allow) {
   return apiError('method_not_allowed', 'Method not allowed.', 405, { allow });
 }
@@ -260,8 +331,13 @@ async function organizeSoil(request, env) {
     const result = await performFormalChat(env, {
       model: requestedModel || profile.current_chat_model || 'openai/gpt-4.1-nano',
       messages: [{ role: 'user', content: soilPrompt(turns, oldSoil, settings.maxHandSeeds) }],
-      settings: { max_tokens: 1200, temperature: 0.2 },
+      settings: { max_tokens: 2000, temperature: 0.2 },
+      response_format: SOIL_RESPONSE_FORMAT,
+      reasoning: { effort: 'minimal', exclude: true },
     });
+    if (result?.finish_reason === 'length') {
+      throw new MemoryStoreError('soil_organize_truncated', '思维壤整理结果被模型长度上限截断。', 502);
+    }
     organized = parseStrictJson(result?.message?.content);
     organizedBy = {
       model_id: result?.model || requestedModel || profile.current_chat_model || 'openai/gpt-4.1-nano',
@@ -271,15 +347,15 @@ async function organizeSoil(request, env) {
     };
   } catch (error) {
     if (!(error instanceof ModelRequestError)
-      && !(error instanceof MemoryStoreError && error.type === 'soil_organize_invalid')) throw error;
+      && !(error instanceof MemoryStoreError && String(error.type || '').startsWith('soil_organize_'))) throw error;
     console.error('[memory:soil-organize]', error);
     degradedReason = error.type || 'soil_organize_failed';
-    organized = {
-      current_text: fallback,
-      hand_seeds: oldSoil.hand_seeds,
-      do_not_repeat: oldSoil.do_not_repeat,
-      pocket_candidates: oldSoil.pocket_candidates,
-    };
+    return json({
+      ok: true,
+      degraded: true,
+      reason: degradedReason,
+      soil: oldSoil,
+    });
   }
   const latestTurn = turns.at(-1);
   const allowedTurnIds = new Set(turns.map((turn) => turn.turn_id).filter(Boolean));
