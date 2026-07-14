@@ -42,6 +42,14 @@ function clamp(value, fallback, min, max) {
   return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
 }
 
+export function normalizeUsage(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const fields = ['prompt_tokens', 'completion_tokens', 'total_tokens'];
+  const values = fields.map((field) => Number(value[field]));
+  if (!values.every((number) => Number.isFinite(number) && number >= 0)) return null;
+  return Object.fromEntries(fields.map((field, index) => [field, Math.trunc(values[index])]));
+}
+
 function outputModalities(model) {
   const value = model?.architecture?.output_modalities;
   if (Array.isArray(value)) return value.map((item) => String(item).toLowerCase());
@@ -229,19 +237,24 @@ function normalizedProviderError(status, model, preview = '') {
   return ['chat_error', '消息生成失败，请稍后重试。'];
 }
 
+function providerRequest(env, payload, title, signal) {
+  return fetch(OPENROUTER_CHAT_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${openRouterKey(env)}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': OPENROUTER_REFERER,
+      'X-Title': title,
+    },
+    body: JSON.stringify(payload),
+    signal,
+  });
+}
+
 async function requestOpenRouter(env, payload, title) {
   let response;
   try {
-    response = await fetch(OPENROUTER_CHAT_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${openRouterKey(env)}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': OPENROUTER_REFERER,
-        'X-Title': title,
-      },
-      body: JSON.stringify(payload),
-    });
+    response = await providerRequest(env, payload, title);
   } catch {
     throw new ModelRequestError('provider_unavailable', '上游模型暂时不可用。', 502, { model: payload.model });
   }
@@ -262,7 +275,25 @@ async function requestOpenRouter(env, payload, title) {
   }
 }
 
-export async function performFormalChat(env, input = {}, { allowSystem = false } = {}) {
+async function requestOpenRouterStream(env, payload, title, signal) {
+  let response;
+  try {
+    response = await providerRequest(env, payload, title, signal);
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error;
+    throw new ModelRequestError('provider_unavailable', '上游模型暂时不可用。', 502, { model: payload.model });
+  }
+  if (!response.ok) {
+    const preview = await providerError(response);
+    const [type, message] = normalizedProviderError(response.status, payload.model, preview);
+    const status = [401, 402, 403, 404, 429].includes(response.status) ? response.status : 502;
+    throw new ModelRequestError(type, message, status, { model: payload.model, upstream_status: response.status });
+  }
+  if (!response.body) throw new ModelRequestError('invalid_provider_response', '上游没有返回可读取的流。', 502, { model: payload.model });
+  return response;
+}
+
+async function prepareFormalChat(env, input, allowSystem) {
   if (!openRouterKey(env)) throw new ModelRequestError('auth_error', 'OpenRouter key 未配置。', 503);
   const catalog = await fetchModelCatalog(env);
   const modelId = String(input.model || catalog.defaults.chat || DEFAULT_MODEL);
@@ -282,15 +313,123 @@ export async function performFormalChat(env, input = {}, { allowSystem = false }
     ? null
     : clamp(requestedMaxTokens, 600, 1, MAX_FORMAL_TOKENS);
   const temperature = clamp(settings.temperature ?? input.temperature, 0.7, 0, 2);
-  const upstream = await requestOpenRouter(env, chatPayload(modelId, messages, maxTokens, temperature, model), 'Elementera Coast Formal Chat');
+  return {
+    modelId,
+    payload: chatPayload(modelId, messages, maxTokens, temperature, model),
+  };
+}
+
+function sseData(block) {
+  const data = [];
+  for (const line of String(block || '').split(/\r?\n/)) {
+    if (!line || line.startsWith(':')) continue;
+    const separator = line.indexOf(':');
+    const field = separator < 0 ? line : line.slice(0, separator);
+    let value = separator < 0 ? '' : line.slice(separator + 1);
+    if (value.startsWith(' ')) value = value.slice(1);
+    if (field === 'data') data.push(value);
+  }
+  return data.length ? data.join('\n') : null;
+}
+
+async function* readProviderSse(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const blocks = function* (final = false) {
+    while (true) {
+      const match = buffer.match(/\r?\n\r?\n/);
+      if (!match || match.index == null) break;
+      const block = buffer.slice(0, match.index);
+      buffer = buffer.slice(match.index + match[0].length);
+      yield block;
+    }
+    if (final && buffer.trim()) {
+      const block = buffer;
+      buffer = '';
+      yield block;
+    }
+  };
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      for (const block of blocks()) yield block;
+    }
+    buffer += decoder.decode();
+    for (const block of blocks(true)) yield block;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function streamChunkError(value, modelId) {
+  const status = Number(value?.error?.code || value?.error?.status || 502);
+  const preview = compact(value?.error?.message || value?.message || '');
+  const [type, message] = normalizedProviderError(status, modelId, preview);
+  return new ModelRequestError(type, message, 502, { model: modelId });
+}
+
+export async function performFormalChat(env, input = {}, { allowSystem = false } = {}) {
+  const prepared = await prepareFormalChat(env, input, allowSystem);
+  const upstream = await requestOpenRouter(env, prepared.payload, 'Elementera Coast Formal Chat');
   const choice = upstream?.choices?.[0] || {};
   return {
     ok: true,
-    model: upstream?.model || modelId,
+    model: upstream?.model || prepared.modelId,
     message: { role: 'assistant', content: typeof choice?.message?.content === 'string' ? choice.message.content : '' },
-    usage: upstream?.usage || null,
+    usage: normalizeUsage(upstream?.usage),
     finish_reason: choice?.finish_reason || null,
   };
+}
+
+export async function* performFormalChatStream(env, input = {}, { allowSystem = false, signal } = {}) {
+  const prepared = await prepareFormalChat(env, input, allowSystem);
+  const payload = {
+    ...prepared.payload,
+    stream: true,
+    stream_options: { include_usage: true },
+  };
+  const response = await requestOpenRouterStream(env, payload, 'Elementera Coast Formal Chat', signal);
+  let metaSent = false;
+  let actualModel = prepared.modelId;
+  let generationId = crypto.randomUUID();
+  let finishReason = null;
+  let providerDone = false;
+
+  for await (const block of readProviderSse(response)) {
+    const data = sseData(block);
+    if (data == null) continue;
+    if (data.trim() === '[DONE]') {
+      providerDone = true;
+      break;
+    }
+    let value;
+    try {
+      value = JSON.parse(data);
+    } catch {
+      throw new ModelRequestError('invalid_provider_response', '上游返回了无效的流式响应。', 502, { model: prepared.modelId });
+    }
+    if (value?.error) throw streamChunkError(value, prepared.modelId);
+    actualModel = String(value?.model || actualModel || prepared.modelId);
+    generationId = String(value?.id || generationId);
+    if (!metaSent) {
+      metaSent = true;
+      yield { event: 'meta', data: { model: actualModel, generation_id: generationId } };
+    }
+    const content = value?.choices?.[0]?.delta?.content;
+    if (typeof content === 'string' && content) yield { event: 'delta', data: { content } };
+    const usage = normalizeUsage(value?.usage);
+    if (usage) yield { event: 'usage', data: usage };
+    if (value?.choices?.[0]?.finish_reason != null) finishReason = String(value.choices[0].finish_reason);
+  }
+
+  if (!providerDone && finishReason == null) {
+    throw new ModelRequestError('stream_incomplete', '上游流式响应提前中断。', 502, { model: prepared.modelId });
+  }
+  if (!metaSent) yield { event: 'meta', data: { model: actualModel, generation_id: generationId } };
+  yield { event: 'done', data: { finish_reason: finishReason } };
 }
 
 export async function handleModels(request, env) {

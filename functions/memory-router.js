@@ -31,6 +31,12 @@ import {
   writeSoil,
 } from './memory-store.js';
 import { ModelRequestError, performFormalChat } from './models.js';
+import {
+  decoratePocketProvenance,
+  decoratePocketsProvenance,
+  decorateSoilProvenance,
+  saveGenerationProvenance,
+} from './provenance-store.js';
 
 const MEMORY_PATH = '/api/memory';
 const BODY_LIMIT = 48 * 1024;
@@ -179,10 +185,14 @@ ${JSON.stringify(recent)}`;
 
 async function soil(request, env, url) {
   const conversationId = conversationIdFrom(url);
-  if (request.method === 'GET') return json({ ok: true, soil: await readSoil(env.COAST_CHAT_DB, conversationId) });
+  if (request.method === 'GET') {
+    const value = await readSoil(env.COAST_CHAT_DB, conversationId);
+    return json({ ok: true, soil: await decorateSoilProvenance(env.COAST_CHAT_DB, value) });
+  }
   if (request.method === 'PUT') {
     const value = await body(request);
-    return json({ ok: true, soil: await writeSoil(env.COAST_CHAT_DB, conversationId, value) });
+    const written = await writeSoil(env.COAST_CHAT_DB, conversationId, value);
+    return json({ ok: true, soil: await decorateSoilProvenance(env.COAST_CHAT_DB, written) });
   }
   return methodNotAllowed('GET, PUT');
 }
@@ -196,7 +206,10 @@ async function organizeSoil(request, env) {
   const force = value.force === true || reply;
   const requestedModel = String(value.model || '').trim().slice(0, 180);
   const settings = soilSettings(value.settings || {});
-  const oldSoil = await readSoil(env.COAST_CHAT_DB, conversationId);
+  const oldSoil = await decorateSoilProvenance(
+    env.COAST_CHAT_DB,
+    await readSoil(env.COAST_CHAT_DB, conversationId),
+  );
   if (oldSoil.manual_locked) {
     return json({ ok: true, skipped: true, reason: 'manual_locked', soil: oldSoil });
   }
@@ -222,6 +235,7 @@ async function organizeSoil(request, env) {
 
   const fallback = fallbackCurrentText(turns, landing);
   let organized;
+  let organizedBy = null;
   let degradedReason = '';
   try {
     const profile = await readProfile(env.COAST_CHAT_DB);
@@ -231,6 +245,12 @@ async function organizeSoil(request, env) {
       settings: { max_tokens: 1200, temperature: 0.2 },
     });
     organized = parseStrictJson(result?.message?.content);
+    organizedBy = {
+      model_id: result?.model || requestedModel || profile.current_chat_model || 'openai/gpt-4.1-nano',
+      usage: result?.usage || null,
+      generation_source: 'soil',
+      generated_at: Date.now(),
+    };
   } catch (error) {
     if (!(error instanceof ModelRequestError)
       && !(error instanceof MemoryStoreError && error.type === 'soil_organize_invalid')) throw error;
@@ -267,10 +287,20 @@ async function organizeSoil(request, env) {
   const previousPocketSync = degradedReason
     ? null
     : await upsertSoilPocketCandidates(env.COAST_CHAT_DB, conversationId, oldSoil.pocket_candidates);
-  const writtenSoil = await writeSoil(env.COAST_CHAT_DB, conversationId, soilValue, { automatic: true });
+  let writtenSoil = await writeSoil(env.COAST_CHAT_DB, conversationId, soilValue, { automatic: true });
+  if (organizedBy) {
+    await saveGenerationProvenance(env.COAST_CHAT_DB, 'soil', conversationId, organizedBy);
+    writtenSoil = await decorateSoilProvenance(env.COAST_CHAT_DB, writtenSoil);
+  }
   const currentPocketSync = degradedReason
     ? null
     : await upsertSoilPocketCandidates(env.COAST_CHAT_DB, conversationId, writtenSoil.pocket_candidates);
+  if (organizedBy && currentPocketSync) {
+    await Promise.all((currentPocketSync.pockets || [])
+      .filter((pocket) => pocket?.id && pocket?.source_type === 'soil' && pocket?.status === 'pending')
+      .map((pocket) => saveGenerationProvenance(env.COAST_CHAT_DB, 'pocket', pocket.id, organizedBy)));
+    currentPocketSync.pockets = await decoratePocketsProvenance(env.COAST_CHAT_DB, currentPocketSync.pockets);
+  }
   const syncedPockets = new Map();
   for (const pocket of [...(previousPocketSync?.pockets || []), ...(currentPocketSync?.pockets || [])]) {
     if (pocket?.id) syncedPockets.set(pocket.id, pocket);
@@ -295,10 +325,11 @@ async function pockets(request, env, url) {
   if (!suffix) {
     if (request.method === 'GET') {
       const conversationId = conversationIdFrom(url);
-      return json({ ok: true, pockets: await listPockets(env.COAST_CHAT_DB, {
+      const values = await listPockets(env.COAST_CHAT_DB, {
         conversation_id: conversationId,
         status: url.searchParams.get('status') || 'pending',
-      }) });
+      });
+      return json({ ok: true, pockets: await decoratePocketsProvenance(env.COAST_CHAT_DB, values) });
     }
     if (request.method === 'POST') return json({ ok: true, pocket: await createPocket(env.COAST_CHAT_DB, await body(request)) }, 201);
     return methodNotAllowed('GET, POST');
@@ -312,12 +343,13 @@ async function pockets(request, env, url) {
     if (result.pocket?.status === 'confirmed' && !result.entry) {
       result.pocket = (await syncPocketVectors(env, env.COAST_CHAT_DB, result.pocket)).pocket;
     }
+    result.pocket = await decoratePocketProvenance(env.COAST_CHAT_DB, result.pocket);
     return json({ ok: true, ...result });
   }
   if (request.method === 'PATCH') {
     let pocket = await patchPocket(env.COAST_CHAT_DB, pocketId, await body(request));
     if (pocket.status !== 'pending') pocket = (await syncPocketVectors(env, env.COAST_CHAT_DB, pocket)).pocket;
-    return json({ ok: true, pocket });
+    return json({ ok: true, pocket: await decoratePocketProvenance(env.COAST_CHAT_DB, pocket) });
   }
   if (request.method === 'DELETE') {
     const current = await getPocket(env.COAST_CHAT_DB, pocketId);

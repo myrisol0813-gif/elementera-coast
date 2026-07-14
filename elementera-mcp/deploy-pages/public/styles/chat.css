@@ -84,6 +84,27 @@
   justify-content: flex-end;
 }
 
+.generation-footprint {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 2px 0 2px 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: .58;
+  cursor: pointer;
+}
+
+.generation-footprint:hover,
+.generation-footprint:focus-visible {
+  color: var(--text);
+  opacity: .8;
+}
+
 .thought-soil-row {
   margin: -13px 0 12px 52px;
 }

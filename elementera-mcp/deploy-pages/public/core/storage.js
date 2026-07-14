@@ -68,6 +68,7 @@ function defaults() {
       contextBudget: 6000,
       outputLength: 'auto',
       creativity: 'balanced',
+      streamingEnabled: false,
       soilBudget: 1200,
       soilEnabled: true,
       autoRefreshEveryTurns: 1,

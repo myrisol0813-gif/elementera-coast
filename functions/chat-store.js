@@ -4,6 +4,7 @@ const USER_ID = 'owner';
 const MAX_CONTENT = 12000;
 const MAX_AVATAR = 500 * 1024;
 const DEFAULT_TITLES = new Set(['', '新聊天', '未命名海岸', '主聊天']);
+const GENERATION_SOURCES = new Set(['chat', 'landing', 'relay', 'lighthouse', 'other']);
 
 export class ChatStoreError extends Error {
   constructor(type, message, status = 400) {
@@ -55,6 +56,14 @@ function clamp(value, length) {
   return length < 1 ? 0 : Math.min(Math.max(0, Number(value) || 0), length - 1);
 }
 
+function normalizeUsage(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const fields = ['prompt_tokens', 'completion_tokens', 'total_tokens'];
+  const values = fields.map((field) => Number(value[field]));
+  if (!values.every((number) => Number.isFinite(number) && number >= 0)) return null;
+  return Object.fromEntries(fields.map((field, index) => [field, Math.trunc(values[index])]));
+}
+
 async function run(db, sql, params = []) {
   return db.prepare(sql).bind(...params).run();
 }
@@ -82,6 +91,7 @@ function conversationFromRow(row) {
     deleted_at: row.deleted_at ? iso(row.deleted_at) : null,
     title_manual: Number(row.title_manual || 0) === 1,
     title_generated_at: row.title_generated_at ? iso(row.title_generated_at) : null,
+    title_model_id: row.title_model_id || null,
   };
 }
 
@@ -94,6 +104,9 @@ function normalizeVariant(value = {}, prefix = 'variant') {
     .trim()
     .slice(0, MAX_CONTENT);
   const finishReason = String(value.finish_reason || '').trim().slice(0, 80);
+  const modelId = String(value.model_id || '').trim().slice(0, 180);
+  const usage = normalizeUsage(value.usage);
+  const generationSource = GENERATION_SOURCES.has(value.generation_source) ? value.generation_source : '';
   return {
     id: sanitizeId(value.id || crypto.randomUUID(), prefix),
     content: String(value.content),
@@ -102,7 +115,10 @@ function normalizeVariant(value = {}, prefix = 'variant') {
     favorite: Boolean(value.favorite),
     ...(value.hidden === true ? { hidden: true } : {}),
     ...(value.input_type === 'landing_letter' ? { input_type: 'landing_letter' } : {}),
+    ...(modelId ? { model_id: modelId } : {}),
+    ...(usage ? { usage } : {}),
     ...(finishReason ? { finish_reason: finishReason } : {}),
+    ...(generationSource ? { generation_source: generationSource } : {}),
     ...(errorDetail ? { errorDetail } : {}),
   };
 }
@@ -253,7 +269,7 @@ export async function writeProfile(db, value) {
 }
 
 async function conversationRow(db, conversationId) {
-  return first(db, `SELECT id, title, created_at, updated_at, deleted_at, title_manual, title_generated_at
+  return first(db, `SELECT id, title, created_at, updated_at, deleted_at, title_manual, title_generated_at, title_model_id
     FROM conversations WHERE id = ? AND user_id = ?`, [conversationId, USER_ID]);
 }
 
@@ -271,7 +287,7 @@ export async function getConversation(db, id) {
 
 export async function listConversations(db) {
   await ensureChatSchema(db);
-  const rows = await all(db, `SELECT id, title, created_at, updated_at, deleted_at, title_manual, title_generated_at
+  const rows = await all(db, `SELECT id, title, created_at, updated_at, deleted_at, title_manual, title_generated_at, title_model_id
     FROM conversations
     WHERE user_id = ? AND deleted_at IS NULL
     ORDER BY updated_at DESC, created_at DESC`, [USER_ID]);
@@ -284,8 +300,8 @@ export async function createConversation(db, title = '新聊天') {
   const id = sanitizeId(crypto.randomUUID(), 'conversation');
   const cleanTitle = sanitizeTitle(title);
   await run(db, `INSERT INTO conversations (
-    id, user_id, title, created_at, updated_at, deleted_at, title_manual, title_generated_at
-  ) VALUES (?, ?, ?, ?, ?, NULL, 0, NULL)`, [id, USER_ID, cleanTitle, timestamp, timestamp]);
+    id, user_id, title, created_at, updated_at, deleted_at, title_manual, title_generated_at, title_model_id
+  ) VALUES (?, ?, ?, ?, ?, NULL, 0, NULL, NULL)`, [id, USER_ID, cleanTitle, timestamp, timestamp]);
   await writeStateRow(db, id, normalizeState(), timestamp);
   return conversationFromRow({
     id,
@@ -295,6 +311,7 @@ export async function createConversation(db, title = '新聊天') {
     deleted_at: null,
     title_manual: 0,
     title_generated_at: null,
+    title_model_id: null,
   });
 }
 
@@ -311,17 +328,17 @@ export async function renameConversation(db, id, title) {
   return conversationFromRow(await requireActiveConversation(db, conversationId));
 }
 
-export async function setGeneratedTitle(db, id, title) {
+export async function setGeneratedTitle(db, id, title, modelId = '') {
   await ensureChatSchema(db);
   const conversationId = sanitizeId(id, 'conversation');
   await requireActiveConversation(db, conversationId);
   const timestamp = nowMs();
   await run(db, `UPDATE conversations
-    SET title = ?, title_generated_at = ?, updated_at = ?
+    SET title = ?, title_generated_at = ?, title_model_id = ?, updated_at = ?
     WHERE id = ? AND user_id = ? AND deleted_at IS NULL
       AND (title_manual IS NULL OR title_manual != 1)
       AND title_generated_at IS NULL`, [
-    sanitizeTitle(title), timestamp, timestamp, conversationId, USER_ID,
+    sanitizeTitle(title), timestamp, clip(modelId, 180).trim() || null, timestamp, conversationId, USER_ID,
   ]);
   return conversationFromRow(await requireActiveConversation(db, conversationId));
 }
@@ -405,10 +422,12 @@ export async function writeLandingExchange(db, id, value = {}) {
   const conversationId = sanitizeId(id, 'conversation');
   await requireActiveConversation(db, conversationId);
   const modelId = clip(value.model_id, 180).trim();
+  const assistantModelId = clip(value.assistant_model_id || modelId, 180).trim();
   const letterText = clip(value.letter_text);
   const letterHash = clip(value.letter_hash, 128).trim();
   const assistantText = String(value.assistant_text ?? '');
   const finishReason = clip(value.finish_reason, 80).trim();
+  const usage = normalizeUsage(value.usage);
   if (!modelId || !letterText.trim() || !letterHash || !assistantText.trim()) {
     throw new ChatStoreError('invalid_request', '登岛信或模型回复不完整。', 400);
   }
@@ -439,7 +458,10 @@ export async function writeLandingExchange(db, id, value = {}) {
         id: assistantVariantId,
         content: assistantText,
         created_at: createdAt,
+        ...(assistantModelId ? { model_id: assistantModelId } : {}),
+        ...(usage ? { usage } : {}),
         ...(finishReason ? { finish_reason: finishReason } : {}),
+        generation_source: 'landing',
       }] },
     },
   }));
@@ -455,7 +477,7 @@ export async function writeLandingExchange(db, id, value = {}) {
     db.prepare(`INSERT INTO conversation_landing_letters (
       id, conversation_id, model_id, letter_text, letter_hash, assistant_turn_id,
       landing_version, sent_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`) 
       .bind(landingId, conversationId, modelId, letterText, letterHash, turnId, landingVersion, timestamp, timestamp, timestamp),
     db.prepare(`INSERT INTO conversation_states (conversation_id, state_json, updated_at)
       VALUES (?, ?, ?)
@@ -475,7 +497,10 @@ export async function writeLandingExchange(db, id, value = {}) {
       role: 'assistant',
       content: assistantText,
       id: assistantVariantId,
+      ...(assistantModelId ? { model_id: assistantModelId } : {}),
+      ...(usage ? { usage } : {}),
       ...(finishReason ? { finish_reason: finishReason } : {}),
+      generation_source: 'landing',
     },
     landing: landingFromRow({
       model_id: modelId,

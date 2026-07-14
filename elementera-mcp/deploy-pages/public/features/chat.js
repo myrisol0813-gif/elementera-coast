@@ -18,6 +18,134 @@ import {
 } from './chat-state.js';
 
 const DEFAULT_MODEL = 'openai/gpt-4.1-nano';
+const CONNECTING_TEXT = '正在连接当前模型……';
+
+export function shortModelName(modelId) {
+  const bare = String(modelId || '').split('/').at(-1)?.replace(/:free$/i, '') || '';
+  if (!bare) return '';
+  if (/^gpt-/i.test(bare)) {
+    return bare.replace(/^gpt-/i, 'GPT-').replace(/-(nano|mini|micro)$/i, ' $1');
+  }
+  return bare;
+}
+
+function generationDetail(variant = {}) {
+  const usage = variant.usage || {};
+  return [
+    `model_id: ${variant.model_id || '—'}`,
+    `prompt_tokens: ${Number.isFinite(usage.prompt_tokens) ? usage.prompt_tokens : '—'}`,
+    `completion_tokens: ${Number.isFinite(usage.completion_tokens) ? usage.completion_tokens : '—'}`,
+    `total_tokens: ${Number.isFinite(usage.total_tokens) ? usage.total_tokens : '—'}`,
+    `finish_reason: ${variant.finish_reason || '—'}`,
+    `generation_source: ${variant.generation_source || '—'}`,
+  ].join('\n');
+}
+
+function generationFootprint(variant, turnId) {
+  if (!variant?.model_id) return '';
+  const model = shortModelName(variant.model_id);
+  const total = Number.isFinite(variant?.usage?.total_tokens)
+    ? ` · ${variant.usage.total_tokens.toLocaleString('en-US')} tok`
+    : '';
+  const detail = generationDetail(variant);
+  return `<button class="generation-footprint" type="button" data-action="chat:generation-detail" data-turn="${escapeAttribute(turnId)}" title="${escapeAttribute(detail)}" aria-label="查看生成详情">${escapeHtml(`${model}${total}`)}</button>`;
+}
+
+function parseSseBlock(block) {
+  let event = 'message';
+  const data = [];
+  for (const line of String(block || '').split(/\r?\n/)) {
+    if (!line || line.startsWith(':')) continue;
+    const separator = line.indexOf(':');
+    const field = separator < 0 ? line : line.slice(0, separator);
+    let value = separator < 0 ? '' : line.slice(separator + 1);
+    if (value.startsWith(' ')) value = value.slice(1);
+    if (field === 'event') event = value || 'message';
+    if (field === 'data') data.push(value);
+  }
+  if (!data.length) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(data.join('\n'));
+  } catch {
+    const error = new Error('Coast 流式响应格式无效。');
+    error.type = 'invalid_stream_event';
+    throw error;
+  }
+  return { event, data: parsed };
+}
+
+export function createCoastSseParser(onEvent) {
+  let buffer = '';
+  function drain() {
+    while (true) {
+      const match = buffer.match(/\r?\n\r?\n/);
+      if (!match || match.index == null) return;
+      const block = buffer.slice(0, match.index);
+      buffer = buffer.slice(match.index + match[0].length);
+      const parsed = parseSseBlock(block);
+      if (parsed) onEvent(parsed);
+    }
+  }
+  return Object.freeze({
+    push(chunk) {
+      buffer += String(chunk || '');
+      drain();
+    },
+    finish() {
+      drain();
+      buffer = '';
+    },
+  });
+}
+
+async function requestChatStream(payload, { signal, onEvent }) {
+  const response = await fetch(API.chat, {
+    method: 'POST',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    signal,
+    headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, stream: true }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    const upstream = data?.error;
+    const error = new Error(typeof upstream === 'string' ? upstream : upstream?.message || `请求失败（${response.status}）`);
+    error.type = upstream?.type || 'request_failed';
+    throw error;
+  }
+  if (!response.body) {
+    const error = new Error('浏览器没有收到可读取的流。');
+    error.type = 'stream_unavailable';
+    throw error;
+  }
+  let selected = [];
+  try {
+    const header = JSON.parse(response.headers.get('X-Coast-Memory-Selected') || '[]');
+    if (Array.isArray(header)) selected = header.map(String);
+  } catch {
+    selected = [];
+  }
+  const parser = createCoastSseParser(onEvent);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parser.push(decoder.decode(value, { stream: true }));
+    }
+    parser.push(decoder.decode());
+    parser.finish();
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+  return selected;
+}
 
 function emptyProfile() {
   return {
@@ -222,6 +350,7 @@ export function createChat({ storage, toast }) {
             ${actionButton('favorite', '收藏', { active: branch.assistant.favorite, reaction: 'favorite' })}
             ${actionButton('delete-assistant', '删除')}
             ${variantControl('assistant', turn.id, branch.assistantIndex, branch.assistants.length)}
+            ${generationFootprint(branch.assistant, turn.id)}
           </div>
         </div>
       </article>` : '';
@@ -422,10 +551,18 @@ export function createChat({ storage, toast }) {
     };
   }
 
+  function patchGeneratedVariant(conversationId, turnId, appended, patch, { render = true } = {}) {
+    let latest = runtime.histories.get(conversationId) || appended.state;
+    latest = updateAssistantVariant(latest, turnId, appended.userIndex, appended.assistantIndex, patch);
+    setHistory(conversationId, latest);
+    if (render) renderMessages(conversationId);
+    return latest;
+  }
+
   async function generate(conversationId, turnId) {
     if (runtime.generation || runtime.deletedIds.has(conversationId)) return;
     const original = runtime.histories.get(conversationId);
-    const appended = appendAssistantVariant(original, turnId, { content: '正在连接当前模型……' });
+    const appended = appendAssistantVariant(original, turnId, { content: CONNECTING_TEXT });
     if (!appended.turn) return;
     setHistory(conversationId, appended.state);
     const controller = new AbortController();
@@ -438,39 +575,112 @@ export function createChat({ storage, toast }) {
     };
     renderMessages(conversationId);
     composerState();
-    saveHistory(conversationId, appended.state).catch(() => undefined);
 
     const requestContext = chatRequestContext(conversationId);
+    const streamingEnabled = requestContext.settings.streamingEnabled === true;
+    if (!streamingEnabled) saveHistory(conversationId, appended.state).catch(() => undefined);
     const modelId = runtime.profile.current_chat_model || DEFAULT_MODEL;
+    const payload = {
+      conversation_id: conversationId,
+      model: modelId,
+      messages: contextMessages(appended.state, turnId),
+      recent_entry_ids: requestContext.recentEntryIds,
+      settings: requestContext.settings,
+    };
     let patch;
     let generated = false;
     let finishReason = '';
+    let partialContent = '';
+    let streamModelId = '';
+    let streamUsage = null;
     try {
-      const data = await requestJson(API.chat, {
-        method: 'POST',
-        signal: controller.signal,
-        body: JSON.stringify({
-          conversation_id: conversationId,
-          model: modelId,
-          messages: contextMessages(appended.state, turnId),
-          recent_entry_ids: requestContext.recentEntryIds,
-          settings: requestContext.settings,
-        }),
-      });
-      finishReason = String(data?.finish_reason || '');
-      patch = {
-        content: data?.message?.content || '模型没有返回文本。',
-        errorDetail: '',
-        finish_reason: finishReason,
-      };
-      const selected = Array.isArray(data?.memory?.selected_entry_ids) ? data.memory.selected_entry_ids.map(String) : [];
-      const history = runtime.recallHistory.get(conversationId) || [];
-      runtime.recallHistory.set(conversationId, [...history, selected].slice(-8));
-      generated = true;
+      if (streamingEnabled) {
+        let done = false;
+        const selected = await requestChatStream(payload, {
+          signal: controller.signal,
+          onEvent(item) {
+            if (item.event === 'meta') {
+              streamModelId = String(item.data?.model || '').slice(0, 180);
+              patchGeneratedVariant(conversationId, turnId, appended, {
+                model_id: streamModelId,
+                generation_source: 'chat',
+              });
+              return;
+            }
+            if (item.event === 'delta') {
+              partialContent += typeof item.data?.content === 'string' ? item.data.content : '';
+              patchGeneratedVariant(conversationId, turnId, appended, {
+                content: partialContent,
+                model_id: streamModelId || modelId,
+                generation_source: 'chat',
+                errorDetail: '',
+              });
+              return;
+            }
+            if (item.event === 'usage') {
+              streamUsage = item.data;
+              patchGeneratedVariant(conversationId, turnId, appended, { usage: streamUsage });
+              return;
+            }
+            if (item.event === 'done') {
+              finishReason = String(item.data?.finish_reason || '');
+              done = true;
+              return;
+            }
+            if (item.event === 'error') {
+              const error = new Error(item.data?.message || '流式生成失败。');
+              error.type = item.data?.type || 'stream_error';
+              throw error;
+            }
+          },
+        });
+        const history = runtime.recallHistory.get(conversationId) || [];
+        runtime.recallHistory.set(conversationId, [...history, selected].slice(-8));
+        if (!done) {
+          const error = new Error('流式响应在完成事件前中断。');
+          error.type = 'stream_incomplete';
+          throw error;
+        }
+        patch = {
+          content: partialContent || '模型没有返回文本。',
+          errorDetail: '',
+          model_id: streamModelId || modelId,
+          ...(streamUsage ? { usage: streamUsage } : {}),
+          finish_reason: finishReason,
+          generation_source: 'chat',
+        };
+        generated = true;
+      } else {
+        const data = await requestJson(API.chat, {
+          method: 'POST',
+          signal: controller.signal,
+          body: JSON.stringify(payload),
+        });
+        finishReason = String(data?.finish_reason || '');
+        patch = {
+          content: data?.message?.content || '模型没有返回文本。',
+          errorDetail: '',
+          model_id: data?.model || modelId,
+          ...(data?.usage ? { usage: data.usage } : {}),
+          finish_reason: finishReason,
+          generation_source: 'chat',
+        };
+        const selected = Array.isArray(data?.memory?.selected_entry_ids) ? data.memory.selected_entry_ids.map(String) : [];
+        const history = runtime.recallHistory.get(conversationId) || [];
+        runtime.recallHistory.set(conversationId, [...history, selected].slice(-8));
+        generated = true;
+      }
     } catch (error) {
-      patch = error.name === 'AbortError'
-        ? { content: '已停止生成。', errorDetail: '' }
-        : { content: '消息生成失败，请稍后重试。', errorDetail: `${error.type || 'request_failed'}: ${error.message}` };
+      const cancelled = error.name === 'AbortError';
+      patch = {
+        content: streamingEnabled ? partialContent : (cancelled ? '已停止生成。' : '消息生成失败，请稍后重试。'),
+        errorDetail: cancelled ? '' : `${error.type || 'request_failed'}: ${error.message}`,
+        model_id: streamModelId || modelId,
+        ...(streamUsage ? { usage: streamUsage } : {}),
+        finish_reason: cancelled ? 'cancelled' : 'error',
+        generation_source: 'chat',
+      };
+      finishReason = patch.finish_reason;
     }
 
     if (runtime.deletedIds.has(conversationId)) {
@@ -479,9 +689,7 @@ export function createChat({ storage, toast }) {
       return;
     }
 
-    let latest = runtime.histories.get(conversationId) || appended.state;
-    latest = updateAssistantVariant(latest, turnId, appended.userIndex, appended.assistantIndex, patch);
-    setHistory(conversationId, latest);
+    const latest = patchGeneratedVariant(conversationId, turnId, appended, patch, { render: false });
     if (runtime.generation?.controller === controller) runtime.generation = null;
     renderMessages(conversationId);
     composerState();
@@ -490,7 +698,7 @@ export function createChat({ storage, toast }) {
     if (generated) {
       let soilRefresh = null;
       try {
-        soilRefresh = await (runtime.memory?.onReplyCompleted(conversationId, { modelId }) || Promise.resolve(null));
+        soilRefresh = await (runtime.memory?.onReplyCompleted(conversationId, { modelId: patch.model_id || modelId }) || Promise.resolve(null));
       } catch (error) {
         console.warn('[memory:reply]', error);
         soilRefresh = { ok: false, reason: error?.type || 'soil_organize_failed' };
@@ -542,7 +750,7 @@ export function createChat({ storage, toast }) {
       renderMessages(conversationId);
       autoTitleFromLanding(conversationId, letterText, data?.assistant?.content || '')
         .catch((error) => console.warn('[chat:landing-title]', error));
-      const soilRefresh = await (runtime.memory?.onReplyCompleted(conversationId, { trigger: 'landing', modelId })
+      const soilRefresh = await (runtime.memory?.onReplyCompleted(conversationId, { trigger: 'landing', modelId: data?.assistant?.model_id || data?.model || modelId })
         || Promise.resolve({ ok: false, reason: 'memory_unavailable' }));
       data.soil_refresh = soilRefresh;
       return data;
@@ -725,6 +933,12 @@ export function createChat({ storage, toast }) {
     if (name === 'mic') return toast('语音输入还没接入。');
 
     const turnId = turnIdFrom(target);
+    if (name === 'generation-detail') {
+      const turn = currentHistory().turns.find((item) => item.id === turnId);
+      const variant = turn ? activeBranch(turn).assistant : null;
+      if (variant?.model_id) return toast(generationDetail(variant), 5200);
+      return;
+    }
     if (runtime.generation && runtime.generation.conversationId === runtime.currentId
       && ['switch-variant', 'edit-user', 'delete-user', 'delete-assistant', 'regenerate'].includes(name)) {
       return toast('请先停止或等待当前回复完成。');
