@@ -1,0 +1,35 @@
+name: Temporary P0 soil degraded fallback verification
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.head_ref == 'p0-soil-degraded-fallback-01' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: p0-soil-degraded-fallback-01
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Apply targeted soil repair and run full suite
+        run: |
+          node scripts/p0-soil-degraded-fallback-fix.mjs
+          npm test
+      - name: Commit verified soil repair
+        run: |
+          rm scripts/p0-soil-degraded-fallback-fix.mjs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: keep degraded soil honest and request structured output"
+          git push origin HEAD:p0-soil-degraded-fallback-01
