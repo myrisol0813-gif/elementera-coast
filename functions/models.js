@@ -5,7 +5,7 @@ const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models?output_modali
 const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const DEFAULT_MODEL = 'openai/gpt-4.1-nano';
 const MAX_CHAT_MESSAGES = 20;
-const MAX_CHAT_CONTENT_CHARS = 12000;
+const MAX_CHAT_CONTENT_CHARS = 2 * 1024 * 1024;
 export const MAX_FORMAL_TOKENS = 2000;
 const MAX_SANDBOX_TOKENS = 700;
 const CATALOG_TTL_MS = 10 * 60 * 1000;
@@ -194,8 +194,11 @@ function supportsTemperature(modelId, model) {
 }
 
 function chatPayload(modelId, messages, maxTokens, temperature, model) {
-  const payload = { model: modelId, messages, max_completion_tokens: maxTokens };
-  if (!modelId.startsWith('openai/')) payload.max_tokens = maxTokens;
+  const payload = { model: modelId, messages };
+  if (maxTokens !== null) {
+    payload.max_completion_tokens = maxTokens;
+    if (!modelId.startsWith('openai/')) payload.max_tokens = maxTokens;
+  }
   if (supportsTemperature(modelId, model)) payload.temperature = temperature;
   return payload;
 }
@@ -272,7 +275,12 @@ export async function performFormalChat(env, input = {}, { allowSystem = false }
   }
   const messages = validateMessages(input.messages, { system: allowSystem });
   const settings = input.settings || {};
-  const maxTokens = clamp(settings.max_tokens ?? input.max_tokens, 600, 1, MAX_FORMAL_TOKENS);
+  const requestedMaxTokens = Object.prototype.hasOwnProperty.call(settings, 'max_tokens')
+    ? settings.max_tokens
+    : input.max_tokens;
+  const maxTokens = requestedMaxTokens === null
+    ? null
+    : clamp(requestedMaxTokens, 600, 1, MAX_FORMAL_TOKENS);
   const temperature = clamp(settings.temperature ?? input.temperature, 0.7, 0, 2);
   const upstream = await requestOpenRouter(env, chatPayload(modelId, messages, maxTokens, temperature, model), 'Elementera Coast Formal Chat');
   const choice = upstream?.choices?.[0] || {};

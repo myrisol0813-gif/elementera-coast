@@ -96,7 +96,7 @@ function normalizeVariant(value = {}, prefix = 'variant') {
   const finishReason = String(value.finish_reason || '').trim().slice(0, 80);
   return {
     id: sanitizeId(value.id || crypto.randomUUID(), prefix),
-    content: clip(value.content),
+    content: String(value.content),
     created_at: typeof value.created_at === 'string' ? value.created_at : new Date().toISOString(),
     liked: Boolean(value.liked),
     favorite: Boolean(value.favorite),
@@ -407,7 +407,7 @@ export async function writeLandingExchange(db, id, value = {}) {
   const modelId = clip(value.model_id, 180).trim();
   const letterText = clip(value.letter_text);
   const letterHash = clip(value.letter_hash, 128).trim();
-  const assistantText = clip(value.assistant_text);
+  const assistantText = String(value.assistant_text ?? '');
   const finishReason = clip(value.finish_reason, 80).trim();
   if (!modelId || !letterText.trim() || !letterHash || !assistantText.trim()) {
     throw new ChatStoreError('invalid_request', '登岛信或模型回复不完整。', 400);

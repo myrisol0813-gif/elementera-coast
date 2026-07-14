@@ -47,6 +47,7 @@ const landingBodies = [];
 const titleBodies = [];
 const soilOrganizeBodies = [];
 let landingFinishReason = 'stop';
+let formalFinishReason = 'length';
 let failNextSoilOrganize = false;
 
 function soilFor(conversationId) {
@@ -153,7 +154,13 @@ globalThis.fetch = async (input, options = {}) => {
   if (url.pathname === '/api/chat') {
     formalChatRequests += 1;
     formalChatBodies.push(body);
-    return response({ ok: true, model: body.model, message: { role: 'assistant', content: `mock: ${body.messages.at(-1)?.content || ''}` }, memory: { selected_entry_ids: [`mock-memory-${formalChatRequests}`], vector_enabled: false } });
+    return response({
+      ok: true,
+      model: body.model,
+      message: { role: 'assistant', content: `mock: ${body.messages.at(-1)?.content || ''}` },
+      finish_reason: formalFinishReason,
+      memory: { selected_entry_ids: [`mock-memory-${formalChatRequests}`], vector_enabled: false },
+    });
   }
   if (url.pathname === '/api/chat/title') {
     titleBodies.push(body);
@@ -356,7 +363,14 @@ document.querySelector('#composerActionButton').click();
 await waitFor(() => document.querySelector('.message.assistant')?.textContent.includes('mock: a1'), 'assistant reply');
 assert.equal(formalChatRequests, 1, 'the existing right-hand button still submits chat');
 assert.equal(formalChatBodies[0].conversation_id, 'conv-1');
+assert.equal(formalChatBodies[0].settings.max_tokens, null, 'natural output must not impose an application token limit');
 await waitFor(() => document.querySelector('.thought-soil-entry')?.textContent.includes('1 粒手持种'), 'thought soil entry');
+await waitFor(() => document.querySelector('#toastRoot').textContent.includes('模型或供应商达到自身长度上限'), 'ordinary truncation notice');
+assert.equal(soilOrganizeBodies.filter((item) => item.trigger === 'reply').length, 1, 'the first reply must organize thought soil');
+assert.equal(soilOrganizeBodies.find((item) => item.trigger === 'reply').force, true, 'each reply must bypass the old interval schedule');
+assert.equal(soilOrganizeBodies.find((item) => item.trigger === 'reply').model, 'openai/gpt-4.1-nano', 'thought soil must use the model selected for this reply');
+assert.equal(histories.get('conv-1').turns.at(-1).assistant.variantsByUserVariant['0'][0].finish_reason, 'length');
+formalFinishReason = 'stop';
 document.querySelector('.thought-soil-entry').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'thought-soil', 'thought soil route');
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('勿复读'));
@@ -381,6 +395,7 @@ prompts.push('a1 edited');
 document.querySelector('.message.user [data-action="chat:edit-user"]').click();
 await waitFor(() => document.querySelector('.message.user .variant-switch')?.textContent.includes('2/2'), 'user variant');
 await waitFor(() => document.querySelector('.message.assistant')?.textContent.includes('mock: a1 edited'), 'edited assistant');
+await waitFor(() => soilOrganizeBodies.filter((item) => item.trigger === 'reply').length === 2, 'each completed reply refreshes thought soil');
 assert.ok(formalChatBodies[1].recent_entry_ids.includes('mock-memory-1'), 'the next turn must carry cooldown ids, not memory contents');
 assert.equal(document.querySelectorAll('.message.assistant').length, 1);
 document.querySelector('.message.assistant').dispatchEvent(new window.MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
@@ -442,13 +457,12 @@ document.querySelector('[data-action="settings:wolf"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'wolf', 'wolf settings route');
 document.querySelector('[data-action="tools:run-control"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'run-control', 'API cottage route');
-for (const label of ['上下文预算（粗略）', '思维壤预算', '思维壤自动整理间隔', '手持种上限', '种子冷却轮数', '没东西聊时当前种子上限', '当前窗口种子召回上限', '总记忆召回上限', '查看向量状态']) {
+for (const label of ['上下文预算（粗略）', '自然', '不设置应用层输出上限', '思维壤预算', '思维壤整理频率', '每个完成轮次自动整理一次', '手持种上限', '种子冷却轮数', '没东西聊时当前种子上限', '当前窗口种子召回上限', '总记忆召回上限', '查看向量状态']) {
   assert.ok(document.querySelector('#overlayRoot').textContent.includes(label));
 }
 for (const [name, value] of [
   ['seedCooldownTurns', '0'],
   ['conversationSeedStallLimit', '6'],
-  ['autoRefreshEveryTurns', '5'],
   ['maxHandSeeds', '3'],
 ]) {
   const control = document.querySelector(`[name="${name}"]`);
@@ -534,11 +548,12 @@ await waitFor(() => document.querySelectorAll('.message.assistant').length === a
 await waitFor(() => soilOrganizeBodies.some((item) => item.trigger === 'landing'), 'landing soil refresh');
 const landingSoil = soilOrganizeBodies.findLast((item) => item.trigger === 'landing');
 assert.deepEqual(landingBodies.at(-1).recent_entry_ids, [], 'zero cooldown must send no cooldown ids');
-assert.equal(landingBodies.at(-1).settings.max_tokens, 1200, 'landing auto output must not reuse ordinary chat 600');
+assert.equal(landingBodies.at(-1).settings.max_tokens, null, 'landing natural output must not impose an application token limit');
 assert.equal(landingSoil.force, true, 'landing soil refresh must bypass the ordinary schedule');
+assert.equal(landingSoil.model, landingBodies.at(-1).model, 'landing soil must use the model that read the letter');
 assert.equal(landingSoil.settings.seedCooldownTurns, 0);
 assert.equal(landingSoil.settings.conversationSeedStallLimit, 6);
-assert.equal(landingSoil.settings.autoRefreshEveryTurns, 5);
+assert.equal(landingSoil.settings.autoRefreshEveryTurns, 1);
 assert.equal(landingSoil.settings.maxHandSeeds, 3);
 assert.equal(document.querySelectorAll('.message.user').length, visibleUsersBeforeLetter, 'hidden landing input must not render a user bubble');
 assert.ok(document.querySelector('.message.assistant:last-of-type')?.textContent.includes('我把登岛信读完了。'));
@@ -546,7 +561,7 @@ assert.equal(titleBodies.length, titlesBeforeLetter + 1, 'landing must generate 
 assert.match(titleBodies.at(-1).user, /^登岛信：/);
 assert.equal(titleBodies.at(-1).assistant, '我把登岛信读完了。');
 assert.equal(conversations.find((item) => item.id === landingConversationId)?.title, '测试标题');
-assert.equal(document.querySelector('#toastRoot').textContent, '登岛信已递出，但回复达到长度上限；可以点“重新生成”再读一次。');
+assert.equal(document.querySelector('#toastRoot').textContent, '登岛信已递出，但模型或供应商达到自身长度上限；可以点“重新生成”再读一次。');
 assert.ok(document.querySelector('.thought-soil-entry')?.textContent.includes('1 粒手持种'));
 document.querySelector('.thought-soil-entry').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'thought-soil', 'landing thought soil route');
@@ -563,7 +578,7 @@ document.querySelector(`.message.assistant[data-turn="${landingTurn.id}"] [data-
 await waitFor(() => formalChatRequests === requestsBeforeLandingRegenerate + 1, 'landing regenerate request');
 await waitFor(() => histories.get(landingConversationId).turns.at(-1).assistant.variantsByUserVariant['0'].length === 2, 'landing regenerate variant');
 assert.equal(formalChatBodies.at(-1).messages.at(-1).content, landingBodies.at(-1).letter_text);
-assert.equal(formalChatBodies.at(-1).settings.max_tokens, 600, 'ordinary regenerate output logic must stay unchanged');
+assert.equal(formalChatBodies.at(-1).settings.max_tokens, null, 'landing regenerate must remain application-unbounded');
 assert.equal(document.querySelectorAll('.message.user').length, visibleUsersBeforeLetter, 'landing regenerate must keep the hidden input hidden');
 
 document.querySelector('#moreButton').click();
@@ -578,6 +593,7 @@ await waitFor(() => landingBodies.length === landingCountBeforeLocked + 1 && doc
 assert.equal(document.querySelector('#toastRoot').textContent, '登岛信已递出；思维壤已手动锁定，保留原有内容。');
 assert.equal(soilFor(landingConversationId).current_text, '小寒手动锁定的当前方向');
 assert.equal(soilFor(landingConversationId).hand_seeds.length, 0);
+assert.ok(document.querySelector('.thought-soil-entry')?.textContent.includes('已锁定'));
 
 document.querySelector('#moreButton').click();
 await waitFor(() => document.querySelector('[data-action="letters:send-island"]'), 'reopen letter for soil failure');

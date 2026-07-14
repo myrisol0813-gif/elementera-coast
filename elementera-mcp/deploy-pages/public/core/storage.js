@@ -70,7 +70,7 @@ function defaults() {
       creativity: 'balanced',
       soilBudget: 1200,
       soilEnabled: true,
-      autoRefreshEveryTurns: 4,
+      autoRefreshEveryTurns: 1,
       maxHandSeeds: 7,
       conversationSeedLimit: 3,
       conversationSeedStallLimit: 4,

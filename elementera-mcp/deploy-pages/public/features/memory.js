@@ -52,6 +52,7 @@ export function createMemory({ chat, router, toast, storage }) {
     libraryTab: 'conversation',
     filters: { entryType: '', status: '', query: '' },
     vectorStatus: null,
+    soilChains: new Map(),
   };
 
   function currentId() {
@@ -132,7 +133,8 @@ export function createMemory({ chat, router, toast, storage }) {
 
   function renderSoilEntry(conversationId) {
     const soil = runtime.soils.get(conversationId) || emptySoil(conversationId);
-    return `<div class="thought-soil-row"><button class="thought-soil-entry" type="button" data-action="memory:soil">思维壤 · ${Math.min(soil.hand_seeds.length, maxHandSeeds())} 粒手持种 <span aria-hidden="true">›</span></button></div>`;
+    const locked = soil.manual_locked ? ' · 已锁定' : '';
+    return `<div class="thought-soil-row"><button class="thought-soil-entry" type="button" data-action="memory:soil">思维壤 · ${Math.min(soil.hand_seeds.length, maxHandSeeds())} 粒手持种${locked} <span aria-hidden="true">›</span></button></div>`;
   }
 
   function soilBody(soil) {
@@ -591,34 +593,50 @@ export function createMemory({ chat, router, toast, storage }) {
     toast('思维壤已保存。');
   }
 
-  async function onReplyCompleted(conversationId, { trigger = 'reply' } = {}) {
+  async function organizeAfterReply(conversationId, trigger, modelId) {
     const landing = trigger === 'landing';
     try {
       const data = await requestJson(API.memorySoilOrganize, {
         method: 'POST',
-        body: JSON.stringify({ conversation_id: conversationId, force: landing, trigger, settings: settings() }),
+        body: JSON.stringify({ conversation_id: conversationId, model: modelId, force: true, trigger, settings: settings() }),
       });
-      if (landing) await fetchSoil(conversationId);
-      else if (data.soil) runtime.soils.set(conversationId, data.soil);
+      if (data.soil) runtime.soils.set(conversationId, data.soil);
+      await fetchSoil(conversationId);
       if (currentId() === conversationId) chat.renderMessages();
       return {
-        ok: true,
+        ok: !data.degraded,
+        degraded: Boolean(data.degraded),
         skipped: Boolean(data.skipped),
         reason: data.reason || '',
         soil: runtime.soils.get(conversationId) || data.soil || emptySoil(conversationId),
       };
     } catch (error) {
       if (!['soil_locked'].includes(error?.type)) console.warn('[memory:soil-auto]', error);
-      if (landing) {
-        try {
-          await fetchSoil(conversationId);
-          if (currentId() === conversationId) chat.renderMessages();
-        } catch (fetchError) {
-          console.warn('[memory:landing-readback]', fetchError);
-        }
+      try {
+        await fetchSoil(conversationId);
+        if (currentId() === conversationId) chat.renderMessages();
+      } catch (fetchError) {
+        console.warn(landing ? '[memory:landing-readback]' : '[memory:reply-readback]', fetchError);
       }
-      return { ok: false, reason: error?.type || 'soil_organize_failed' };
+      const locked = error?.type === 'soil_locked';
+      return {
+        ok: locked,
+        skipped: locked,
+        reason: locked ? 'manual_locked' : (error?.type || 'soil_organize_failed'),
+        soil: runtime.soils.get(conversationId) || emptySoil(conversationId),
+      };
     }
+  }
+
+  function onReplyCompleted(conversationId, { trigger = 'reply', modelId = '' } = {}) {
+    const previous = runtime.soilChains.get(conversationId) || Promise.resolve();
+    const next = previous.catch(() => undefined).then(() => organizeAfterReply(conversationId, trigger, modelId));
+    runtime.soilChains.set(conversationId, next);
+    const cleanup = () => {
+      if (runtime.soilChains.get(conversationId) === next) runtime.soilChains.delete(conversationId);
+    };
+    next.then(cleanup, cleanup);
+    return next;
   }
 
   return Object.freeze({

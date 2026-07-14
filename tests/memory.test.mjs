@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { createConversation, readConversationState } from '../functions/chat-store.js';
+import { createConversation, readConversationState, writeConversationState, writeProfile } from '../functions/chat-store.js';
 import {
   budgetChatMessages,
   clipGeneratedTitle,
   estimateContextTokens,
+  formalChatRequestSettings,
   landingRequestSettings,
   routeChatApi,
 } from '../functions/chat-router.js';
@@ -63,13 +64,19 @@ class D1Database {
 const db = new D1Database();
 const conversationA = await createConversation(db, 'A');
 const conversationB = await createConversation(db, 'B');
+const conversationC = await createConversation(db, 'C');
 
 assert.equal(estimateContextTokens('海岸'), 2);
 assert.equal(estimateContextTokens('coast'), 2);
 assert.equal(clipGeneratedTitle('一二三四五六七八九十十一十二十三'), '一二三四五六七八九十十一');
 assert.equal(landingRequestSettings({ outputLength: 'short', max_tokens: 100 }).max_tokens, 700);
-assert.equal(landingRequestSettings({ outputLength: 'auto', max_tokens: 600 }).max_tokens, 1200);
-assert.equal(landingRequestSettings({ outputLength: 'long', max_tokens: 9999 }).max_tokens, 2000);
+assert.equal(landingRequestSettings({ outputLength: 'short', max_tokens: 9999 }).max_tokens, 700);
+assert.equal(landingRequestSettings({ outputLength: 'auto', max_tokens: 600 }).max_tokens, null);
+assert.equal(landingRequestSettings({ outputLength: 'long', max_tokens: 9999 }).max_tokens, null);
+assert.equal(formalChatRequestSettings({ outputLength: 'short', max_tokens: 350 }).max_tokens, 700);
+assert.equal(formalChatRequestSettings({ outputLength: 'auto', max_tokens: 600 }).max_tokens, null);
+assert.equal(formalChatRequestSettings({ outputLength: 'long', max_tokens: 1200 }).max_tokens, null);
+assert.equal(formalChatRequestSettings({ max_tokens: 80 }).max_tokens, 80, 'low-level callers without an output preference keep their explicit budget');
 const assistantFirst = budgetChatMessages([
   { role: 'user', content: '旧'.repeat(80) },
   { role: 'assistant', content: 'a'.repeat(2000) },
@@ -330,19 +337,28 @@ let providerChatCalls = 0;
 globalThis.fetch = async (input, options = {}) => {
   const url = String(input);
   if (url.includes('/api/v1/models')) {
-    return new Response(JSON.stringify({ data: [{
-      id: 'openai/gpt-4.1-nano',
-      name: 'GPT-4.1 Nano',
-      architecture: { output_modalities: ['text'] },
-      supported_parameters: ['temperature'],
-      pricing: { prompt: '0.1', completion: '0.2' },
-    }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ data: [
+      {
+        id: 'openai/gpt-4.1-nano',
+        name: 'GPT-4.1 Nano',
+        architecture: { output_modalities: ['text'] },
+        supported_parameters: ['temperature'],
+        pricing: { prompt: '0.1', completion: '0.2' },
+      },
+      {
+        id: 'openai/gpt-5.1',
+        name: 'GPT-5.1',
+        architecture: { output_modalities: ['text'] },
+        supported_parameters: [],
+        pricing: { prompt: '0.2', completion: '0.4' },
+      },
+    ] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
   if (url.includes('/api/v1/chat/completions')) {
     providerChatCalls += 1;
     providerPayload = JSON.parse(options.body);
     return new Response(JSON.stringify({
-      model: 'openai/gpt-4.1-nano',
+      model: providerPayload.model,
       choices: [{ message: { content: providerContent }, finish_reason: providerFinishReason }],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
@@ -370,6 +386,27 @@ assert.equal(chatData.context.mode, 'estimated_characters');
 assert.equal(chatData.context.budget, 2000);
 assert.equal(chatData.context.recent_turns, 2);
 
+const naturalLongReply = '这是一段由模型自行决定长度的回复。'.repeat(1500);
+providerContent = naturalLongReply;
+providerFinishReason = 'length';
+const normalFloorResponse = await routeChatApi(new Request('https://coast.test/api/chat', {
+  method: 'POST',
+  headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    conversation_id: conversationA.id,
+    model: 'openai/gpt-4.1-nano',
+    messages: [{ role: 'user', content: '请完整回答。' }],
+    settings: { outputLength: 'auto', max_tokens: 600, temperature: 0.2 },
+  }),
+}), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
+const normalFloorData = await normalFloorResponse.json();
+assert.equal(normalFloorResponse.status, 200);
+assert.equal('max_completion_tokens' in providerPayload, false, 'natural output must leave the provider/model to decide when to stop');
+assert.equal('max_tokens' in providerPayload, false);
+assert.equal(normalFloorData.max_tokens, null);
+assert.equal(normalFloorData.finish_reason, 'length');
+assert.equal(normalFloorData.message.content, naturalLongReply, 'the formal route must not slice a long provider response');
+
 providerContent = '我已经完整读完这封登岛信。';
 providerFinishReason = 'length';
 const landingResponse = await routeChatApi(new Request('https://coast.test/api/chat/landing-letter', {
@@ -384,13 +421,18 @@ const landingResponse = await routeChatApi(new Request('https://coast.test/api/c
 }), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
 const landingData = await landingResponse.json();
 assert.equal(landingResponse.status, 200);
-assert.equal(providerPayload.max_completion_tokens, 1200, 'landing auto output must use its dedicated floor');
-assert.equal(landingData.max_tokens, 1200);
+assert.equal('max_completion_tokens' in providerPayload, false, 'landing natural output must also be application-unbounded');
+assert.equal('max_tokens' in providerPayload, false);
+assert.equal(landingData.max_tokens, null);
 assert.equal(landingData.finish_reason, 'length');
 assert.equal(landingData.history.turns.at(-1).user.variants[0].hidden, true);
 assert.equal(landingData.history.turns.at(-1).assistant.variantsByUserVariant['0'][0].finish_reason, 'length');
 assert.equal((await readConversationState(db, conversationB.id)).turns.at(-1).assistant.variantsByUserVariant['0'][0].finish_reason, 'length');
 
+await writeProfile(db, {
+  current_chat_model: 'openai/gpt-5.1',
+  model_box: { chat: ['openai/gpt-5.1'], free: [], image: [] },
+});
 providerContent = JSON.stringify({
   current_text: '',
   hand_seeds: [],
@@ -412,6 +454,66 @@ const soilData = await soilResponse.json();
 assert.equal(soilResponse.status, 200);
 assert.equal(soilData.soil.hand_seeds.length, 0);
 assert.match(soilData.soil.current_text, /登岛信开场已经完成/);
+assert.equal(providerPayload.model, 'openai/gpt-5.1', 'thought soil must follow the model currently selected for chat');
+assert.equal(providerPayload.max_completion_tokens, 1200, 'thought soil keeps a bounded internal JSON budget');
+
+const turn = (id, user, assistant, createdAt) => ({
+  id,
+  user: { active: 0, variants: [{ id: `${id}-user`, content: user, created_at: createdAt }] },
+  assistant: {
+    activeByUserVariant: { 0: 0 },
+    variantsByUserVariant: { 0: [{ id: `${id}-assistant`, content: assistant, created_at: createdAt }] },
+  },
+});
+await writeConversationState(db, conversationC.id, {
+  version: 4,
+  turns: [
+    turn('soil-turn-1', '第一轮问题', '第一轮回答', '2026-07-14T08:00:00.000Z'),
+    turn('soil-turn-2', '第二轮问题', '第二轮回答', '2026-07-14T08:01:00.000Z'),
+  ],
+});
+providerContent = `整理结果如下：\n\`\`\`json\n${JSON.stringify({
+  current_text: '正在承接第二轮对话',
+  hand_seeds: [{ name: '第二轮', life_core: '每轮都要接住', usage_hint: '', avoid_hint: '' }],
+  do_not_repeat: '',
+  pocket_candidates: [],
+})}\n\`\`\`\n已完成。`;
+const everyReplySoilResponse = await routeMemoryApi(new Request('https://coast.test/api/memory/soil/organize', {
+  method: 'POST',
+  headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    conversation_id: conversationC.id,
+    force: false,
+    trigger: 'reply',
+    settings: { maxHandSeeds: 3, autoRefreshEveryTurns: 12 },
+  }),
+}), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
+const everyReplySoilData = await everyReplySoilResponse.json();
+assert.equal(everyReplySoilResponse.status, 200);
+assert.equal(everyReplySoilData.skipped, undefined, 'a completed reply must not be skipped by the old interval');
+assert.equal(everyReplySoilData.soil.current_text, '正在承接第二轮对话');
+assert.equal(everyReplySoilData.soil.hand_seeds.length, 1);
+
+await writeConversationState(db, conversationC.id, {
+  version: 4,
+  turns: [
+    turn('soil-turn-1', '第一轮问题', '第一轮回答', '2026-07-14T08:00:00.000Z'),
+    turn('soil-turn-2', '第二轮问题', '第二轮回答', '2026-07-14T08:01:00.000Z'),
+    turn('soil-turn-3', '第三轮需要兜底', '第三轮回答', '2099-07-14T08:02:00.000Z'),
+  ],
+});
+providerContent = '这次上游没有按要求返回 JSON。';
+const degradedSoilResponse = await routeMemoryApi(new Request('https://coast.test/api/memory/soil/organize', {
+  method: 'POST',
+  headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+  body: JSON.stringify({ conversation_id: conversationC.id, force: false, trigger: 'reply' }),
+}), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
+const degradedSoilData = await degradedSoilResponse.json();
+assert.equal(degradedSoilResponse.status, 200);
+assert.equal(degradedSoilData.degraded, true);
+assert.equal(degradedSoilData.reason, 'soil_organize_invalid');
+assert.match(degradedSoilData.soil.current_text, /第三轮需要兜底/);
+assert.equal((await readSoil(db, conversationC.id)).current_text, degradedSoilData.soil.current_text, 'the fallback current section must persist');
 
 await writeSoil(db, conversationB.id, {
   current_text: '小寒手动锁定的当前方向',
@@ -430,6 +532,16 @@ assert.equal(lockedSoilData.skipped, true);
 assert.equal(lockedSoilData.reason, 'manual_locked');
 assert.equal(lockedSoilData.soil.current_text, '小寒手动锁定的当前方向');
 assert.equal(providerChatCalls, callsBeforeLockedLanding, 'landing organize must not call the model through a manual lock');
+const lockedReplyResponse = await routeMemoryApi(new Request('https://coast.test/api/memory/soil/organize', {
+  method: 'POST',
+  headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+  body: JSON.stringify({ conversation_id: conversationB.id, force: true, trigger: 'reply' }),
+}), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
+const lockedReplyData = await lockedReplyResponse.json();
+assert.equal(lockedReplyResponse.status, 200);
+assert.equal(lockedReplyData.reason, 'manual_locked');
+assert.equal(lockedReplyData.soil.current_text, '小寒手动锁定的当前方向');
+assert.equal(providerChatCalls, callsBeforeLockedLanding, 'per-reply organization must also preserve a manual lock');
 globalThis.fetch = originalFetch;
 
 console.log('memory: ok');

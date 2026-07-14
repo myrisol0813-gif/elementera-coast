@@ -1,6 +1,6 @@
 import { clamp, id, sanitizeId } from '../core/dom.js';
 
-const MAX_CONTENT = 12000;
+const MAX_ERROR_DETAIL = 12000;
 const MAX_TURNS = 100;
 const MAX_VARIANTS = 20;
 
@@ -8,11 +8,11 @@ const now = () => new Date().toISOString();
 
 export function normalizeVariant(value = {}, prefix = 'variant') {
   if (typeof value.content !== 'string') return null;
-  const errorDetail = String(value.errorDetail || '').trim().slice(0, MAX_CONTENT);
+  const errorDetail = String(value.errorDetail || '').trim().slice(0, MAX_ERROR_DETAIL);
   const finishReason = String(value.finish_reason || '').trim().slice(0, 80);
   return {
     id: sanitizeId(value.id || id(prefix), prefix),
-    content: value.content.slice(0, MAX_CONTENT),
+    content: value.content,
     created_at: typeof value.created_at === 'string' ? value.created_at : now(),
     liked: Boolean(value.liked),
     favorite: Boolean(value.favorite),
@@ -171,9 +171,9 @@ export function updateAssistantVariant(value, turnId, userIndex, assistantIndex,
   const turn = state.turns.find((item) => item.id === turnId);
   const variant = turn?.assistant?.variantsByUserVariant?.[String(userIndex)]?.[assistantIndex];
   if (!variant) return state;
-  if (typeof patch.content === 'string') variant.content = patch.content.slice(0, MAX_CONTENT);
+  if (typeof patch.content === 'string') variant.content = patch.content;
   if ('errorDetail' in patch) {
-    const errorDetail = String(patch.errorDetail || '').trim().slice(0, MAX_CONTENT);
+    const errorDetail = String(patch.errorDetail || '').trim().slice(0, MAX_ERROR_DETAIL);
     if (errorDetail) variant.errorDetail = errorDetail;
     else delete variant.errorDetail;
   }

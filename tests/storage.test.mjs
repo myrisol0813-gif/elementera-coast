@@ -33,7 +33,7 @@ assert.equal(storage.migrationConversations[0].state.turns[0].user.variants[0].c
 assert.equal(storage.read().rooms.lighthouse.rooms[0].messages[0].text, '旧灯塔草稿');
 assert.equal(storage.read().runControl.seedCooldownTurns, 2);
 assert.equal(storage.read().runControl.conversationSeedStallLimit, 4);
-assert.equal(storage.read().runControl.autoRefreshEveryTurns, 4);
+assert.equal(storage.read().runControl.autoRefreshEveryTurns, 1);
 assert.equal(storage.read().runControl.maxHandSeeds, 7);
 
 storage.completeMigration();

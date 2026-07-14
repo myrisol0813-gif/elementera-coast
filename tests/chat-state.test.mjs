@@ -64,4 +64,9 @@ assert.equal(activeBranch(landing.turns[0]).user.input_type, 'landing_letter');
 assert.equal(activeBranch(landing.turns[0]).assistant.content, 'I read it.');
 assert.equal(activeBranch(landing.turns[0]).assistant.finish_reason, 'length');
 
+const longReply = '很长的自然回复。'.repeat(3000);
+let longState = appendTurn(createState(), '请按自己的判断回答。');
+longState = appendAssistantVariant(longState.state, longState.turn.id, { content: longReply }).state;
+assert.equal(activeBranch(longState.turns[0]).assistant.content, longReply, 'long replies must not be sliced while entering client state');
+
 console.log('chat-state: ok');

@@ -1,7 +1,7 @@
 import { apiError, json, readJson, sameOrigin } from './http.js';
 import { buildMemoryContext, formatMemoryContext } from './memory-recall.js';
 import { MEMORY_OWNER_ID } from './memory-store.js';
-import { MAX_FORMAL_TOKENS, ModelRequestError, modelErrorResponse, performFormalChat } from './models.js';
+import { ModelRequestError, modelErrorResponse, performFormalChat } from './models.js';
 import {
   ChatStoreError,
   createConversation,
@@ -132,6 +132,7 @@ async function formalChat(request, env) {
   const value = await body(request);
   const conversationId = sanitizeId(value.conversation_id || '', 'conversation');
   await getConversation(env.COAST_CHAT_DB, conversationId);
+  const requestSettings = formalChatRequestSettings(value.settings);
   const messages = Array.isArray(value.messages) ? value.messages : [];
   const lastUser = [...messages].reverse().find((message) => message?.role === 'user' && typeof message.content === 'string');
   if (!lastUser || messages.at(-1)?.role !== 'user') {
@@ -144,22 +145,23 @@ async function formalChat(request, env) {
     memory = await buildMemoryContext(env, MEMORY_OWNER_ID, conversationId, lastUser.content, {
       recent_entry_ids: value.recent_entry_ids,
       mode: 'chat',
-      settings: value.settings,
+      settings: requestSettings,
       conversation_turns: messages.filter((message) => message?.role === 'user').length,
     });
-    softContext = formatMemoryContext(memory, value.settings);
+    softContext = formatMemoryContext(memory, requestSettings);
   } catch (error) {
     console.error('[chat-memory:recall]', error);
   }
 
-  const assembled = budgetChatMessages(messages, softContext, value.settings);
+  const assembled = budgetChatMessages(messages, softContext, requestSettings);
   const result = await performFormalChat(env, {
     model: value.model,
     messages: assembled.messages,
-    settings: value.settings,
+    settings: requestSettings,
   }, { allowSystem: assembled.messages[0]?.role === 'system' });
   return json({
     ...result,
+    max_tokens: requestSettings.max_tokens ?? null,
     context: assembled.trace,
     memory: {
       selected_entry_ids: memory?.trace?.selected || [],
@@ -173,19 +175,22 @@ function integer(value, fallback, min, max) {
   return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.trunc(number))) : fallback;
 }
 
-export function landingRequestSettings(rawSettings = {}) {
+function requestSettingsWithOutputFloor(rawSettings, fallbackLength = '') {
   const settings = rawSettings && typeof rawSettings === 'object' ? rawSettings : {};
-  const minimum = settings.outputLength === 'short'
-    ? 700
-    : settings.outputLength === 'long'
-      ? 1600
-      : 1200;
-  const requested = Number(settings.max_tokens);
-  const maxTokens = Math.min(
-    MAX_FORMAL_TOKENS,
-    Math.max(minimum, Number.isFinite(requested) ? Math.trunc(requested) : minimum),
-  );
-  return { ...settings, max_tokens: maxTokens };
+  const outputLength = ['short', 'auto', 'long'].includes(settings.outputLength)
+    ? settings.outputLength
+    : fallbackLength;
+  if (!outputLength) return { ...settings };
+  if (outputLength !== 'short') return { ...settings, max_tokens: null };
+  return { ...settings, max_tokens: 700 };
+}
+
+export function formalChatRequestSettings(rawSettings = {}) {
+  return requestSettingsWithOutputFloor(rawSettings);
+}
+
+export function landingRequestSettings(rawSettings = {}) {
+  return requestSettingsWithOutputFloor(rawSettings, 'auto');
 }
 
 export function estimateContextTokens(value) {

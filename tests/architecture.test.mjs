@@ -12,7 +12,7 @@ const read = (path) => readFile(path, 'utf8');
 const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-05"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-06"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 for (const id of ['coastStatus', 'mainRooms', 'localRoomWindows', 'localRoomWindowList', 'chatConversationSection', 'chatConversationList', 'modelQuickPicker']) {
@@ -130,7 +130,7 @@ assert.ok(chatRouter.includes("'/api/chat/landing-letter'"));
 assert.ok(schemaSource.includes('conversation_landing_letters'));
 assert.ok(chatSource.includes('branch.user && !branch.user.hidden'));
 assert.equal(/memory_edges|sleep|dream|梦边|自动核心/.test(memoryStoreSource + memoryRecallSource + memoryRouterSource), false);
-for (const label of ['上下文预算（粗略）', '思维壤预算', '思维壤自动整理间隔', '手持种上限', '种子冷却轮数', '没东西聊时当前种子上限', '当前窗口种子召回上限', '总种子召回上限', '当前窗口记忆召回上限', '总记忆召回上限', '清空当前思维壤', '打开待确认袋', '查看向量状态']) {
+for (const label of ['上下文预算（粗略）', '不设置应用层输出上限', '思维壤预算', '思维壤整理频率', '每个完成轮次自动整理一次', '手持种上限', '种子冷却轮数', '没东西聊时当前种子上限', '当前窗口种子召回上限', '总种子召回上限', '当前窗口记忆召回上限', '总记忆召回上限', '清空当前思维壤', '打开待确认袋', '查看向量状态']) {
   assert.ok(toolsSource.includes(label), `API cottage is missing: ${label}`);
 }
 assert.ok(chatRouter.includes('budgetChatMessages'));
@@ -188,6 +188,11 @@ const three = await store.createConversation(db, 'third');
 assert.equal((await store.listConversations(db)).length, 3);
 await store.writeConversationState(db, one.id, normalizedState);
 assert.equal((await store.readConversationState(db, one.id)).turns[0].assistant.variantsByUserVariant['1'][1].content, 'second answer 2');
+const longReply = '海岸上的长段回复。'.repeat(3000);
+const stateWithLongReply = await store.readConversationState(db, one.id);
+stateWithLongReply.turns[0].assistant.variantsByUserVariant['1'][1].content = longReply;
+await store.writeConversationState(db, one.id, stateWithLongReply);
+assert.equal((await store.readConversationState(db, one.id)).turns[0].assistant.variantsByUserVariant['1'][1].content, longReply, 'D1 state must preserve long model output without slicing it');
 const firstLanding = await store.writeLandingExchange(db, one.id, {
   state: await store.readConversationState(db, one.id),
   model_id: 'openai/gpt-4.1-nano',

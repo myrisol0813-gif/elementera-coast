@@ -2,7 +2,7 @@ export const MEMORY_CONFIG = Object.freeze({
   owner: 'owner',
   soil: Object.freeze({
     enabled: true,
-    autoRefreshEveryTurns: 4,
+    autoRefreshEveryTurns: 1,
     maxHandSeeds: 7,
     contextBudget: 1200,
   }),

@@ -57,19 +57,66 @@ function activeBranch(turn = {}) {
 function completedTurns(state) {
   return (Array.isArray(state?.turns) ? state.turns : [])
     .map(activeBranch)
-    .filter((branch) => branch.user?.content && branch.assistant?.content);
+    .filter((branch) => branch.user?.content
+      && branch.assistant?.content
+      && branch.assistant.content !== '正在连接当前模型……');
 }
 
 function parseStrictJson(value) {
   const text = String(value || '').trim();
-  const fenced = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1] || text;
-  try {
-    const parsed = JSON.parse(fenced);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not_object');
-    return parsed;
-  } catch {
-    throw new MemoryStoreError('soil_organize_invalid', '思维壤整理结果格式无效，原内容未改动。', 502);
+  const candidates = [text];
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1]?.trim();
+  if (fenced && fenced !== text) candidates.unshift(fenced);
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch {
+      // Some providers wrap an otherwise valid JSON object in a short preface.
+    }
   }
+
+  for (let start = 0; start < text.length; start += 1) {
+    if (text[start] !== '{') continue;
+    let depth = 0;
+    let quoted = false;
+    let escaped = false;
+    for (let index = start; index < text.length; index += 1) {
+      const character = text[index];
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (character === '\\') escaped = true;
+        else if (character === '"') quoted = false;
+        continue;
+      }
+      if (character === '"') quoted = true;
+      else if (character === '{') depth += 1;
+      else if (character === '}') {
+        depth -= 1;
+        if (depth !== 0) continue;
+        try {
+          const parsed = JSON.parse(text.slice(start, index + 1));
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+        } catch {
+          break;
+        }
+      }
+    }
+  }
+  throw new MemoryStoreError('soil_organize_invalid', '思维壤整理结果格式无效。', 502);
+}
+
+function fallbackCurrentText(turns, landing) {
+  const latest = turns.at(-1);
+  if (landing || latest?.user?.hidden || latest?.user?.input_type === 'landing_letter') {
+    return '登岛信开场已经完成，正在承接这封信与刚刚的读信回复。';
+  }
+  const source = String(latest?.user?.content || '').replace(/\s+/g, ' ').trim();
+  const preview = Array.from(source).slice(0, 72).join('');
+  return preview
+    ? `刚刚完成了一轮对话，当前正在承接：${preview}${Array.from(source).length > 72 ? '…' : ''}`
+    : '刚刚完成了一轮对话，正在承接当前主题与下一步。';
 }
 
 function soilPrompt(turns, oldSoil, maxHandSeeds) {
@@ -114,14 +161,18 @@ async function organizeSoil(request, env) {
   if (request.method !== 'POST') return methodNotAllowed('POST');
   const value = await body(request);
   const conversationId = conversationIdFrom(new URL(request.url), value);
-  const force = value.force === true;
   const landing = value.trigger === 'landing';
+  const reply = value.trigger === 'reply';
+  const force = value.force === true || reply;
+  const requestedModel = String(value.model || '').trim().slice(0, 180);
   const settings = soilSettings(value.settings || {});
   const oldSoil = await readSoil(env.COAST_CHAT_DB, conversationId);
-  if (landing && oldSoil.manual_locked) {
+  if (oldSoil.manual_locked) {
     return json({ ok: true, skipped: true, reason: 'manual_locked', soil: oldSoil });
   }
-  if (!force && oldSoil.manual_locked) throw new MemoryStoreError('soil_locked', '思维壤已由小寒手动锁定。', 409);
+  if ((landing || reply) && !oldSoil.auto_refresh_enabled) {
+    return json({ ok: true, skipped: true, reason: 'auto_refresh_disabled', soil: oldSoil });
+  }
   if (!force && !oldSoil.auto_refresh_enabled) {
     return json({ ok: true, skipped: true, reason: 'auto_refresh_disabled', soil: oldSoil });
   }
@@ -130,6 +181,7 @@ async function organizeSoil(request, env) {
   const turns = completedTurns(state);
   if (!turns.length) return json({ ok: true, skipped: true, reason: 'no_completed_turns', soil: oldSoil });
   const scheduledTurn = landing
+    || reply
     || turns.length === 1
     || (turns.length - 1) % settings.autoRefreshEveryTurns === 0;
   const latestAssistantAt = Date.parse(turns.at(-1)?.assistant?.created_at || '');
@@ -138,23 +190,44 @@ async function organizeSoil(request, env) {
     return json({ ok: true, skipped: true, reason: 'not_due', soil: oldSoil });
   }
 
-  const profile = await readProfile(env.COAST_CHAT_DB);
-  const result = await performFormalChat(env, {
-    model: profile.current_chat_model || 'openai/gpt-4.1-nano',
-    messages: [{ role: 'user', content: soilPrompt(turns, oldSoil, settings.maxHandSeeds) }],
-    settings: { max_tokens: 900, temperature: 0.2 },
-  });
-  const organized = parseStrictJson(result?.message?.content);
+  const fallback = fallbackCurrentText(turns, landing);
+  let organized;
+  let degradedReason = '';
+  try {
+    const profile = await readProfile(env.COAST_CHAT_DB);
+    const result = await performFormalChat(env, {
+      model: requestedModel || profile.current_chat_model || 'openai/gpt-4.1-nano',
+      messages: [{ role: 'user', content: soilPrompt(turns, oldSoil, settings.maxHandSeeds) }],
+      settings: { max_tokens: 1200, temperature: 0.2 },
+    });
+    organized = parseStrictJson(result?.message?.content);
+  } catch (error) {
+    if (!(error instanceof ModelRequestError)
+      && !(error instanceof MemoryStoreError && error.type === 'soil_organize_invalid')) throw error;
+    console.error('[memory:soil-organize]', error);
+    degradedReason = error.type || 'soil_organize_failed';
+    organized = {
+      current_text: fallback,
+      hand_seeds: oldSoil.hand_seeds,
+      do_not_repeat: oldSoil.do_not_repeat,
+      pocket_candidates: oldSoil.pocket_candidates,
+    };
+  }
   const soilValue = {
     current_text: String(organized.current_text || '').trim()
-      || (landing ? '登岛信开场已经完成，正在承接这封信与刚刚的读信回复。' : ''),
+      || fallback,
     hand_seeds: normalizeHandSeeds(organized.hand_seeds).slice(0, settings.maxHandSeeds),
-    do_not_repeat: organized.do_not_repeat,
-    pocket_candidates: organized.pocket_candidates,
+    do_not_repeat: String(organized.do_not_repeat || ''),
+    pocket_candidates: Array.isArray(organized.pocket_candidates) ? organized.pocket_candidates : [],
     manual_locked: oldSoil.manual_locked,
     auto_refresh_enabled: oldSoil.auto_refresh_enabled,
   };
-  return json({ ok: true, soil: await writeSoil(env.COAST_CHAT_DB, conversationId, soilValue) });
+  return json({
+    ok: true,
+    degraded: Boolean(degradedReason),
+    reason: degradedReason,
+    soil: await writeSoil(env.COAST_CHAT_DB, conversationId, soilValue, { automatic: true }),
+  });
 }
 
 async function pockets(request, env, url) {

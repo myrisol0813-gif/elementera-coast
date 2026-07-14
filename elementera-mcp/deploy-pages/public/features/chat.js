@@ -66,6 +66,18 @@ function isImageModel(modelId, imageModels = []) {
   return imageModels.includes(id) || /(?:gpt-image-|dall-e)/i.test(id);
 }
 
+function replyTokenBudget(outputLength) {
+  if (outputLength === 'short') return 700;
+  return null;
+}
+
+function soilIsBlank(soil = {}) {
+  return !String(soil.current_text || '').trim()
+    && !(Array.isArray(soil.hand_seeds) && soil.hand_seeds.length)
+    && !String(soil.do_not_repeat || '').trim()
+    && !(Array.isArray(soil.pocket_candidates) && soil.pocket_candidates.length);
+}
+
 export function createChat({ storage, toast }) {
   const runtime = {
     conversations: [],
@@ -397,11 +409,9 @@ export function createChat({ storage, toast }) {
     return messages.slice(-count);
   }
 
-  function chatRequestContext(conversationId, { landing = false } = {}) {
+  function chatRequestContext(conversationId) {
     const current = runtime.runSettings() || {};
-    const maxTokens = landing
-      ? current.outputLength === 'long' ? 1600 : current.outputLength === 'short' ? 700 : 1200
-      : current.outputLength === 'long' ? 1200 : current.outputLength === 'short' ? 350 : 600;
+    const maxTokens = replyTokenBudget(current.outputLength);
     const temperature = current.creativity === 'stable' ? 0.3 : current.creativity === 'expansive' ? 1 : 0.7;
     const cooldown = Math.min(8, Math.max(0, Number(current.seedCooldownTurns ?? 2)));
     return {
@@ -431,21 +441,28 @@ export function createChat({ storage, toast }) {
     saveHistory(conversationId, appended.state).catch(() => undefined);
 
     const requestContext = chatRequestContext(conversationId);
+    const modelId = runtime.profile.current_chat_model || DEFAULT_MODEL;
     let patch;
     let generated = false;
+    let finishReason = '';
     try {
       const data = await requestJson(API.chat, {
         method: 'POST',
         signal: controller.signal,
         body: JSON.stringify({
           conversation_id: conversationId,
-          model: runtime.profile.current_chat_model || DEFAULT_MODEL,
+          model: modelId,
           messages: contextMessages(appended.state, turnId),
           recent_entry_ids: requestContext.recentEntryIds,
           settings: requestContext.settings,
         }),
       });
-      patch = { content: data?.message?.content || '模型没有返回文本。', errorDetail: '' };
+      finishReason = String(data?.finish_reason || '');
+      patch = {
+        content: data?.message?.content || '模型没有返回文本。',
+        errorDetail: '',
+        finish_reason: finishReason,
+      };
       const selected = Array.isArray(data?.memory?.selected_entry_ids) ? data.memory.selected_entry_ids.map(String) : [];
       const history = runtime.recallHistory.get(conversationId) || [];
       runtime.recallHistory.set(conversationId, [...history, selected].slice(-8));
@@ -470,7 +487,26 @@ export function createChat({ storage, toast }) {
     composerState();
     await saveHistory(conversationId, latest).catch(() => undefined);
     if (generated) autoTitle(conversationId, latest, turnId).catch(() => undefined);
-    if (generated) runtime.memory?.onReplyCompleted(conversationId)?.catch((error) => console.warn('[memory:reply]', error));
+    if (generated) {
+      let soilRefresh = null;
+      try {
+        soilRefresh = await (runtime.memory?.onReplyCompleted(conversationId, { modelId }) || Promise.resolve(null));
+      } catch (error) {
+        console.warn('[memory:reply]', error);
+        soilRefresh = { ok: false, reason: error?.type || 'soil_organize_failed' };
+      }
+      const soilFailed = soilRefresh?.ok === false;
+      const lockedBlank = soilRefresh?.reason === 'manual_locked' && soilIsBlank(soilRefresh.soil);
+      if (finishReason === 'length' && soilFailed) {
+        toast('模型或供应商达到自身长度上限，且思维壤整理失败；回复已保存，可以重新生成并稍后整理。', 3600);
+      } else if (finishReason === 'length') {
+        toast('模型或供应商达到自身长度上限；可以点“重新生成”再生成一个版本。', 3200);
+      } else if (soilFailed) {
+        toast('回复已保存，但思维壤整理失败，可以稍后手动整理。', 3200);
+      } else if (lockedBlank) {
+        toast('思维壤目前为空且已手动锁定；恢复自动整理后会继续更新。', 3200);
+      }
+    }
   }
 
   async function sendLandingLetter({ conversationId, modelId, letterText }) {
@@ -479,7 +515,7 @@ export function createChat({ storage, toast }) {
     const pendingSave = runtime.saveChains.get(conversationId);
     if (pendingSave) await pendingSave;
 
-    const requestContext = chatRequestContext(conversationId, { landing: true });
+    const requestContext = chatRequestContext(conversationId);
     const controller = new AbortController();
     runtime.generation = { conversationId, turnId: '', userIndex: -1, assistantIndex: -1, controller };
     composerState();
@@ -506,7 +542,7 @@ export function createChat({ storage, toast }) {
       renderMessages(conversationId);
       autoTitleFromLanding(conversationId, letterText, data?.assistant?.content || '')
         .catch((error) => console.warn('[chat:landing-title]', error));
-      const soilRefresh = await (runtime.memory?.onReplyCompleted(conversationId, { trigger: 'landing' })
+      const soilRefresh = await (runtime.memory?.onReplyCompleted(conversationId, { trigger: 'landing', modelId })
         || Promise.resolve({ ok: false, reason: 'memory_unavailable' }));
       data.soil_refresh = soilRefresh;
       return data;
