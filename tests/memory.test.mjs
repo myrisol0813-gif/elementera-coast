@@ -704,7 +704,8 @@ const guardedSoilData = await organizeConversationD({
 assert.equal(guardedSoilData.soil.hand_seeds.length, 2);
 assert.equal(guardedSoilData.soil.hand_seeds[0].life_core, oldHandSeeds[0].life_core, 'missing mode plus an empty seed list must preserve old seeds');
 assert.equal(guardedSoilData.soil.do_not_repeat, '旧的勿复读不能被事故空字符串清除', 'missing mode plus empty do-not-repeat must preserve the old value');
-assert.equal(guardedSoilData.soil.pocket_candidates.length, 0, 'legacy mode-less candidate output keeps the current display behavior');
+assert.equal(guardedSoilData.soil.pocket_candidates.length, 1, 'missing mode plus an empty candidate list must preserve old soil candidates');
+assert.equal(guardedSoilData.soil.pocket_candidates[0].life_core, guardedCandidate.life_core);
 assert.equal(guardedSoilData.pocket_sync.created, 1, 'old soil candidates must enter pending before the new soil is written');
 const guardedPending = await listPockets(db, { conversation_id: conversationD.id, status: 'pending' });
 assert.equal(guardedPending.length, 1);
