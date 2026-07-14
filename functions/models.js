@@ -201,13 +201,24 @@ function supportsTemperature(modelId, model) {
   return !(id.startsWith('openai/o') || id.startsWith('openai/gpt-5'));
 }
 
-function chatPayload(modelId, messages, maxTokens, temperature, model) {
+function supportsReasoningControl(modelId, model) {
+  const parameters = Array.isArray(model?.supported_parameters) ? model.supported_parameters : [];
+  return parameters.includes('reasoning') || /^openai\/(?:o|gpt-5)/i.test(String(modelId || ''));
+}
+
+function supportsResponseFormat(model) {
+  return Array.isArray(model?.supported_parameters) && model.supported_parameters.includes('response_format');
+}
+
+function chatPayload(modelId, messages, maxTokens, temperature, model, options = {}) {
   const payload = { model: modelId, messages };
   if (maxTokens !== null) {
     payload.max_completion_tokens = maxTokens;
     if (!modelId.startsWith('openai/')) payload.max_tokens = maxTokens;
   }
   if (supportsTemperature(modelId, model)) payload.temperature = temperature;
+  if (options.responseFormat && supportsResponseFormat(model)) payload.response_format = options.responseFormat;
+  if (options.reasoning && supportsReasoningControl(modelId, model)) payload.reasoning = options.reasoning;
   return payload;
 }
 
@@ -315,7 +326,10 @@ async function prepareFormalChat(env, input, allowSystem) {
   const temperature = clamp(settings.temperature ?? input.temperature, 0.7, 0, 2);
   return {
     modelId,
-    payload: chatPayload(modelId, messages, maxTokens, temperature, model),
+    payload: chatPayload(modelId, messages, maxTokens, temperature, model, {
+      responseFormat: input.response_format || null,
+      reasoning: input.reasoning || null,
+    }),
   };
 }
 
