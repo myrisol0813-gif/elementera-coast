@@ -1,4 +1,5 @@
 import { q } from './core/dom.js';
+import { confirmDanger, dangerConfirmationFor } from './core/danger.js';
 import { hydrateIconSlots } from './core/icons.js';
 import { createRouter } from './core/router.js';
 import { createStorage } from './core/storage.js';
@@ -64,6 +65,8 @@ document.addEventListener('click', async (event) => {
     }
     const controller = controllers[namespace];
     if (!controller?.handleAction) return;
+    const danger = dangerConfirmationFor(`${namespace}:${name}`);
+    if (danger && !await confirmDanger(danger)) return;
     await controller.handleAction(name, target, event);
     if ((namespace === 'chat' || namespace === 'memory') && name === 'open') shell.closeSidebar();
   } catch (error) {
