@@ -1,6 +1,19 @@
 import { API, requestJson } from '../core/api.js';
 import { escapeAttribute, escapeHtml, q } from '../core/dom.js';
 
+function shortModelName(modelId) {
+  const bare = String(modelId || '').split('/').at(-1)?.replace(/:free$/i, '') || '';
+  if (!bare) return '';
+  if (/^gpt-/i.test(bare)) return bare.replace(/^gpt-/i, 'GPT-').replace(/-(nano|mini|micro)$/i, ' $1');
+  return bare;
+}
+
+function tokenSuffix(usage) {
+  return Number.isFinite(usage?.total_tokens)
+    ? ` · ${usage.total_tokens.toLocaleString('en-US')} tok`
+    : '';
+}
+
 function emptySoil(conversationId) {
   return {
     conversation_id: conversationId,
@@ -181,6 +194,9 @@ export function createMemory({ chat, router, toast, storage }) {
         return `<div class="feature-row static"><span><strong>${escapeHtml(candidate.title || '可落袋内容')}</strong><small>${escapeHtml(candidate.life_core)}${candidate.source_excerpt ? `<br>来源：${escapeHtml(candidate.source_excerpt)}` : ''}</small></span></div>`;
       }).join('')}<p class="feature-note">这些内容已先放进待确认袋。确认前不会参与召回。</p>`
       : '<p>还没有可落袋内容。</p>';
+    const provenance = soil.organized_by_model
+      ? `<p class="feature-note generation-provenance">整理 · ${escapeHtml(shortModelName(soil.organized_by_model))}${escapeHtml(tokenSuffix(soil.organize_usage))}</p>`
+      : '';
     return `${section('当前', textBlock(soil.current_text, '还没有整理当前方向。'))}
       ${section(`手持种 · ${activeSeeds.length}/${limit}`, seeds)}
       ${section('勿复读', textBlock(soil.do_not_repeat))}
@@ -188,6 +204,7 @@ export function createMemory({ chat, router, toast, storage }) {
       <section class="feature-group"><div class="feature-card">
         <button class="feature-row" type="button" data-action="memory:pockets"><span><strong>待确认袋 · ${currentPockets().length}</strong><small>候选会自动停在这里；确认前不会参与召回。</small></span><span>›</span></button>
       </div></section>
+      ${provenance}
       <div class="button-row">
         <button type="button" data-action="memory:soil-edit">编辑</button>
         <button type="button" data-action="memory:soil-clear">清空</button>
@@ -228,6 +245,9 @@ export function createMemory({ chat, router, toast, storage }) {
     const content = pocket.content || pocket.source_text || '';
     const usageHint = pocket.usage_hint || pocket.suggested_usage_hint || '';
     const avoidHint = pocket.avoid_hint || pocket.suggested_avoid_hint || '';
+    const provenance = pocket.generated_by_model
+      ? `<p class="feature-note generation-provenance">提炼 · ${escapeHtml(shortModelName(pocket.generated_by_model))}</p>`
+      : '';
     return `<article class="feature-card feature-prose" data-pocket-id="${escapeAttribute(pocket.id)}">
       <h2>${escapeHtml(title)}</h2>
       <p><strong>生命核：</strong>${escapeHtml(lifeCore)}</p>
@@ -236,6 +256,7 @@ export function createMemory({ chat, router, toast, storage }) {
       ${usageHint ? `<p><strong>使用：</strong>${escapeHtml(usageHint)}</p>` : ''}
       ${avoidHint ? `<p><strong>避免：</strong>${escapeHtml(avoidHint)}</p>` : ''}
       <p class="feature-note">确认后会同时进入当前窗口落袋与总落袋。当前窗口更容易召回；总落袋默认低频沉睡。</p>
+      ${provenance}
       <div class="button-row">
         <button class="primary-wide" type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="confirm_pocket">确认落袋</button>
         <button type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="conversation_seed">当前窗口种子</button>
@@ -505,9 +526,7 @@ export function createMemory({ chat, router, toast, storage }) {
     if (name === 'soil') return openSoil();
     if (name === 'done') return router.back();
     if (name === 'soil-edit') return router.open('thought-soil-edit');
-    if (name === 'pockets') {
-      return openPockets();
-    }
+    if (name === 'pockets') return openPockets();
     if (name === 'soil-clear') {
       if (!await clearSoil()) return;
       return router.refresh();
