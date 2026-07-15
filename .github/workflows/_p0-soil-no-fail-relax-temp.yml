@@ -25,7 +25,6 @@ jobs:
       - name: Apply P0 patch and run full test suite
         run: |
           node scripts/p0-soil-no-fail-relax.mjs
-          node scripts/p0-soil-no-fail-relax-fix.mjs
           npm test
       - name: Commit verified P0 implementation
         run: |
