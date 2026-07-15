@@ -42,36 +42,21 @@ architecture: ok
   }
 }
 memory: ok
-[memory:soil-organize] ModelRequestError: Model catalog is unavailable.
-    at fetchModelCatalog (file:///home/runner/work/elementera-coast/elementera-coast/functions/models.js:158:11)
-    at async prepareFormalChat (file:///home/runner/work/elementera-coast/elementera-coast/functions/models.js:309:19)
-    at async performFormalChat (file:///home/runner/work/elementera-coast/elementera-coast/functions/models.js:389:20)
-    at async organizeSoil (file:///home/runner/work/elementera-coast/elementera-coast/functions/memory-router.js:415:24)
+[memory:soil-organize] MemoryStoreError: 思维壤整理结果格式无效。
+    at parseStrictJson (file:///home/runner/work/elementera-coast/elementera-coast/functions/memory-router.js:211:9)
+    at organizeSoil (file:///home/runner/work/elementera-coast/elementera-coast/functions/memory-router.js:430:21)
     at async routeMemoryApi (file:///home/runner/work/elementera-coast/elementera-coast/functions/memory-router.js:666:65)
-    at async organize (file:///home/runner/work/elementera-coast/elementera-coast/tests/soil-incremental.test.mjs:82:20)
-    at async file:///home/runner/work/elementera-coast/elementera-coast/tests/soil-incremental.test.mjs:113:21 {
-  type: 'models_fetch_failed',
-  status: 502,
-  details: {}
+    at async organize (file:///home/runner/work/elementera-coast/elementera-coast/tests/soil-incremental.test.mjs:85:20)
+    at async file:///home/runner/work/elementera-coast/elementera-coast/tests/soil-incremental.test.mjs:184:22 {
+  type: 'soil_organize_invalid',
+  status: 502
 }
-node:internal/modules/run_main:107
-    triggerUncaughtException(
-    ^
+file:///home/runner/work/elementera-coast/elementera-coast/functions/memory-recall.js:130
+  if (owner !== MEMORY_CONFIG.owner) throw new Error('memory_owner_invalid');
+                                           ^
 
-AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
-+ actual - expected
-
-+ '登岛信开场已经完成，正在承接这封信与刚刚的读信回复。'
-- '登岛信开场已经完成'
-            ^
-
-    at file:///home/runner/work/elementera-coast/elementera-coast/tests/soil-incremental.test.mjs:114:8 {
-  generatedMessage: true,
-  code: 'ERR_ASSERTION',
-  actual: '登岛信开场已经完成，正在承接这封信与刚刚的读信回复。',
-  expected: '登岛信开场已经完成',
-  operator: 'strictEqual',
-  diff: 'simple'
-}
+Error: memory_owner_invalid
+    at buildMemoryContext (file:///home/runner/work/elementera-coast/elementera-coast/functions/memory-recall.js:130:44)
+    at file:///home/runner/work/elementera-coast/elementera-coast/tests/soil-incremental.test.mjs:238:29
 
 Node.js v24.18.0
