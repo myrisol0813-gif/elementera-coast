@@ -1,0 +1,12 @@
+APPLY_STATUS=1
+TEST_STATUS=999
+--- APPLY LOG ---
+file:///home/runner/work/elementera-coast/elementera-coast/scripts/p0-soil-incremental-bridge.mjs:337
+  user: { active: 0, variants: [{ id: \`${id}-user\`, content: user, created_at: createdAt, ...userExtra }] },
+                                          ^
+
+ReferenceError: id is not defined
+    at file:///home/runner/work/elementera-coast/elementera-coast/scripts/p0-soil-incremental-bridge.mjs:337:43
+
+Node.js v24.18.0
+--- TEST LOG ---
