@@ -24,6 +24,16 @@ jobs:
       - run: npm ci
       - name: Run final full test suite
         run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('functions/models.js')
+          text = path.read_text()
+          old = 'export const MAX_FORMAL_TOKENS = 2000;'
+          new = 'export const MAX_FORMAL_TOKENS = 3200;'
+          if old not in text and new not in text:
+              raise SystemExit('MAX_FORMAL_TOKENS target missing')
+          path.write_text(text.replace(old, new))
+          PY
           set +e
           npm test > /tmp/p0-soil-final-test.log 2>&1
           TEST_STATUS=$?
@@ -35,7 +45,7 @@ jobs:
             } > P0_SOIL_RELAX_DEBUG.txt
             git config user.name github-actions[bot]
             git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add -f P0_SOIL_RELAX_DEBUG.txt
+            git add -f P0_SOIL_RELAX_DEBUG.txt functions/models.js
             git commit -m "debug: capture final P0 soil relax test failure" || true
             git push origin HEAD:p0-soil-no-fail-relax-01 || true
             tail -200 /tmp/p0-soil-final-test.log
@@ -46,6 +56,6 @@ jobs:
           rm -f P0_SOIL_RELAX_TRIGGER.txt P0_SOIL_RELAX_DEBUG.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add -A
-          git commit -m "test: clean P0 soil relax verification trigger" || true
+          git add -A functions/models.js
+          git commit -m "P0-SOIL-NO-FAIL-RELAX-01: verify relaxed soil organize budget" || true
           git push origin HEAD:p0-soil-no-fail-relax-01 || true
