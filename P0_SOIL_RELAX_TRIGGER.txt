@@ -1,1 +1,1 @@
-trigger final P0 soil relax verification with token cap
+trigger final P0 soil relax verification with adjusted long test
