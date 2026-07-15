@@ -89,11 +89,13 @@ async function initializeMemorySchema(db) {
     pocket_candidates_json TEXT NOT NULL DEFAULT '[]',
     manual_locked INTEGER NOT NULL DEFAULT 0,
     auto_refresh_enabled INTEGER NOT NULL DEFAULT 1,
+    organized_through_turn_id TEXT NOT NULL DEFAULT '',
     revision INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id)
   )`);
+  await ensureColumn(db, 'conversation_soils', 'organized_through_turn_id', "TEXT NOT NULL DEFAULT ''");
   await run(db, `CREATE TABLE IF NOT EXISTS memory_pockets (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL DEFAULT 'owner',
@@ -316,6 +318,7 @@ function soilFromRow(row) {
     pocket_candidates: normalizePocketCandidates(parseJson(row.pocket_candidates_json, [])),
     manual_locked: Number(row.manual_locked || 0) === 1,
     auto_refresh_enabled: Number(row.auto_refresh_enabled ?? 1) === 1,
+    organized_through_turn_id: row.organized_through_turn_id || '',
     revision: Math.max(1, Number(row.revision || 1)),
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
@@ -351,13 +354,14 @@ export async function writeSoil(db, id, value = {}, { automatic = false } = {}) 
     hand_seeds: has('hand_seeds') ? normalizeHandSeeds(value.hand_seeds) : current.hand_seeds,
     do_not_repeat: has('do_not_repeat') ? clip(value.do_not_repeat, MAX_SOIL_TEXT) : current.do_not_repeat,
     pocket_candidates: has('pocket_candidates') ? normalizePocketCandidates(value.pocket_candidates) : current.pocket_candidates,
+    organized_through_turn_id: has('organized_through_turn_id') ? clip(value.organized_through_turn_id, 180) : current.organized_through_turn_id,
     manual_locked: has('manual_locked') ? bool(value.manual_locked) : !automatic,
     auto_refresh_enabled: has('auto_refresh_enabled') ? bool(value.auto_refresh_enabled) : current.auto_refresh_enabled,
   };
   const timestamp = Date.now();
   await run(db, `UPDATE conversation_soils SET
     current_text = ?, hand_seeds_json = ?, do_not_repeat = ?, pocket_candidates_json = ?,
-    manual_locked = ?, auto_refresh_enabled = ?, revision = revision + 1, updated_at = ?
+    manual_locked = ?, auto_refresh_enabled = ?, organized_through_turn_id = ?, revision = revision + 1, updated_at = ?
     WHERE conversation_id = ?`, [
     next.current_text,
     JSON.stringify(next.hand_seeds),
@@ -365,6 +369,7 @@ export async function writeSoil(db, id, value = {}, { automatic = false } = {}) 
     JSON.stringify(next.pocket_candidates),
     next.manual_locked ? 1 : 0,
     next.auto_refresh_enabled ? 1 : 0,
+    next.organized_through_turn_id,
     timestamp,
     conversationId,
   ]);

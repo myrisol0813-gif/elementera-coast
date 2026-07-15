@@ -40,10 +40,11 @@ import {
 
 const MEMORY_PATH = '/api/memory';
 const BODY_LIMIT = 48 * 1024;
-const SOIL_RECENT_TURNS = 12;
-const SOIL_FULL_RECENT_TURNS = 3;
-const SOIL_FIELD_CHARS = 6000;
-const SOIL_PROMPT_TOTAL_CHARS = 64 * 1024;
+const SOIL_LANDING_FIELD_CHARS = 24000;
+const SOIL_REPLY_FIELD_CHARS = 6000;
+const SOIL_PREVIOUS_FIELD_CHARS = 1000;
+const SOIL_BACKFILL_TURNS = 3;
+const SOIL_PROMPT_TOTAL_CHARS = 28 * 1024;
 const SOIL_ORGANIZE_MAX_TOKENS = 3200;
 
 const SOIL_RESPONSE_FORMAT = Object.freeze({
@@ -157,6 +158,14 @@ function completedTurns(state) {
       && branch.assistant.content !== '正在连接当前模型……');
 }
 
+function isLandingBranch(branch = {}) {
+  return branch.user?.hidden === true || branch.user?.input_type === 'landing_letter';
+}
+
+function visibleCompletedTurns(state) {
+  return completedTurns(state).filter((branch) => !isLandingBranch(branch));
+}
+
 function parseStrictJson(value) {
   const text = String(value || '').trim();
   const candidates = [text];
@@ -219,49 +228,94 @@ function fallbackCurrentText(turns, landing) {
     : '刚刚完成了一轮对话，正在承接当前主题与下一步。';
 }
 
-function clipSoilContent(value, max = SOIL_FIELD_CHARS) {
+function clipSoilContent(value, max = SOIL_REPLY_FIELD_CHARS) {
   return Array.from(String(value || '')).slice(0, Math.max(0, max)).join('');
 }
 
-function soilPromptTurns(turns) {
-  const recent = turns.slice(-SOIL_RECENT_TURNS).map((branch, index) => ({
-    turn: index + 1,
+function soilTurnDigest(branch, maxChars) {
+  if (!branch) return null;
+  return {
     turn_id: branch.turn_id,
     user: {
-      message_id: String(branch.user.id || ''),
-      content: clipSoilContent(branch.user.content),
+      message_id: String(branch.user?.id || ''),
+      content: clipSoilContent(branch.user?.content, maxChars),
     },
     assistant: {
-      message_id: String(branch.assistant.id || ''),
-      content: clipSoilContent(branch.assistant.content),
+      message_id: String(branch.assistant?.id || ''),
+      content: clipSoilContent(branch.assistant?.content, maxChars),
     },
-  }));
-
-  if (JSON.stringify(recent).length <= SOIL_PROMPT_TOTAL_CHARS) return recent;
-
-  const protectedStart = Math.max(0, recent.length - SOIL_FULL_RECENT_TURNS);
-  const protectedLength = JSON.stringify(recent.slice(protectedStart)).length;
-  const olderFields = Math.max(1, protectedStart * 2);
-  const olderLimit = Math.max(800, Math.floor((SOIL_PROMPT_TOTAL_CHARS - protectedLength - 2048) / olderFields));
-  for (let index = 0; index < protectedStart; index += 1) {
-    recent[index].user.content = clipSoilContent(recent[index].user.content, olderLimit);
-    recent[index].assistant.content = clipSoilContent(recent[index].assistant.content, olderLimit);
-  }
-  if (JSON.stringify(recent).length <= SOIL_PROMPT_TOTAL_CHARS) return recent;
-
-  for (let index = 0; index < protectedStart; index += 1) {
-    recent[index].user.content = clipSoilContent(recent[index].user.content, 400);
-    recent[index].assistant.content = clipSoilContent(recent[index].assistant.content, 400);
-  }
-  return recent;
+  };
 }
 
-function soilPrompt(turns, oldSoil, maxHandSeeds) {
-  const recent = soilPromptTurns(turns);
+function landingSoilContext(turns) {
+  const landingTurns = turns.filter(isLandingBranch);
+  const source = (landingTurns.length ? landingTurns : turns).slice(-1);
+  return {
+    mode: 'landing_bootstrap',
+    landing_turns: source.map((branch) => soilTurnDigest(branch, SOIL_LANDING_FIELD_CHARS)).filter(Boolean),
+  };
+}
+
+function turnsAfterCursor(turns, cursor) {
+  if (!cursor) return turns.slice(-SOIL_BACKFILL_TURNS);
+  const index = turns.findIndex((turn) => turn.turn_id === cursor);
+  if (index < 0) return turns.slice(-SOIL_BACKFILL_TURNS);
+  return turns.slice(index + 1);
+}
+
+function replySoilContext(turns, oldSoil) {
+  const latest = turns.at(-1) || null;
+  const previous = turns.length > 1 ? turns.at(-2) : null;
+  const cursor = String(oldSoil.organized_through_turn_id || '');
+  const missed = turnsAfterCursor(turns, cursor)
+    .filter((branch) => branch?.turn_id
+      && branch.turn_id !== latest?.turn_id
+      && branch.turn_id !== previous?.turn_id)
+    .slice(-SOIL_BACKFILL_TURNS)
+    .map((branch) => soilTurnDigest(branch, SOIL_PREVIOUS_FIELD_CHARS))
+    .filter(Boolean);
+  return {
+    mode: 'reply_incremental',
+    old_current_text: oldSoil.current_text || '',
+    organized_through_turn_id: cursor,
+    latest_turn: soilTurnDigest(latest, SOIL_REPLY_FIELD_CHARS),
+    previous_turn_excerpt: previous ? soilTurnDigest(previous, SOIL_PREVIOUS_FIELD_CHARS) : null,
+    missed_since_success: missed,
+    old_hand_seeds: oldSoil.hand_seeds,
+    old_do_not_repeat: oldSoil.do_not_repeat,
+    old_pocket_candidates: oldSoil.pocket_candidates,
+  };
+}
+
+function boundedSoilContext(context) {
+  let value = context;
+  if (JSON.stringify(value).length <= SOIL_PROMPT_TOTAL_CHARS) return value;
+  value = {
+    ...context,
+    previous_turn_excerpt: context.previous_turn_excerpt ? soilTurnDigest({
+      turn_id: context.previous_turn_excerpt.turn_id,
+      user: context.previous_turn_excerpt.user,
+      assistant: context.previous_turn_excerpt.assistant,
+    }, 400) : null,
+    missed_since_success: (context.missed_since_success || []).slice(-1),
+  };
+  if (JSON.stringify(value).length <= SOIL_PROMPT_TOTAL_CHARS) return value;
+  return {
+    ...value,
+    old_hand_seeds: (value.old_hand_seeds || []).slice(0, 3),
+    old_do_not_repeat: clipSoilContent(value.old_do_not_repeat, 1200),
+    old_pocket_candidates: (value.old_pocket_candidates || []).slice(0, 3),
+  };
+}
+
+function soilPrompt(turns, oldSoil, maxHandSeeds, options = {}) {
+  const context = options.landing
+    ? landingSoilContext(turns)
+    : boundedSoilContext(replySoilContext(turns, oldSoil));
   return `你只负责整理当前对话的一小捧“思维壤”。它是当前窗口的工作台小纸条，不是永久档案馆，不是长期记忆，也不是思考过程。
 请只返回一个 JSON 对象，不要 Markdown，不要解释：
 {
-  "current_text": "现在正在聊什么，简短",
+  "current_text": "当前窗口此刻的滚动承接便签，通常 600–1800 中文字符，不要流水账",
   "hand_seeds_mode": "replace|keep|clear 三选一",
   "hand_seeds": [{"name":"名称","life_core":"生命核","usage_hint":"何时可用","avoid_hint":"如何避免复读"}],
   "do_not_repeat_mode": "replace|keep|clear 三选一",
@@ -274,7 +328,7 @@ function soilPrompt(turns, oldSoil, maxHandSeeds) {
     "content": "保留足够上下文后的压缩内容",
     "usage_hint": "什么情况下值得重新碰到",
     "avoid_hint": "如何避免机械复读或误用",
-    "source_refs": [{"turn_id":"从最近完成轮中原样选择","role":"user|assistant|turn"}],
+    "source_refs": [{"turn_id":"从本轮上下文中原样选择","role":"user|assistant|turn"}],
     "source_excerpt": "帮助辨认来源的短摘录"
   }]
 }
@@ -285,22 +339,16 @@ mode 含义：
 - clear：你明确判断这一栏已经过时、重复、已经落袋或不再适合当前窗口，因此清空这一栏。
 不要把空数组或空字符串当作失败占位。如果你确实要清空，请使用 clear mode；如果你没有要改这一栏，请使用 keep mode。
 
+current_text 是“滚动承接便签”，不是最近十二轮聊天摘要。普通回复整理时，约 60–70% 注意力放在 latest_turn，约 20–30% 保留 old_current_text 中仍直接连接当前话题的未完成线索，极少量使用 previous_turn_excerpt 与 missed_since_success 防止断层。允许改写、压缩、删除已经结束的话题，用最新一轮重新解释上一段。不要累加“先聊 A、再聊 B、然后 C”的流水账；不要每轮继续背着登岛信；不要把远古精华长期塞在 current_text。
+
 hand_seeds 不是永久收藏夹，而是“此刻最值得手持”的最多 ${maxHandSeeds} 粒。每轮都可以保留仍有用的旧种、删除过时旧种、替换旧种、合并重复旧种、改写旧种或加入新种。满 ${maxHandSeeds} 粒时主动做取舍。不要因为旧思维壤里已经有旧种就机械保留，也不要害怕让旧纸条退出手持。
 do_not_repeat 也只是当前窗口的工作提醒。已经不再需要防复读的提醒可以改写、合并或 clear。
 pocket_candidates 只放“现在不用、但仍有再生力”的内容，并使用上方真实 turn_id。旧候选会由系统先 upsert 到 pending；已经进入 pending、已经落袋或已经不适合当前窗口的候选可以从思维壤展示层退出，不要为了保留展示而反复挂在手上。当前确实没有候选时使用 pocket_candidates_mode=clear。
 
 你只能整理 current_text、hand_seeds、do_not_repeat、pocket_candidates 这四块临时工作台内容。不要创建或删除长期记忆，不要删除聊天记录、pending pocket、confirmed pocket、seed、memory 或向量索引中的已确认内容；不要判断 core，不要把候选升级为 seed 或 memory，不要替用户做决定，不要复述整段聊天。
 
-旧思维壤：
-${JSON.stringify({
-    current_text: oldSoil.current_text,
-    hand_seeds: oldSoil.hand_seeds,
-    do_not_repeat: oldSoil.do_not_repeat,
-    pocket_candidates: oldSoil.pocket_candidates,
-  })}
-
-最近完成的对话轮：
-${JSON.stringify(recent)}`;
+整理输入结构：
+${JSON.stringify(context)}`;
 }
 
 async function soil(request, env, url) {
@@ -341,7 +389,7 @@ async function organizeSoil(request, env) {
   }
 
   const state = await readConversationState(env.COAST_CHAT_DB, conversationId);
-  const turns = completedTurns(state);
+  const turns = landing ? completedTurns(state) : visibleCompletedTurns(state);
   if (!turns.length) return json({ ok: true, skipped: true, reason: 'no_completed_turns', soil: oldSoil });
   const scheduledTurn = landing
     || reply
@@ -360,7 +408,7 @@ async function organizeSoil(request, env) {
   try {
     const profile = await readProfile(env.COAST_CHAT_DB);
     const modelId = requestedModel || profile.current_chat_model || 'openai/gpt-4.1-nano';
-    const basePrompt = soilPrompt(turns, oldSoil, settings.maxHandSeeds);
+    const basePrompt = soilPrompt(turns, oldSoil, settings.maxHandSeeds, { landing });
     let lastJsonError = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
@@ -405,6 +453,7 @@ async function organizeSoil(request, env) {
       hand_seeds: oldSoil.hand_seeds,
       do_not_repeat: oldSoil.do_not_repeat,
       pocket_candidates: oldSoil.pocket_candidates,
+      organized_through_turn_id: oldSoil.organized_through_turn_id,
       manual_locked: oldSoil.manual_locked,
       auto_refresh_enabled: oldSoil.auto_refresh_enabled,
     }, { automatic: true });
@@ -455,6 +504,7 @@ async function organizeSoil(request, env) {
         : pocketCandidatesMode === 'clear'
           ? []
           : organizedPocketCandidates.length ? organizedPocketCandidates : oldSoil.pocket_candidates,
+    organized_through_turn_id: latestTurn?.turn_id || oldSoil.organized_through_turn_id,
     manual_locked: oldSoil.manual_locked,
     auto_refresh_enabled: oldSoil.auto_refresh_enabled,
   };
