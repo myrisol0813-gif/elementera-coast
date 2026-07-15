@@ -22,29 +22,30 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Apply P0 patch and persist verification output
+      - name: Run final full test suite
         run: |
           set +e
-          node scripts/p0-soil-no-fail-relax.mjs > /tmp/p0-soil-patch.log 2>&1
-          PATCH_STATUS=$?
-          TEST_STATUS=999
-          if [ "$PATCH_STATUS" -eq 0 ]; then
-            npm test > /tmp/p0-soil-test.log 2>&1
-            TEST_STATUS=$?
-          else
-            : > /tmp/p0-soil-test.log
+          npm test > /tmp/p0-soil-final-test.log 2>&1
+          TEST_STATUS=$?
+          if [ "$TEST_STATUS" -ne 0 ]; then
+            {
+              echo "TEST_STATUS=$TEST_STATUS"
+              echo "--- TEST LOG TAIL ---"
+              tail -260 /tmp/p0-soil-final-test.log
+            } > P0_SOIL_RELAX_DEBUG.txt
+            git config user.name github-actions[bot]
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add -f P0_SOIL_RELAX_DEBUG.txt
+            git commit -m "debug: capture final P0 soil relax test failure" || true
+            git push origin HEAD:p0-soil-no-fail-relax-01 || true
+            tail -200 /tmp/p0-soil-final-test.log
+            exit "$TEST_STATUS"
           fi
-          {
-            echo "PATCH_STATUS=$PATCH_STATUS"
-            echo "TEST_STATUS=$TEST_STATUS"
-            echo "--- PATCH LOG ---"
-            cat /tmp/p0-soil-patch.log
-            echo "--- TEST LOG TAIL ---"
-            tail -240 /tmp/p0-soil-test.log
-          } > P0_SOIL_RELAX_DEBUG.log
-          rm -f scripts/p0-soil-no-fail-relax.mjs scripts/p0-soil-no-fail-relax-fix.mjs
+      - name: Cleanup trigger
+        run: |
+          rm -f P0_SOIL_RELAX_TRIGGER.txt P0_SOIL_RELAX_DEBUG.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add elementera-mcp/deploy-pages/public/features/chat.js functions/memory-router.js tests/memory.test.mjs scripts P0_SOIL_RELAX_DEBUG.log
-          git commit -m "debug: persist P0 soil relax verification output" || true
+          git add -A
+          git commit -m "test: clean P0 soil relax verification trigger" || true
           git push origin HEAD:p0-soil-no-fail-relax-01 || true
