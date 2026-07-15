@@ -51,12 +51,11 @@ memory: ok
   type: 'soil_organize_invalid',
   status: 502
 }
-file:///home/runner/work/elementera-coast/elementera-coast/functions/memory-recall.js:130
-  if (owner !== MEMORY_CONFIG.owner) throw new Error('memory_owner_invalid');
-                                           ^
+file:///home/runner/work/elementera-coast/elementera-coast/tests/soil-incremental.test.mjs:239
+assert.ok(memoryContext.entries.some((entry) => entry.life_core.includes('同轨燕鸥')), 'conversation seed semantic recall must still work');
+                                ^
 
-Error: memory_owner_invalid
-    at buildMemoryContext (file:///home/runner/work/elementera-coast/elementera-coast/functions/memory-recall.js:130:44)
-    at file:///home/runner/work/elementera-coast/elementera-coast/tests/soil-incremental.test.mjs:238:29
+TypeError: Cannot read properties of undefined (reading 'some')
+    at file:///home/runner/work/elementera-coast/elementera-coast/tests/soil-incremental.test.mjs:239:33
 
 Node.js v24.18.0
