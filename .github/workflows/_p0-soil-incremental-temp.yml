@@ -25,19 +25,29 @@ jobs:
       - name: Apply P0 implementation and run full test suite
         run: |
           set +e
-          node scripts/p0-soil-incremental-bridge.mjs > /tmp/p0-soil-incremental-apply.log 2>&1
-          APPLY_STATUS=$?
+          node scripts/p0-soil-incremental-fix-generator.mjs > /tmp/p0-soil-incremental-fix.log 2>&1
+          FIX_STATUS=$?
+          APPLY_STATUS=999
           TEST_STATUS=999
+          if [ "$FIX_STATUS" -eq 0 ]; then
+            node scripts/p0-soil-incremental-bridge.mjs > /tmp/p0-soil-incremental-apply.log 2>&1
+            APPLY_STATUS=$?
+          else
+            : > /tmp/p0-soil-incremental-apply.log
+          fi
           if [ "$APPLY_STATUS" -eq 0 ]; then
             npm test > /tmp/p0-soil-incremental-test.log 2>&1
             TEST_STATUS=$?
           else
             : > /tmp/p0-soil-incremental-test.log
           fi
-          if [ "$APPLY_STATUS" -ne 0 ] || [ "$TEST_STATUS" -ne 0 ]; then
+          if [ "$FIX_STATUS" -ne 0 ] || [ "$APPLY_STATUS" -ne 0 ] || [ "$TEST_STATUS" -ne 0 ]; then
             {
+              echo "FIX_STATUS=$FIX_STATUS"
               echo "APPLY_STATUS=$APPLY_STATUS"
               echo "TEST_STATUS=$TEST_STATUS"
+              echo "--- FIX LOG ---"
+              tail -100 /tmp/p0-soil-incremental-fix.log
               echo "--- APPLY LOG ---"
               tail -200 /tmp/p0-soil-incremental-apply.log
               echo "--- TEST LOG ---"
@@ -53,7 +63,7 @@ jobs:
           fi
       - name: Commit verified P0 implementation
         run: |
-          rm -f scripts/p0-soil-incremental-bridge.mjs P0_SOIL_INCREMENTAL_DEBUG.txt
+          rm -f scripts/p0-soil-incremental-bridge.mjs scripts/p0-soil-incremental-fix-generator.mjs P0_SOIL_INCREMENTAL_DEBUG.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add functions/memory-store.js functions/memory-router.js package.json tests/soil-incremental.test.mjs scripts P0_SOIL_INCREMENTAL_DEBUG.txt
