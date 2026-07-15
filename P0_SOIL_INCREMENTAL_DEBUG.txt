@@ -51,11 +51,18 @@ memory: ok
   type: 'soil_organize_invalid',
   status: 502
 }
-file:///home/runner/work/elementera-coast/elementera-coast/tests/soil-incremental.test.mjs:239
-assert.ok(memoryContext.entries.some((entry) => entry.life_core.includes('同轨燕鸥')), 'conversation seed semantic recall must still work');
-                                ^
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
 
-TypeError: Cannot read properties of undefined (reading 'some')
-    at file:///home/runner/work/elementera-coast/elementera-coast/tests/soil-incremental.test.mjs:239:33
+AssertionError [ERR_ASSERTION]: conversation seed semantic recall must still work
+    at file:///home/runner/work/elementera-coast/elementera-coast/tests/soil-incremental.test.mjs:239:8 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
 
 Node.js v24.18.0
