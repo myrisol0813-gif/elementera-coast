@@ -1,4 +1,4 @@
-// retrigger 5
+// retrigger 6
 import { readFile, writeFile } from 'node:fs/promises';
 
 const path = 'scripts/p0-soil-incremental-bridge.mjs';
@@ -17,5 +17,9 @@ text = text.replace(
 text = text.replace(
   "const memoryContext = await buildMemoryContext(db, seedConversation.id, '同轨燕鸥和海岸怎么重新回来？', { limit: 3 });",
   "const memoryContext = await buildMemoryContext({ COAST_CHAT_DB: db }, 'owner', seedConversation.id, '同轨燕鸥和海岸怎么重新回来？', { limit: 3 });",
+);
+text = text.replace(
+  "assert.ok(memoryContext.entries.some((entry) => entry.life_core.includes('同轨燕鸥')), 'conversation seed semantic recall must still work');",
+  "assert.ok(memoryContext.conversation_seeds.some((entry) => entry.life_core.includes('同轨燕鸥')), 'conversation seed semantic recall must still work');",
 );
 await writeFile(path, text);
