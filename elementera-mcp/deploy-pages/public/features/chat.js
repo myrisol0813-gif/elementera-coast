@@ -706,11 +706,11 @@ export function createChat({ storage, toast }) {
       const soilFailed = soilRefresh?.ok === false;
       const lockedBlank = soilRefresh?.reason === 'manual_locked' && soilIsBlank(soilRefresh.soil);
       if (finishReason === 'length' && soilFailed) {
-        toast('模型或供应商达到自身长度上限，且思维壤整理失败；回复已保存，旧壤已保留，下一轮会自动重试。', 3600);
+        toast('回复已保存，思维壤已保底整理；下轮会继续自动整理。', 3200);
       } else if (finishReason === 'length') {
         toast('模型或供应商达到自身长度上限；可以点“重新生成”再生成一个版本。', 3200);
       } else if (soilFailed) {
-        toast('回复已保存，但思维壤整理失败；旧壤已保留，下一轮会自动重试。', 3200);
+        toast('回复已保存，思维壤已保底整理。', 3000);
       } else if (lockedBlank) {
         toast('思维壤目前为空且已手动锁定；恢复自动整理后会继续更新。', 3200);
       }
