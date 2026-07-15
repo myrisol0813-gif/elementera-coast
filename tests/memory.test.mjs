@@ -670,8 +670,8 @@ const turn = (id, user, assistant, createdAt) => ({
 const conversationLong = await createConversation(db, 'long soil prompt');
 const longTurns = Array.from({ length: 12 }, (_, index) => turn(
   `long-soil-${index}`,
-  `第${index}轮用户 ${'甲'.repeat(7200)}${index === 11 ? ' 最新用户完整尾标' : ''}`,
-  `第${index}轮助手 ${'乙'.repeat(7200)}${index === 11 ? ' 最新助手完整尾标' : ''}`,
+  `第${index}轮用户 ${index === 11 ? '最新用户完整尾标 ' : ''}${'甲'.repeat(7200)}`,
+  `第${index}轮助手 ${index === 11 ? '最新助手完整尾标 ' : ''}${'乙'.repeat(7200)}`,
   `2026-07-14T08:${String(index).padStart(2, '0')}:00.000Z`,
 ));
 await writeConversationState(db, conversationLong.id, { version: 4, turns: longTurns });
