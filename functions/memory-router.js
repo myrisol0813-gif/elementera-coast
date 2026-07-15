@@ -40,6 +40,11 @@ import {
 
 const MEMORY_PATH = '/api/memory';
 const BODY_LIMIT = 48 * 1024;
+const SOIL_RECENT_TURNS = 12;
+const SOIL_FULL_RECENT_TURNS = 3;
+const SOIL_FIELD_CHARS = 6000;
+const SOIL_PROMPT_TOTAL_CHARS = 64 * 1024;
+const SOIL_ORGANIZE_MAX_TOKENS = 3200;
 
 const SOIL_RESPONSE_FORMAT = Object.freeze({
   type: 'json_schema',
@@ -214,19 +219,45 @@ function fallbackCurrentText(turns, landing) {
     : '刚刚完成了一轮对话，正在承接当前主题与下一步。';
 }
 
-function soilPrompt(turns, oldSoil, maxHandSeeds) {
-  const recent = turns.slice(-8).map((branch, index) => ({
+function clipSoilContent(value, max = SOIL_FIELD_CHARS) {
+  return Array.from(String(value || '')).slice(0, Math.max(0, max)).join('');
+}
+
+function soilPromptTurns(turns) {
+  const recent = turns.slice(-SOIL_RECENT_TURNS).map((branch, index) => ({
     turn: index + 1,
     turn_id: branch.turn_id,
     user: {
       message_id: String(branch.user.id || ''),
-      content: String(branch.user.content || '').slice(0, 3000),
+      content: clipSoilContent(branch.user.content),
     },
     assistant: {
       message_id: String(branch.assistant.id || ''),
-      content: String(branch.assistant.content || '').slice(0, 3000),
+      content: clipSoilContent(branch.assistant.content),
     },
   }));
+
+  if (JSON.stringify(recent).length <= SOIL_PROMPT_TOTAL_CHARS) return recent;
+
+  const protectedStart = Math.max(0, recent.length - SOIL_FULL_RECENT_TURNS);
+  const protectedLength = JSON.stringify(recent.slice(protectedStart)).length;
+  const olderFields = Math.max(1, protectedStart * 2);
+  const olderLimit = Math.max(800, Math.floor((SOIL_PROMPT_TOTAL_CHARS - protectedLength - 2048) / olderFields));
+  for (let index = 0; index < protectedStart; index += 1) {
+    recent[index].user.content = clipSoilContent(recent[index].user.content, olderLimit);
+    recent[index].assistant.content = clipSoilContent(recent[index].assistant.content, olderLimit);
+  }
+  if (JSON.stringify(recent).length <= SOIL_PROMPT_TOTAL_CHARS) return recent;
+
+  for (let index = 0; index < protectedStart; index += 1) {
+    recent[index].user.content = clipSoilContent(recent[index].user.content, 400);
+    recent[index].assistant.content = clipSoilContent(recent[index].assistant.content, 400);
+  }
+  return recent;
+}
+
+function soilPrompt(turns, oldSoil, maxHandSeeds) {
+  const recent = soilPromptTurns(turns);
   return `你只负责整理当前对话的一小捧“思维壤”。它是当前窗口的工作台小纸条，不是永久档案馆，不是长期记忆，也不是思考过程。
 请只返回一个 JSON 对象，不要 Markdown，不要解释：
 {
@@ -328,33 +359,61 @@ async function organizeSoil(request, env) {
   let degradedReason = '';
   try {
     const profile = await readProfile(env.COAST_CHAT_DB);
-    const result = await performFormalChat(env, {
-      model: requestedModel || profile.current_chat_model || 'openai/gpt-4.1-nano',
-      messages: [{ role: 'user', content: soilPrompt(turns, oldSoil, settings.maxHandSeeds) }],
-      settings: { max_tokens: 2000, temperature: 0.2 },
-      response_format: SOIL_RESPONSE_FORMAT,
-      reasoning: { effort: 'minimal', exclude: true },
-    });
-    if (result?.finish_reason === 'length') {
-      throw new MemoryStoreError('soil_organize_truncated', '思维壤整理结果被模型长度上限截断。', 502);
+    const modelId = requestedModel || profile.current_chat_model || 'openai/gpt-4.1-nano';
+    const basePrompt = soilPrompt(turns, oldSoil, settings.maxHandSeeds);
+    let lastJsonError = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const result = await performFormalChat(env, {
+          model: modelId,
+          messages: [{
+            role: 'user',
+            content: attempt === 0
+              ? basePrompt
+              : basePrompt + '\n\n上一次输出不是合法 JSON。请只返回一个完整 JSON 对象，不要 Markdown，不要解释，不要省略字段。',
+          }],
+          settings: { max_tokens: SOIL_ORGANIZE_MAX_TOKENS, temperature: 0.2 },
+          response_format: SOIL_RESPONSE_FORMAT,
+          reasoning: { effort: 'minimal', exclude: true },
+        });
+        if (result?.finish_reason === 'length') {
+          throw new MemoryStoreError('soil_organize_truncated', '思维壤整理结果被模型长度上限截断。', 502);
+        }
+        organized = parseStrictJson(result?.message?.content);
+        organizedBy = {
+          model_id: result?.model || modelId,
+          usage: result?.usage || null,
+          generation_source: 'soil',
+          generated_at: Date.now(),
+        };
+        lastJsonError = null;
+        break;
+      } catch (error) {
+        if (!(error instanceof MemoryStoreError && String(error.type || '').startsWith('soil_organize_'))) throw error;
+        lastJsonError = error;
+        if (attempt === 1) throw error;
+      }
     }
-    organized = parseStrictJson(result?.message?.content);
-    organizedBy = {
-      model_id: result?.model || requestedModel || profile.current_chat_model || 'openai/gpt-4.1-nano',
-      usage: result?.usage || null,
-      generation_source: 'soil',
-      generated_at: Date.now(),
-    };
+    if (!organized && lastJsonError) throw lastJsonError;
   } catch (error) {
     if (!(error instanceof ModelRequestError)
       && !(error instanceof MemoryStoreError && String(error.type || '').startsWith('soil_organize_'))) throw error;
     console.error('[memory:soil-organize]', error);
     degradedReason = error.type || 'soil_organize_failed';
+    const degradedSoil = await writeSoil(env.COAST_CHAT_DB, conversationId, {
+      current_text: fallback,
+      hand_seeds: oldSoil.hand_seeds,
+      do_not_repeat: oldSoil.do_not_repeat,
+      pocket_candidates: oldSoil.pocket_candidates,
+      manual_locked: oldSoil.manual_locked,
+      auto_refresh_enabled: oldSoil.auto_refresh_enabled,
+    }, { automatic: true });
     return json({
       ok: true,
       degraded: true,
       reason: degradedReason,
-      soil: oldSoil,
+      soil: await decorateSoilProvenance(env.COAST_CHAT_DB, degradedSoil),
+      pocket_sync: null,
     });
   }
   const latestTurn = turns.at(-1);

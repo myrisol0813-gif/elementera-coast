@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { createConversation, readConversationState, writeConversationState, writeProfile } from '../functions/chat-store.js';
 import {
@@ -519,6 +520,7 @@ const originalFetch = globalThis.fetch;
 let providerPayload = null;
 let providerContent = '带着轻量上下文回答。';
 let providerFinishReason = 'stop';
+let providerStatus = 200;
 let providerChatCalls = 0;
 globalThis.fetch = async (input, options = {}) => {
   const url = String(input);
@@ -543,9 +545,14 @@ globalThis.fetch = async (input, options = {}) => {
   if (url.includes('/api/v1/chat/completions')) {
     providerChatCalls += 1;
     providerPayload = JSON.parse(options.body);
+    if (providerStatus !== 200) {
+      return new Response(JSON.stringify({ error: { message: 'provider unavailable' } }), { status: providerStatus, headers: { 'Content-Type': 'application/json' } });
+    }
+    const content = Array.isArray(providerContent) ? providerContent.shift() : providerContent;
+    const finishReason = Array.isArray(providerFinishReason) ? providerFinishReason.shift() : providerFinishReason;
     return new Response(JSON.stringify({
       model: providerPayload.model,
-      choices: [{ message: { content: providerContent }, finish_reason: providerFinishReason }],
+      choices: [{ message: { content }, finish_reason: finishReason }],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
   throw new Error(`unexpected fetch: ${url}`);
@@ -641,7 +648,7 @@ assert.equal(soilResponse.status, 200);
 assert.equal(soilData.soil.hand_seeds.length, 0);
 assert.match(soilData.soil.current_text, /登岛信开场已经完成/);
 assert.equal(providerPayload.model, 'openai/gpt-5.1', 'thought soil must follow the model currently selected for chat');
-assert.equal(providerPayload.max_completion_tokens, 2000, 'thought soil keeps a larger bounded JSON budget for reasoning-capable models');
+assert.equal(providerPayload.max_completion_tokens, 3200, 'thought soil keeps a wider bounded JSON budget for reasoning-capable models');
 assert.equal(providerPayload.response_format?.type, 'json_schema', 'soil organize must request structured JSON when the selected model supports it');
 assert.equal(providerPayload.response_format?.json_schema?.strict, true);
 assert.ok(providerPayload.response_format?.json_schema?.schema?.required?.includes('hand_seeds_mode'));
@@ -659,6 +666,37 @@ const turn = (id, user, assistant, createdAt) => ({
     variantsByUserVariant: { 0: [{ id: `${id}-assistant`, content: assistant, created_at: createdAt }] },
   },
 });
+
+const conversationLong = await createConversation(db, 'long soil prompt');
+const longTurns = Array.from({ length: 12 }, (_, index) => turn(
+  `long-soil-${index}`,
+  `第${index}轮用户 ${index === 11 ? '最新用户完整尾标 ' : ''}${'甲'.repeat(7200)}`,
+  `第${index}轮助手 ${index === 11 ? '最新助手完整尾标 ' : ''}${'乙'.repeat(7200)}`,
+  `2026-07-14T08:${String(index).padStart(2, '0')}:00.000Z`,
+));
+await writeConversationState(db, conversationLong.id, { version: 4, turns: longTurns });
+providerContent = JSON.stringify({
+  current_text: '长回复后仍能整理',
+  hand_seeds_mode: 'clear',
+  hand_seeds: [],
+  do_not_repeat_mode: 'clear',
+  do_not_repeat: '',
+  pocket_candidates_mode: 'clear',
+  pocket_candidates: [],
+});
+const longSoilResponse = await routeMemoryApi(new Request('https://coast.test/api/memory/soil/organize', {
+  method: 'POST',
+  headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+  body: JSON.stringify({ conversation_id: conversationLong.id, force: true, trigger: 'reply', settings: { maxHandSeeds: 7 } }),
+}), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
+const longSoilData = await longSoilResponse.json();
+assert.equal(longSoilResponse.status, 200);
+assert.equal(longSoilData.soil.current_text, '长回复后仍能整理');
+assert.equal(providerPayload.max_completion_tokens, 3200);
+assert.match(providerPayload.messages[0].content, /最新用户完整尾标/, 'latest long user content should be preserved in the soil prompt');
+assert.match(providerPayload.messages[0].content, /最新助手完整尾标/, 'latest long assistant content should be preserved in the soil prompt');
+assert.ok(providerPayload.messages[0].content.length < 90000, 'soil prompt should keep a bounded total input size');
+
 await writeConversationState(db, conversationD.id, {
   version: 4,
   turns: [turn('soil-guard-turn', '守住旧壤', '自动整理不能把旧壤冲空', '2026-07-14T07:59:00.000Z')],
@@ -686,16 +724,20 @@ await writeSoil(db, conversationD.id, {
   auto_refresh_enabled: true,
 });
 
-async function organizeConversationD(output) {
-  providerContent = JSON.stringify(output);
+async function organizeConversationDRequest(extra = {}) {
   const response = await routeMemoryApi(new Request('https://coast.test/api/memory/soil/organize', {
     method: 'POST',
     headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ conversation_id: conversationD.id, force: false, trigger: 'reply' }),
+    body: JSON.stringify({ conversation_id: conversationD.id, force: false, trigger: 'reply', ...extra }),
   }), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
   const data = await response.json();
   assert.equal(response.status, 200);
   return data;
+}
+
+async function organizeConversationD(output, extra = {}) {
+  providerContent = JSON.stringify(output);
+  return organizeConversationDRequest(extra);
 }
 
 assert.equal((await listPockets(db, { conversation_id: conversationD.id, status: 'pending' })).length, 0);
@@ -714,6 +756,25 @@ assert.equal(guardedSoilData.pocket_sync.created, 1, 'old soil candidates must e
 const guardedPending = await listPockets(db, { conversation_id: conversationD.id, status: 'pending' });
 assert.equal(guardedPending.length, 1);
 assert.equal(guardedPending[0].life_core, guardedCandidate.life_core);
+
+providerContent = [
+  '上一次不是合法 JSON。',
+  JSON.stringify({
+    current_text: '重试成功整理',
+    hand_seeds_mode: 'replace',
+    hand_seeds: [{ name: '重试种', life_core: '第一次 JSON 失败后第二次成功', usage_hint: '', avoid_hint: '' }],
+    do_not_repeat_mode: 'replace',
+    do_not_repeat: '重试后写入的新勿复读',
+    pocket_candidates_mode: 'clear',
+    pocket_candidates: [],
+  }),
+];
+const retryCallsBefore = providerChatCalls;
+const retrySoilData = await organizeConversationDRequest();
+assert.equal(providerChatCalls - retryCallsBefore, 2, 'invalid JSON must retry exactly once');
+assert.equal(Boolean(retrySoilData.degraded), false);
+assert.equal(retrySoilData.soil.current_text, '重试成功整理');
+assert.equal(retrySoilData.soil.hand_seeds[0].life_core, '第一次 JSON 失败后第二次成功');
 
 const replacedSoilData = await organizeConversationD({
   current_text: '主动替换旧手持',
@@ -879,10 +940,10 @@ const degradedSoilData = await degradedSoilResponse.json();
 assert.equal(degradedSoilResponse.status, 200);
 assert.equal(degradedSoilData.degraded, true);
 assert.equal(degradedSoilData.reason, 'soil_organize_invalid');
-assert.equal(degradedSoilData.soil.current_text, soilBeforeDegradedOrganize.current_text, 'a failed organize must keep the previous current note instead of echoing the latest user message');
-assert.equal((await readSoil(db, conversationC.id)).current_text, soilBeforeDegradedOrganize.current_text, 'a degraded organize must not write a fake fallback current note');
-assert.equal((await readSoil(db, conversationC.id)).revision, soilBeforeDegradedOrganize.revision, 'a degraded organize must not advance the soil revision');
-assert.equal((await listPockets(db, { conversation_id: conversationC.id, status: 'pending' })).length, pendingBeforeDegradedOrganize, 'a failed organize must not mutate pending pockets');
+assert.match(degradedSoilData.soil.current_text, /第三轮需要兜底/, 'degraded organize should write a soft fallback current note');
+assert.equal(degradedSoilData.soil.hand_seeds.length, soilBeforeDegradedOrganize.hand_seeds.length, 'degraded organize must keep old hand seeds');
+assert.ok((await readSoil(db, conversationC.id)).revision > soilBeforeDegradedOrganize.revision, 'a degraded organize should save the soft fallback state');
+assert.equal((await listPockets(db, { conversation_id: conversationC.id, status: 'pending' })).length, pendingBeforeDegradedOrganize, 'a degraded organize must not mutate pending pockets');
 
 providerFinishReason = 'length';
 providerContent = JSON.stringify({
@@ -902,9 +963,21 @@ const truncatedSoilResponse = await routeMemoryApi(new Request('https://coast.te
 const truncatedSoilData = await truncatedSoilResponse.json();
 assert.equal(truncatedSoilData.degraded, true);
 assert.equal(truncatedSoilData.reason, 'soil_organize_truncated');
-assert.equal(truncatedSoilData.soil.current_text, soilBeforeDegradedOrganize.current_text);
-assert.equal((await readSoil(db, conversationC.id)).revision, soilBeforeDegradedOrganize.revision);
+assert.match(truncatedSoilData.soil.current_text, /第三轮需要兜底/);
 providerFinishReason = 'stop';
+
+providerStatus = 503;
+const providerErrorResponse = await routeMemoryApi(new Request('https://coast.test/api/memory/soil/organize', {
+  method: 'POST',
+  headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+  body: JSON.stringify({ conversation_id: conversationC.id, force: false, trigger: 'reply' }),
+}), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
+const providerErrorData = await providerErrorResponse.json();
+assert.equal(providerErrorResponse.status, 200);
+assert.equal(providerErrorData.degraded, true);
+assert.equal(providerErrorData.reason, 'provider_unavailable');
+assert.match(providerErrorData.soil.current_text, /第三轮需要兜底/);
+providerStatus = 200;
 
 await writeSoil(db, conversationB.id, {
   current_text: '小寒手动锁定的当前方向',
