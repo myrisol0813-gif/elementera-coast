@@ -1,4 +1,4 @@
-// retrigger 4
+// retrigger 5
 import { readFile, writeFile } from 'node:fs/promises';
 
 const path = 'scripts/p0-soil-incremental-bridge.mjs';
@@ -13,5 +13,9 @@ text = text.replace(/\\\`2026-07-15T02:\\\${String\(index\)\.padStart\(2, '0'\)}
 text = text.replace(
   "  if (url.includes('/api/v1/chat/completions')) {",
   "  if (url.includes('/api/v1/models')) {\n    return new Response(JSON.stringify({ data: [{ id: 'openai/gpt-4.1-nano', name: 'GPT-4.1 Nano', architecture: { output_modalities: ['text'] }, supported_parameters: ['temperature', 'response_format', 'reasoning'], pricing: { prompt: '0', completion: '0' } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });\n  }\n  if (url.includes('/api/v1/chat/completions')) {",
+);
+text = text.replace(
+  "const memoryContext = await buildMemoryContext(db, seedConversation.id, '同轨燕鸥和海岸怎么重新回来？', { limit: 3 });",
+  "const memoryContext = await buildMemoryContext({ COAST_CHAT_DB: db }, 'owner', seedConversation.id, '同轨燕鸥和海岸怎么重新回来？', { limit: 3 });",
 );
 await writeFile(path, text);
