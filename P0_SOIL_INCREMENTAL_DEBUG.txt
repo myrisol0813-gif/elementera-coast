@@ -1,5 +1,7 @@
+FIX_STATUS=0
 APPLY_STATUS=1
 TEST_STATUS=999
+--- FIX LOG ---
 --- APPLY LOG ---
 file:///home/runner/work/elementera-coast/elementera-coast/scripts/p0-soil-incremental-bridge.mjs:337
   user: { active: 0, variants: [{ id: \`${id}-user\`, content: user, created_at: createdAt, ...userExtra }] },
