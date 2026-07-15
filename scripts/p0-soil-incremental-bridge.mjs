@@ -1,3 +1,4 @@
+// retrigger 1
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -298,7 +299,7 @@ await write('functions/memory-router.js', router);
 
 const incrementalTest = `import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { createConversation, readConversationState, writeConversationState } from '../functions/chat-store.js';
+import { createConversation, writeConversationState } from '../functions/chat-store.js';
 import { routeMemoryApi } from '../functions/memory-router.js';
 import { createEntry, readSoil, writeSoil } from '../functions/memory-store.js';
 import { buildMemoryContext } from '../functions/memory-recall.js';
