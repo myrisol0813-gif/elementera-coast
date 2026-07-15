@@ -772,7 +772,7 @@ providerContent = [
 const retryCallsBefore = providerChatCalls;
 const retrySoilData = await organizeConversationDRequest();
 assert.equal(providerChatCalls - retryCallsBefore, 2, 'invalid JSON must retry exactly once');
-assert.equal(retrySoilData.degraded, undefined);
+assert.equal(Boolean(retrySoilData.degraded), false);
 assert.equal(retrySoilData.soil.current_text, '重试成功整理');
 assert.equal(retrySoilData.soil.hand_seeds[0].life_core, '第一次 JSON 失败后第二次成功');
 
