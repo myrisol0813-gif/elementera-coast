@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/chat-state.test.mjs && node tests/backend.test.mjs && node tests/storage.test.mjs && node tests/architecture.test.mjs && node tests/memory.test.mjs && node tests/provenance.test.mjs && node tests/streaming.test.mjs && node tests/danger.test.mjs && node tests/dom.test.mjs"
+    "test": "node tests/chat-state.test.mjs && node tests/backend.test.mjs && node tests/storage.test.mjs && node tests/architecture.test.mjs && node tests/memory.test.mjs && node tests/soil-incremental.test.mjs && node tests/provenance.test.mjs && node tests/streaming.test.mjs && node tests/danger.test.mjs && node tests/dom.test.mjs"
   },
   "devDependencies": {
     "happy-dom": "18.0.1"
