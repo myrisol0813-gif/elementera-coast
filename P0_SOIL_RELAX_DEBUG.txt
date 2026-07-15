@@ -1,0 +1,28 @@
+TEST_STATUS=1
+--- TEST LOG TAIL ---
+
+> test
+> node tests/chat-state.test.mjs && node tests/backend.test.mjs && node tests/storage.test.mjs && node tests/architecture.test.mjs && node tests/memory.test.mjs && node tests/provenance.test.mjs && node tests/streaming.test.mjs && node tests/danger.test.mjs && node tests/dom.test.mjs
+
+chat-state: ok
+backend: ok
+storage: ok
+architecture: ok
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: thought soil keeps a wider bounded JSON budget for reasoning-capable models
+
+2000 !== 3200
+
+    at file:///home/runner/work/elementera-coast/elementera-coast/tests/memory.test.mjs:651:8 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 2000,
+  expected: 3200,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.18.0
