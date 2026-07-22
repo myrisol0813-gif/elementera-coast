@@ -603,10 +603,11 @@ document.querySelector('[data-action="settings:wolf"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'wolf', 'wolf settings route');
 document.querySelector('[data-action="tools:run-control"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'run-control', 'API cottage route');
-for (const label of ['上下文预算（粗略）', '自然', '不设置应用层输出上限', '思维壤预算', '思维壤整理频率', '每个完成轮次自动整理一次', '手持种上限', '种子冷却轮数', '没东西聊时当前种子上限', '当前窗口种子召回上限', '总记忆召回上限', '查看向量状态']) {
+for (const label of ['上下文预算（粗略）', '自然', '最大输出 token', '思维壤预算', '思维壤整理频率', '每个完成轮次自动整理一次', '手持种上限', '种子冷却轮数', '没东西聊时当前种子上限', '当前窗口种子召回上限', '总记忆召回上限', '查看向量状态']) {
   assert.ok(document.querySelector('#overlayRoot').textContent.includes(label));
 }
 for (const [name, value] of [
+  ['maxOutputTokens', '4096'],
   ['seedCooldownTurns', '0'],
   ['conversationSeedStallLimit', '6'],
   ['maxHandSeeds', '3'],
