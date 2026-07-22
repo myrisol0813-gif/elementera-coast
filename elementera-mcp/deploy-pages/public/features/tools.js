@@ -45,7 +45,7 @@ export function createTools({ storage, router, toast, memory }) {
       className: 'run-control',
       body: `<p class="feature-note">这些设置保存在统一的本地状态中，并直接供主聊天请求读取。</p>
         ${group('上下文预算', choiceRow('recentTurns', '最近上下文轮数') + choiceRow('contextBudget', '上下文预算（粗略）', '当前按最近轮数与字符估算上限裁剪，不使用精确 tokenizer；中文约一字一 token，英文约四字符一 token。'))}
-        ${group('输出偏好', choiceRow('outputLength', '回答长度', '“自然”和“长信”不设置应用层输出上限，由模型自行判断何时结束；“偏短”限制为 700。') + choiceRow('creativity', '表达倾向'))}
+        ${group('输出偏好', choiceRow('outputLength', '回答长度', '“偏短”最多 700 tokens；“自然”和“长信”使用下方上限。') + numberRow('maxOutputTokens', '最大输出 token', 64, 65536, 64, '这是单次回复允许生成的最高值，不代表每次一定用满。余额较少时可调低；自动标题固定为 40，不受此项影响。') + choiceRow('creativity', '表达倾向'))}
         ${group('生成方式', choiceRow('streamingEnabled', '流式输出', '默认关闭。开启后只有普通聊天走真实流式输出；登岛信继续使用稳定 JSON 路径。'))}
         ${group('思维壤与记忆召回', numberRow('soilBudget', '思维壤预算', 200, 2400, 100, '只限制递入聊天的轻量便签长度。') + noteRow('思维壤整理频率', '每个完成轮次自动整理一次。') + numberRow('maxHandSeeds', '手持种上限', 1, 7, 1, '默认最多 7 粒。') + numberRow('seedCooldownTurns', '种子冷却轮数', 0, 8, 1, '默认同一种子至少冷却 2 个完成轮次。') + numberRow('conversationSeedLimit', '当前窗口种子召回上限', 0, 6, 1, '默认最多 3 粒。') + numberRow('conversationSeedStallLimit', '没东西聊时当前种子上限', 0, 6, 1, '默认最多 4 粒。') + numberRow('globalSeedLimit', '总种子召回上限', 0, 6, 1, '默认最多 1 粒。') + numberRow('conversationMemoryLimit', '当前窗口记忆召回上限', 0, 6, 1, '默认最多 2 条。') + numberRow('globalMemoryLimit', '总记忆召回上限', 0, 6, 1, '默认最多 1 条。'))}
         ${group('应急清理', '<button class="danger-row" type="button" data-action="tools:clear-context"><strong>清空 API 临时上下文</strong><small>用于重置请求前临时拼装；不会删除聊天记录。</small></button><button class="danger-row" type="button" data-action="tools:clear-soil"><strong>清空当前思维壤</strong><small>不会删除聊天、种子或记忆。</small></button><button class="feature-row" type="button" data-action="tools:open-pockets"><span><strong>打开待确认袋</strong><small>确认落袋内容的去向。</small></span><span>›</span></button><button class="feature-row" type="button" data-action="tools:vector-status"><span><strong>查看向量状态</strong><small>检查 Workers AI 维度与 Vectorize 连接。</small></span><span>›</span></button>')}`,
@@ -142,7 +142,7 @@ export function createTools({ storage, router, toast, memory }) {
     }
     if (name !== 'setting') return;
     const numeric = [
-      'recentTurns', 'contextBudget', 'soilBudget', 'autoRefreshEveryTurns', 'maxHandSeeds',
+      'recentTurns', 'contextBudget', 'maxOutputTokens', 'soilBudget', 'autoRefreshEveryTurns', 'maxHandSeeds',
       'conversationSeedLimit', 'conversationSeedStallLimit', 'globalSeedLimit',
       'conversationMemoryLimit', 'globalMemoryLimit', 'seedCooldownTurns',
     ].includes(target.name);

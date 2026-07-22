@@ -1,0 +1,30 @@
+
+> test
+> node tests/chat-state.test.mjs && node tests/backend.test.mjs && node tests/storage.test.mjs && node tests/architecture.test.mjs && node tests/memory.test.mjs && node tests/soil-incremental.test.mjs && node tests/provenance.test.mjs && node tests/streaming.test.mjs && node tests/danger.test.mjs && node tests/dom.test.mjs
+
+chat-state: ok
+backend: ok
+storage: ok
+(node:2351) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+architecture: ok
+(node:2362) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: natural output must leave the provider/model to decide when to stop
+
+true !== false
+
+    at file:///home/runner/work/elementera-coast/elementera-coast/tests/memory.test.mjs:597:8 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: true,
+  expected: false,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v22.23.1

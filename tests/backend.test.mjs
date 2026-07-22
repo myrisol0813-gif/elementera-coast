@@ -140,6 +140,13 @@ assert.equal(nonStreaming.message.content, 'JSON reply');
 assert.deepEqual(nonStreaming.usage, { prompt_tokens: 11, completion_tokens: 3, total_tokens: 14 });
 assert.equal(nonStreaming.finish_reason, 'stop');
 
+await performFormalChat(modelEnv, {
+  model: 'openai/gpt-4.1-nano',
+  messages: [{ role: 'user', content: 'configured output ceiling' }],
+  settings: { max_tokens: null, maxOutputTokens: 1234, temperature: 0.2 },
+});
+assert.equal(nonStreamingPayload.max_completion_tokens, 1234, 'configured output ceiling must be sent to OpenRouter');
+
 let streamingPayload = null;
 const streamBytes = [
   ': keepalive\n\n',
