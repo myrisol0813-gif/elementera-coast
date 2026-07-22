@@ -589,12 +589,12 @@ const normalFloorResponse = await routeChatApi(new Request('https://coast.test/a
     conversation_id: conversationA.id,
     model: 'openai/gpt-4.1-nano',
     messages: [{ role: 'user', content: '请完整回答。' }],
-    settings: { outputLength: 'auto', max_tokens: 600, temperature: 0.2 },
+    settings: { outputLength: 'auto', max_tokens: 600, maxOutputTokens: 8000, temperature: 0.2 },
   }),
 }), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
 const normalFloorData = await normalFloorResponse.json();
 assert.equal(normalFloorResponse.status, 200);
-assert.equal('max_completion_tokens' in providerPayload, false, 'natural output must leave the provider/model to decide when to stop');
+assert.equal(providerPayload.max_completion_tokens, 8000, 'natural output must send the configured application ceiling');
 assert.equal('max_tokens' in providerPayload, false);
 assert.equal(normalFloorData.max_tokens, null);
 assert.equal(normalFloorData.finish_reason, 'length');
@@ -609,12 +609,12 @@ const landingResponse = await routeChatApi(new Request('https://coast.test/api/c
     conversation_id: conversationB.id,
     model: 'openai/gpt-4.1-nano',
     letter_text: '请把这封登岛信当作当前窗口的第一轮开场。',
-    settings: { outputLength: 'auto', max_tokens: 600, temperature: 0.2 },
+    settings: { outputLength: 'auto', max_tokens: 600, maxOutputTokens: 8000, temperature: 0.2 },
   }),
 }), { COAST_CHAT_DB: db, OPENROUTER_API_KEY: 'test-key' });
 const landingData = await landingResponse.json();
 assert.equal(landingResponse.status, 200);
-assert.equal('max_completion_tokens' in providerPayload, false, 'landing natural output must also be application-unbounded');
+assert.equal(providerPayload.max_completion_tokens, 8000, 'landing natural output must use the configured application ceiling');
 assert.equal('max_tokens' in providerPayload, false);
 assert.equal(landingData.max_tokens, null);
 assert.equal(landingData.finish_reason, 'length');
