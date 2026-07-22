@@ -1,0 +1,75 @@
+name: Finalize configurable output token control
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  repair-and-verify:
+    if: github.head_ref == 'feature/max-output-token-control' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/max-output-token-control
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Update legacy natural-output assertions
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('tests/memory.test.mjs')
+          text = path.read_text(encoding='utf-8')
+
+          old_setting = "    settings: { outputLength: 'auto', max_tokens: 600, temperature: 0.2 },"
+          new_setting = "    settings: { outputLength: 'auto', max_tokens: 600, maxOutputTokens: 8000, temperature: 0.2 },"
+          if text.count(old_setting) != 2:
+              raise SystemExit(f'expected 2 natural-output settings, found {text.count(old_setting)}')
+          text = text.replace(old_setting, new_setting)
+
+          old_normal = "assert.equal('max_completion_tokens' in providerPayload, false, 'natural output must leave the provider/model to decide when to stop');"
+          new_normal = "assert.equal(providerPayload.max_completion_tokens, 8000, 'natural output must send the configured application ceiling');"
+          if text.count(old_normal) != 1:
+              raise SystemExit(f'normal assertion count: {text.count(old_normal)}')
+          text = text.replace(old_normal, new_normal)
+
+          old_landing = "assert.equal('max_completion_tokens' in providerPayload, false, 'landing natural output must also be application-unbounded');"
+          new_landing = "assert.equal(providerPayload.max_completion_tokens, 8000, 'landing natural output must use the configured application ceiling');"
+          if text.count(old_landing) != 1:
+              raise SystemExit(f'landing assertion count: {text.count(old_landing)}')
+          text = text.replace(old_landing, new_landing)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - run: npm install --ignore-scripts
+
+      - name: Run full tests and commit result
+        shell: bash
+        run: |
+          set +e
+          npm test > TOKEN_CONTROL_TEST_LOG.txt 2>&1
+          TEST_STATUS=$?
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/token-control-repair-trigger
+          if [ "$TEST_STATUS" -eq 0 ]; then
+            rm -f TOKEN_CONTROL_TEST_LOG.txt
+            git add tests/memory.test.mjs TOKEN_CONTROL_TEST_LOG.txt .github/token-control-repair-trigger
+            git commit -m "test: align natural output ceiling expectations"
+          else
+            git add -f tests/memory.test.mjs TOKEN_CONTROL_TEST_LOG.txt .github/token-control-repair-trigger
+            git commit -m "debug: preserve final token control test failure"
+          fi
+          git push origin HEAD:feature/max-output-token-control
+          exit "$TEST_STATUS"
