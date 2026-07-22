@@ -67,6 +67,7 @@ function defaults() {
       recentTurns: 8,
       contextBudget: 6000,
       outputLength: 'auto',
+      maxOutputTokens: 8000,
       creativity: 'balanced',
       streamingEnabled: false,
       soilBudget: 1200,

@@ -6,7 +6,8 @@ const OPENROUTER_CHAT_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const DEFAULT_MODEL = 'openai/gpt-4.1-nano';
 const MAX_CHAT_MESSAGES = 20;
 const MAX_CHAT_CONTENT_CHARS = 2 * 1024 * 1024;
-export const MAX_FORMAL_TOKENS = 3200;
+export const MAX_FORMAL_TOKENS = 65536;
+const DEFAULT_FORMAL_TOKENS = 8000;
 const MAX_SANDBOX_TOKENS = 700;
 const CATALOG_TTL_MS = 10 * 60 * 1000;
 const FREE_TEST_MODEL_IDS = Object.freeze([
@@ -226,6 +227,15 @@ function compact(value, max = 160) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
+function creditTokenShortfall(preview = '') {
+  const match = String(preview).match(/requested up to\s+([\d,]+)\s+tokens?,\s+but can only afford\s+([\d,]+)/i);
+  if (!match) return null;
+  const requested = Number(match[1].replace(/,/g, ''));
+  const affordable = Number(match[2].replace(/,/g, ''));
+  if (!Number.isFinite(requested) || !Number.isFinite(affordable)) return null;
+  return { requested: Math.trunc(requested), affordable: Math.trunc(affordable), missing: Math.max(0, Math.trunc(requested - affordable)) };
+}
+
 async function providerError(response) {
   const raw = await response.text().catch(() => '');
   try {
@@ -239,7 +249,11 @@ async function providerError(response) {
 function normalizedProviderError(status, model, preview = '') {
   const lower = preview.toLowerCase();
   if (status === 401) return ['auth_error', 'API key 无效或未配置。'];
-  if (status === 402) return ['insufficient_credits', 'OpenRouter 余额或 credits 不足。'];
+  if (status === 402) {
+    const credit = creditTokenShortfall(preview);
+    if (credit) return ['insufficient_credits', `OpenRouter 额度预检未通过：本次最大输出设为 ${credit.requested} tokens，当前余额最多负担 ${credit.affordable}，还差 ${credit.missing} tokens。请在 API 小屋把“最大输出 token”调到 ${credit.affordable} 或更低。`];
+    return ['insufficient_credits', 'OpenRouter 余额或 credits 不足。可以在 API 小屋调低“最大输出 token”。'];
+  }
   if (status === 403 && lower.includes('not available in your region')) return ['region_unavailable', '该模型在当前网络地区不可用。可以切换网络出口，或换用其他模型。'];
   if (status === 403) return ['forbidden', '当前 key 或账户没有权限使用该模型。'];
   if (status === 404) return ['model_not_found', '模型不存在或已下架。'];
@@ -317,12 +331,16 @@ async function prepareFormalChat(env, input, allowSystem) {
   }
   const messages = validateMessages(input.messages, { system: allowSystem });
   const settings = input.settings || {};
-  const requestedMaxTokens = Object.prototype.hasOwnProperty.call(settings, 'max_tokens')
+  const configuredMaxTokens = clamp(settings.maxOutputTokens, DEFAULT_FORMAL_TOKENS, 64, MAX_FORMAL_TOKENS);
+  const explicitMaxTokens = Object.prototype.hasOwnProperty.call(settings, 'max_tokens')
     ? settings.max_tokens
     : input.max_tokens;
-  const maxTokens = requestedMaxTokens === null
-    ? null
-    : clamp(requestedMaxTokens, 600, 1, MAX_FORMAL_TOKENS);
+  const requestedMaxTokens = explicitMaxTokens === null
+    ? configuredMaxTokens
+    : explicitMaxTokens === undefined
+      ? (Number.isFinite(Number(settings.maxOutputTokens)) ? configuredMaxTokens : 600)
+      : explicitMaxTokens;
+  const maxTokens = clamp(requestedMaxTokens, 600, 1, MAX_FORMAL_TOKENS);
   const temperature = clamp(settings.temperature ?? input.temperature, 0.7, 0, 2);
   return {
     modelId,

@@ -13,7 +13,7 @@ const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 const headers = await read(join(pages, '_headers'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-08"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-09"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 
@@ -84,7 +84,7 @@ assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(join(pages, 'service-worker.js'));
-assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-08';$/m);
+assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-09';$/m);
 assert.ok(worker.includes("url.pathname.startsWith('/api/')"));
 assert.equal(worker.includes("caches.match('/index.html')"), true);
 assert.equal(worker.includes('modules/legacy'), false);
@@ -203,7 +203,7 @@ assert.ok(chatRouter.includes("'/api/chat/landing-letter'"));
 assert.ok(schemaSource.includes('conversation_landing_letters'));
 assert.ok(chatSource.includes('branch.user && !branch.user.hidden'));
 assert.equal(/memory_edges|sleep|dream|梦边|自动核心/.test(memoryStoreSource + memoryRecallSource + memoryRouterSource), false);
-for (const label of ['上下文预算（粗略）', '不设置应用层输出上限', '思维壤预算', '思维壤整理频率', '每个完成轮次自动整理一次', '手持种上限', '种子冷却轮数', '没东西聊时当前种子上限', '当前窗口种子召回上限', '总种子召回上限', '当前窗口记忆召回上限', '总记忆召回上限', '清空当前思维壤', '打开待确认袋', '查看向量状态']) {
+for (const label of ['上下文预算（粗略）', '最大输出 token', '思维壤预算', '思维壤整理频率', '每个完成轮次自动整理一次', '手持种上限', '种子冷却轮数', '没东西聊时当前种子上限', '当前窗口种子召回上限', '总种子召回上限', '当前窗口记忆召回上限', '总记忆召回上限', '清空当前思维壤', '打开待确认袋', '查看向量状态']) {
   assert.ok(toolsSource.includes(label), `API cottage is missing: ${label}`);
 }
 assert.ok(chatRouter.includes('budgetChatMessages'));
