@@ -62,14 +62,23 @@ jobs:
           PY
 
       - run: npm install --ignore-scripts
-      - run: npm test
 
-      - name: Commit verified feature
+      - name: Run tests and preserve result
         shell: bash
         run: |
-          rm -f .github/token-control-trigger
+          set +e
+          npm test > TOKEN_CONTROL_TEST_LOG.txt 2>&1
+          TEST_STATUS=$?
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add functions elementera-mcp/deploy-pages tests .github/token-control-trigger
-          git commit -m "feat: add configurable output token ceiling"
+          rm -f .github/token-control-trigger
+          if [ "$TEST_STATUS" -eq 0 ]; then
+            rm -f TOKEN_CONTROL_TEST_LOG.txt
+            git add functions elementera-mcp/deploy-pages tests .github/token-control-trigger TOKEN_CONTROL_TEST_LOG.txt
+            git commit -m "feat: add configurable output token ceiling"
+          else
+            git add -f functions elementera-mcp/deploy-pages tests .github/token-control-trigger TOKEN_CONTROL_TEST_LOG.txt
+            git commit -m "debug: preserve token control test failure"
+          fi
           git push origin HEAD:feature/max-output-token-control
+          exit "$TEST_STATUS"
