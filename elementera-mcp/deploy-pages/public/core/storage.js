@@ -43,6 +43,18 @@ function defaultRoom(kind) {
   };
 }
 
+function defaultDaily() {
+  return {
+    moments: [],
+    momentLikes: {},
+    momentComments: {},
+    momentCover: '',
+    diaries: [],
+    albumItems: [],
+    summaries: [],
+  };
+}
+
 function defaults() {
   return {
     version: 1,
@@ -81,6 +93,7 @@ function defaults() {
       globalMemoryLimit: 1,
       seedCooldownTurns: 2,
     },
+    daily: defaultDaily(),
     letters: {},
     migration: { pending: false, profile: null },
   };
@@ -92,6 +105,14 @@ function parseJson(value, fallback) {
   } catch {
     return fallback;
   }
+}
+
+function cleanText(value, limit = 12000) {
+  return String(value || '').slice(0, limit);
+}
+
+function cleanId(value, fallback = '') {
+  return String(value || fallback || '').replace(/[^\w:.-]/g, '_').slice(0, 160);
 }
 
 function normalizeRoom(value, kind) {
@@ -117,6 +138,77 @@ function normalizeRoom(value, kind) {
   return { rooms, active };
 }
 
+function normalizeRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
+}
+
+function normalizeDaily(value) {
+  const base = defaultDaily();
+  const daily = value && typeof value === 'object' ? value : {};
+  const momentLikes = Object.fromEntries(Object.entries(normalizeRecord(daily.momentLikes))
+    .filter(([key]) => key)
+    .map(([key, liked]) => [cleanId(key), Boolean(liked)]));
+  const momentComments = Object.fromEntries(Object.entries(normalizeRecord(daily.momentComments))
+    .filter(([key]) => key)
+    .map(([key, comments]) => [cleanId(key), (Array.isArray(comments) ? comments : [])
+      .filter((comment) => comment && typeof comment.text === 'string')
+      .slice(-80)
+      .map((comment) => ({
+        who: String(comment.who || '小寒').slice(0, 40),
+        text: cleanText(comment.text, 2000),
+      }))]));
+
+  return {
+    ...base,
+    momentCover: String(daily.momentCover || ''),
+    momentLikes,
+    momentComments,
+    moments: (Array.isArray(daily.moments) ? daily.moments : [])
+      .filter((moment) => moment && (typeof moment.text === 'string' || typeof moment.image === 'string'))
+      .slice(0, 200)
+      .map((moment) => ({
+        id: cleanId(moment.id, `moment-${Number(moment.createdAt || Date.now())}`),
+        date: String(moment.date || '').slice(0, 10),
+        createdAt: Number(moment.createdAt || Date.now()),
+        text: cleanText(moment.text),
+        image: String(moment.image || ''),
+        location: String(moment.location || '').slice(0, 120),
+      })),
+    diaries: (Array.isArray(daily.diaries) ? daily.diaries : [])
+      .filter((entry) => entry && (typeof entry.text === 'string' || typeof entry.image === 'string'))
+      .slice(0, 200)
+      .map((entry) => ({
+        id: cleanId(entry.id, `diary-${Number(entry.updatedAt || Date.now())}`),
+        date: String(entry.date || '').slice(0, 10),
+        author: ['xiaohan', 'api', 'mcp'].includes(entry.author) ? entry.author : 'xiaohan',
+        weather: String(entry.weather || '未标注').slice(0, 40),
+        mood: String(entry.mood || '未标注').slice(0, 40),
+        text: cleanText(entry.text),
+        image: String(entry.image || ''),
+        updatedAt: Number(entry.updatedAt || Date.now()),
+      })),
+    albumItems: (Array.isArray(daily.albumItems) ? daily.albumItems : [])
+      .filter((item) => item && typeof item.image === 'string')
+      .slice(0, 300)
+      .map((item) => ({
+        id: cleanId(item.id, `album-${Number(item.createdAt || Date.now())}`),
+        image: String(item.image || ''),
+        cat: ['xiaohan', 'myri', 'together'].includes(item.cat) ? item.cat : 'xiaohan',
+        date: String(item.date || '').slice(0, 10),
+        createdAt: Number(item.createdAt || Date.now()),
+      })),
+    summaries: (Array.isArray(daily.summaries) ? daily.summaries : [])
+      .filter((summary) => summary && typeof summary.text === 'string')
+      .slice(0, 200)
+      .map((summary) => ({
+        id: cleanId(summary.id, `summary-${Number(summary.updatedAt || Date.now())}`),
+        date: String(summary.date || '').slice(0, 10),
+        text: cleanText(summary.text),
+        updatedAt: Number(summary.updatedAt || Date.now()),
+      })),
+  };
+}
+
 function normalize(value) {
   const base = defaults();
   return {
@@ -130,6 +222,7 @@ function normalize(value) {
       key,
       value?.runControl?.[key] ?? base.runControl[key],
     ])),
+    daily: normalizeDaily(value?.daily),
     letters: value?.letters && typeof value.letters === 'object' ? value.letters : {},
     migration: {
       pending: Boolean(value?.migration?.pending),
@@ -164,12 +257,12 @@ function collectMigrationConversations() {
   const items = new Map();
   const activeId = oldValue(OLD_KEYS.currentConversation) || oldValue(OLD_KEYS.olderConversation) || 'main';
   const upsert = (id, patch = {}) => {
-    const cleanId = String(id || activeId || 'main').replace(/[^\w:.-]/g, '_').slice(0, 160) || 'main';
-    const current = items.get(cleanId) || { id: cleanId, title: '新聊天', messages: [], state: null };
+    const clean = String(id || activeId || 'main').replace(/[^\w:.-]/g, '_').slice(0, 160) || 'main';
+    const current = items.get(clean) || { id: clean, title: '新聊天', messages: [], state: null };
     if (patch.title) current.title = String(patch.title).slice(0, 80);
     if (patch.messages?.length) current.messages = cleanLegacyMessages(patch.messages);
     if (patch.state?.turns) current.state = patch.state;
-    items.set(cleanId, current);
+    items.set(clean, current);
   };
 
   const windows = parseJson(oldValue(OLD_KEYS.mainWindows), []);
