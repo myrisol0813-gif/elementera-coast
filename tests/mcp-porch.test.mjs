@@ -148,6 +148,8 @@ assert.throws(
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const kid = 'coast-test-key';
 const publicJwk = { ...publicKey.export({ format: 'jwk' }), alg: 'RS256', use: 'sig', kid };
+const unavailableIssuer = 'https://auth-unavailable.coast-test.example/';
+const exceptionIssuer = 'https://auth-exception.coast-test.example/';
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (input, options) => {
   if (String(input) === `${issuer}.well-known/jwks.json`) {
@@ -155,6 +157,12 @@ globalThis.fetch = async (input, options) => {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
+  }
+  if (String(input) === `${unavailableIssuer}.well-known/jwks.json`) {
+    return new Response('unavailable', { status: 503 });
+  }
+  if (String(input) === `${exceptionIssuer}.well-known/jwks.json`) {
+    throw new DOMException('unavailable', 'AbortError');
   }
   return originalFetch(input, options);
 };
@@ -165,9 +173,9 @@ function jsonBase64Url(value) {
 
 async function token(scopes, overrides = {}) {
   const now = Math.floor(Date.now() / 1000);
-  const header = jsonBase64Url({ alg: 'RS256', kid });
-  const payload = jsonBase64Url({
-    scope: scopes.join(' '),
+  const headerValue = { alg: overrides.algorithm || 'RS256' };
+  if (overrides.include_kid !== false) headerValue.kid = overrides.kid || kid;
+  const payloadValue = {
     [emailClaim]: overrides.email || email,
     [emailVerifiedClaim]: overrides.email_verified ?? true,
     iss: overrides.issuer || issuer,
@@ -175,7 +183,10 @@ async function token(scopes, overrides = {}) {
     sub: overrides.subject || subject,
     iat: now,
     exp: overrides.expired ? now - 60 : now + 300,
-  });
+  };
+  if (overrides.include_scope !== false) payloadValue.scope = scopes.join(' ');
+  const header = jsonBase64Url(headerValue);
+  const payload = jsonBase64Url(payloadValue);
   const signingInput = `${header}.${payload}`;
   const signer = createSign('RSA-SHA256');
   signer.update(signingInput);
@@ -211,6 +222,66 @@ assert.equal(missingHeaderError.details.auth_diagnostic.authorization_header_pre
 const malformedBearerError = await rejectedAuth({ authorization: 'Basic not-a-bearer-token' });
 assert.equal(malformedBearerError.failureCode, 'malformed_bearer_token');
 assert.equal(malformedBearerError.details.auth_diagnostic.authorization_header_present, true);
+assert.equal(malformedBearerError.details.auth_diagnostic.bearer_scheme_present, false);
+
+const tokenShapeCases = [
+  ['opaque-access-token', 'token_not_jwt', 0],
+  ['a.b.c.d.e', 'token_is_jwe_or_opaque', 4],
+  ['a.b', 'token_segment_count', 1],
+  [`not-json.${jsonBase64Url({})}.c2ln`, 'jwt_header_decode_failed', 2],
+  [`${jsonBase64Url({ alg: 'RS256', kid })}.not-json.c2ln`, 'jwt_payload_decode_failed', 2],
+  [await token(['read:coast'], { algorithm: 'HS256' }), 'unsupported_alg', 2],
+  [await token(['read:coast'], { include_kid: false }), 'missing_kid', 2],
+  [await token(['read:coast'], { kid: 'unknown-key' }), 'no_matching_jwk', 2],
+  [tamperedToken, 'signature_invalid', 2],
+];
+for (const [rejectedToken, reason, dotCount] of tokenShapeCases) {
+  const error = await rejectedAuth({ authorization: `Bearer ${rejectedToken}` });
+  assert.equal(error.failureCode, 'jwt_verify_failed');
+  assert.equal(error.details.auth_diagnostic.jwt_verify_reason, reason);
+  assert.equal(error.details.auth_diagnostic.token_dot_count, dotCount);
+  assert.equal(error.details.auth_diagnostic.bearer_scheme_present, true);
+  assert.equal(error.details.auth_diagnostic.jwt_verified, false);
+  assert.deepEqual(error.details.auth_diagnostic.actual_scopes, []);
+}
+const opaqueDiagnostic = (await rejectedAuth({
+  authorization: 'Bearer opaque-access-token',
+})).details.auth_diagnostic;
+assert.equal(opaqueDiagnostic.jwt_header_alg, null);
+assert.equal(opaqueDiagnostic.jwt_header_kid_present, null);
+assert.equal(opaqueDiagnostic.unverified_payload_iss_matches_expected, null);
+assert.equal(opaqueDiagnostic.unverified_payload_aud_matches_expected, null);
+assert.equal(opaqueDiagnostic.unverified_payload_scope_present, null);
+
+const unsupportedAlgorithmError = await rejectedAuth({
+  authorization: `Bearer ${await token(['read:coast'], { algorithm: 'HS256' })}`,
+});
+assert.equal(unsupportedAlgorithmError.details.auth_diagnostic.jwt_header_alg, 'HS256');
+assert.equal(unsupportedAlgorithmError.details.auth_diagnostic.jwt_header_kid_present, true);
+assert.equal(unsupportedAlgorithmError.details.auth_diagnostic.unverified_payload_iss_matches_expected, true);
+assert.equal(unsupportedAlgorithmError.details.auth_diagnostic.unverified_payload_aud_matches_expected, true);
+assert.equal(unsupportedAlgorithmError.details.auth_diagnostic.unverified_payload_scope_present, true);
+
+const jwksFetchError = await rejectedAuth({
+  authorization: `Bearer ${await token(['read:coast'], { issuer: unavailableIssuer })}`,
+  authEnv: {
+    ...env,
+    COAST_MCP_AUTH0_ISSUER: unavailableIssuer,
+  },
+});
+assert.equal(jwksFetchError.failureCode, 'jwt_verify_failed');
+assert.equal(jwksFetchError.details.auth_diagnostic.jwt_verify_reason, 'jwks_fetch_failed');
+assert.equal(jwksFetchError.details.auth_diagnostic.unverified_payload_iss_matches_expected, true);
+assert.equal(jwksFetchError.details.auth_diagnostic.unverified_payload_aud_matches_expected, true);
+const jwksException = await rejectedAuth({
+  authorization: `Bearer ${await token(['read:coast'], { issuer: exceptionIssuer })}`,
+  authEnv: {
+    ...env,
+    COAST_MCP_AUTH0_ISSUER: exceptionIssuer,
+  },
+});
+assert.equal(jwksException.details.auth_diagnostic.jwt_verify_reason, 'jwks_fetch_failed');
+assert.equal(jwksException.details.auth_diagnostic.verify_exception_name, 'AbortError');
 
 const directAuth = await requireMcpAuth(new Request('https://coast.test/mcp', {
   headers: { Authorization: `Bearer ${fullToken}` },
@@ -229,17 +300,11 @@ for (const rejectedToken of [
   [await token(['read:coast'], { issuer: 'https://other-issuer.example/' }), 'issuer_mismatch'],
   [await token(['read:coast'], { audience: 'https://other-resource.example/mcp' }), 'audience_mismatch'],
   [await token(['read:coast'], { expired: true }), 'expired_token'],
-  [tamperedToken, 'jwt_verify_failed'],
 ]) {
   const error = await rejectedAuth({ authorization: `Bearer ${rejectedToken[0]}` });
   assert.equal(error.failureCode, rejectedToken[1]);
-  if (error.failureCode === 'jwt_verify_failed') {
-    assert.equal(error.details.auth_diagnostic.jwt_verified, false);
-    assert.deepEqual(error.details.auth_diagnostic.actual_scopes, []);
-  } else {
-    assert.equal(error.details.auth_diagnostic.jwt_verified, true);
-    assert.deepEqual(error.details.auth_diagnostic.actual_scopes, ['read:coast']);
-  }
+  assert.equal(error.details.auth_diagnostic.jwt_verified, true);
+  assert.deepEqual(error.details.auth_diagnostic.actual_scopes, ['read:coast']);
 }
 
 for (const [rejectedToken, failureCode] of [
@@ -333,6 +398,21 @@ assert.match(missingAuth.result._meta['mcp/www_authenticate'][0], /invalid_token
 assert.equal(missingAuth.result._meta.failure_code, 'missing_authorization_header');
 assert.equal(missingAuth.result._meta.auth_diagnostic.authorization_header_present, false);
 
+const opaqueToolToken = 'opaque-tool-access-token';
+const opaqueAuth = await mcp({
+  jsonrpc: '2.0',
+  id: 31,
+  method: 'tools/call',
+  params: { name: 'search_authorized_memory', arguments: { query: '海岸' } },
+}, opaqueToolToken);
+assert.equal(opaqueAuth.result.isError, true);
+assert.equal(opaqueAuth.result._meta.failure_code, 'jwt_verify_failed');
+assert.equal(opaqueAuth.result._meta.auth_diagnostic.jwt_verify_reason, 'token_not_jwt');
+assert.equal(opaqueAuth.result._meta.auth_diagnostic.authorization_header_present, true);
+assert.equal(opaqueAuth.result._meta.auth_diagnostic.bearer_scheme_present, true);
+assert.equal(opaqueAuth.result._meta.auth_diagnostic.token_dot_count, 0);
+assert.equal(JSON.stringify(opaqueAuth).includes(opaqueToolToken), false);
+
 const soilCall = {
   jsonrpc: '2.0',
   id: 4,
@@ -391,8 +471,17 @@ assert.equal(JSON.stringify(deniedRadio).includes(insufficientToken), false);
 console.warn = originalWarn;
 const authWarningText = authWarnings.join('\n');
 assert.match(authWarningText, /"failure_code":"missing_authorization_header"/);
+assert.match(authWarningText, /"jwt_verify_reason":"token_not_jwt"/);
 assert.match(authWarningText, /"failure_code":"scope_missing"/);
-for (const forbiddenValue of [fullToken, insufficientToken, issuer, audience, subject, email]) {
+for (const forbiddenValue of [
+  fullToken,
+  insufficientToken,
+  opaqueToolToken,
+  issuer,
+  audience,
+  subject,
+  email,
+]) {
   assert.equal(authWarningText.includes(forbiddenValue), false, 'auth logs cannot contain token or identity values');
 }
 

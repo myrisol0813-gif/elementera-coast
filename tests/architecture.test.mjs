@@ -255,6 +255,24 @@ for (const failureCode of [
 ]) {
   assert.ok(mcpOwnerSource.includes(`'${failureCode}'`), `missing safe MCP auth diagnostic: ${failureCode}`);
 }
+for (const jwtVerifyReason of [
+  'token_not_jwt',
+  'token_is_jwe_or_opaque',
+  'token_segment_count',
+  'jwt_header_decode_failed',
+  'jwt_payload_decode_failed',
+  'unsupported_alg',
+  'missing_kid',
+  'jwks_fetch_failed',
+  'no_matching_jwk',
+  'signature_invalid',
+  'verify_exception',
+]) {
+  assert.ok(
+    mcpOwnerSource.includes(`'${jwtVerifyReason}'`),
+    `missing safe JWT verify reason: ${jwtVerifyReason}`,
+  );
+}
 for (const deferredTool of [
   'create_moment_from_mcp',
   'save_album_reference_from_mcp',

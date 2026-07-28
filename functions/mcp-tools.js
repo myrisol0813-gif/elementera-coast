@@ -205,9 +205,18 @@ function authErrorResult(request, error, scopes, toolName) {
   const failureCode = error.failureCode || 'jwt_verify_failed';
   const diagnostic = error.details?.auth_diagnostic || {
     authorization_header_present: request.headers.has('Authorization'),
+    bearer_scheme_present: false,
     required_scopes: [...scopes],
     actual_scopes: [],
     jwt_verified: null,
+    jwt_verify_reason: null,
+    token_dot_count: null,
+    jwt_header_alg: null,
+    jwt_header_kid_present: null,
+    unverified_payload_iss_matches_expected: null,
+    unverified_payload_aud_matches_expected: null,
+    unverified_payload_scope_present: null,
+    verify_exception_name: null,
     claim_checks: {},
   };
   console.warn('[mcp-auth-failed]', JSON.stringify({
