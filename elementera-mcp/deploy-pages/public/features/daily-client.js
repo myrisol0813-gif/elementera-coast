@@ -29,6 +29,7 @@ function moment(value = {}) {
       who: commentValue.author === 'xiaohan' ? '小寒' : 'Myri',
       author: commentValue.author,
       text: commentValue.text || '',
+      modelId: commentValue.model_id || null,
       createdAt: milliseconds(commentValue.created_at),
     })),
   };
@@ -129,6 +130,19 @@ export function createDailyClient() {
     return moment(data.moment);
   }
 
+  async function myriCommentMoment(id, value = {}) {
+    const data = await requestJson(`${API.dailyMoments}/${encodeURIComponent(id)}/myri-comment`, {
+      method: 'POST',
+      body: JSON.stringify(value),
+    });
+    return {
+      moment: moment(data.moment),
+      comment: data.comment || null,
+      model: data.model || value.model || '',
+      sourceCounts: data.source_counts || null,
+    };
+  }
+
   async function setMomentLike(id, liked) {
     const data = await requestJson(`${API.dailyMoments}/${encodeURIComponent(id)}/like`, {
       method: liked ? 'PUT' : 'DELETE',
@@ -177,6 +191,7 @@ export function createDailyClient() {
     createMoment,
     patchMoment,
     commentMoment,
+    myriCommentMoment,
     setMomentLike,
     createDiary,
     createAlbum,

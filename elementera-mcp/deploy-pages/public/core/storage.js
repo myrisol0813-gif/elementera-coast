@@ -233,6 +233,7 @@ function normalizeDailyCache(value) {
         who: String(comment.who || '小寒').slice(0, 40),
         author: ['xiaohan', 'myri', 'api', 'mcp'].includes(comment.author) ? comment.author : 'xiaohan',
         text: cleanText(comment.text, 2000),
+        modelId: String(comment.modelId || '').slice(0, 180),
         createdAt: Number(comment.createdAt || Date.now()),
       })),
     })),

@@ -53,6 +53,7 @@ let failNextSoilOrganize = false;
 let dailySequence = 0;
 let dailySummaryRuns = 0;
 const dailySummaryBodies = [];
+const dailyMyriCommentBodies = [];
 const dailyMoments = [];
 const dailyDiaries = [];
 const dailyAlbums = [];
@@ -236,7 +237,7 @@ globalThis.fetch = async (input, options = {}) => {
     dailyMoments.unshift(moment);
     return response({ ok: true, moment }, 201);
   }
-  const dailyMomentMatch = url.pathname.match(/^\/api\/daily\/moments\/([^/]+)(?:\/(comments|like))?$/);
+  const dailyMomentMatch = url.pathname.match(/^\/api\/daily\/moments\/([^/]+)(?:\/(comments|like|myri-comment))?$/);
   if (dailyMomentMatch) {
     const moment = dailyMoments.find((item) => item.id === decodeURIComponent(dailyMomentMatch[1]));
     if (dailyMomentMatch[2] === 'comments') {
@@ -245,8 +246,21 @@ globalThis.fetch = async (input, options = {}) => {
         moment_id: moment.id,
         author: 'xiaohan',
         text: body.text,
+        model_id: null,
         created_at: now(),
       });
+    } else if (dailyMomentMatch[2] === 'myri-comment') {
+      dailyMyriCommentBodies.push(body);
+      const comment = {
+        id: `daily-myri-comment-${++dailySequence}`,
+        moment_id: moment.id,
+        author: 'myri',
+        text: '我看见这条小小的亮光了。',
+        model_id: body.model,
+        created_at: now(),
+      };
+      moment.comments.push(comment);
+      moment.updated_at = now();
     } else if (dailyMomentMatch[2] === 'like') {
       moment.liked = method === 'PUT';
       moment.like_count = moment.liked ? 1 : 0;
@@ -256,7 +270,7 @@ globalThis.fetch = async (input, options = {}) => {
         updated_at: now(),
       });
     }
-    return response({ ok: true, moment }, dailyMomentMatch[2] === 'comments' ? 201 : 200);
+    return response({ ok: true, moment }, ['comments', 'myri-comment'].includes(dailyMomentMatch[2]) ? 201 : 200);
   }
   if (url.pathname === '/api/daily/diaries') {
     if (method === 'GET') return response({ ok: true, diaries: dailyDiaries });
@@ -885,6 +899,11 @@ await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'm
   && document.querySelector('#overlayRoot').textContent.includes('第一条服务器碳硅圈'), 'server Moment create');
 assert.equal(dailyMoments.length, 1);
 assert.equal(dailyMoments[0].source, 'manual');
+document.querySelector('[data-action="daily:myri-comment"]').click();
+await waitFor(() => document.querySelector('#overlayRoot').textContent.includes('我看见这条小小的亮光了。'), 'Myri moment comment');
+assert.equal(dailyMyriCommentBodies.length, 1);
+assert.equal(dailyMyriCommentBodies[0].model, 'openai/gpt-5.2');
+assert.equal(dailyMoments[0].comments[0].author, 'myri');
 
 document.querySelector('[data-action="daily:home"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'daily-home'

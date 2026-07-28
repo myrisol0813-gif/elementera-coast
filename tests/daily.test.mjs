@@ -79,6 +79,7 @@ assert.equal(
 );
 assert.ok(db.database.prepare('PRAGMA table_info(daily_moments)').all().some((column) => column.name === 'tool_call_id'));
 assert.ok(db.database.prepare('PRAGMA table_info(daily_album_items)').all().some((column) => column.name === 'tool_call_id'));
+assert.ok(db.database.prepare('PRAGMA table_info(daily_moment_comments)').all().some((column) => column.name === 'model_id'));
 
 const moment = await createMoment(db, {
   text: '海岸今天接上了服务器。',
@@ -484,6 +485,7 @@ await writeProfile(summaryDb, {
 
 const originalFetch = globalThis.fetch;
 let summaryProviderPayload = null;
+let commentProviderPayload = null;
 globalThis.fetch = async (url, options = {}) => {
   if (String(url).includes('/models?')) {
     return new Response(JSON.stringify({
@@ -496,7 +498,19 @@ globalThis.fetch = async (url, options = {}) => {
       }],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
-  summaryProviderPayload = JSON.parse(options.body);
+  const providerPayload = JSON.parse(options.body);
+  if (providerPayload.messages?.[0]?.content?.includes('碳硅圈动态写评论')) {
+    commentProviderPayload = providerPayload;
+    return new Response(JSON.stringify({
+      model: 'openai/gpt-4.1-nano',
+      choices: [{
+        message: { role: 'assistant', content: '我在这里，给这小小一瞬点一盏灯。' },
+        finish_reason: 'stop',
+      }],
+      usage: { prompt_tokens: 80, completion_tokens: 12, total_tokens: 92 },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+  summaryProviderPayload = providerPayload;
   return new Response(JSON.stringify({
     model: 'openai/gpt-4.1-nano',
     choices: [{
@@ -539,6 +553,34 @@ assert.ok(summaryProviderPayload.messages.at(-1).content.includes('日报岛种�
 assert.ok(summaryProviderPayload.messages.at(-1).content.includes('总记忆里的潮声'));
 assert.ok(summaryProviderPayload.messages.at(-1).content.includes('跨窗口记忆'));
 assert.equal(summaryProviderPayload.messages.at(-1).content.includes('今天把日报岛接到服务器。'), false);
+
+await createDiary(summaryDb, {
+  date: '2026-07-28',
+  author: 'xiaohan',
+  weather: '夜风',
+  mood: '想让动态轻一点',
+  text: '日记上下文：今天想让朋友圈像短短的海岸呼吸。',
+  conflict_mode: 'append',
+});
+const commentTarget = await createMoment(summaryDb, {
+  text: '朋友圈动态：小海岸亮了一下。',
+  status: 'published',
+});
+const commentResponse = await routeApi(new Request(`https://coast.test/api/daily/moments/${commentTarget.id}/myri-comment`, {
+  method: 'POST',
+  headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+  body: JSON.stringify({ model: 'openai/gpt-4.1-nano' }),
+}), { COAST_CHAT_DB: summaryDb, OPENROUTER_API_KEY: 'test-key' }, { exp: 1 });
+assert.equal(commentResponse.status, 201);
+const commentData = await commentResponse.json();
+assert.equal(commentData.comment.author, 'myri');
+assert.equal(commentData.comment.text, '我在这里，给这小小一瞬点一盏灯。');
+assert.equal(commentData.comment.model_id, 'openai/gpt-4.1-nano');
+assert.equal(commentData.source_counts.diaries, 1);
+assert.equal(commentData.source_counts.soils, 1);
+assert.ok(commentProviderPayload.messages.at(-1).content.includes('日记上下文：今天想让朋友圈像短短的海岸呼吸。'));
+assert.ok(commentProviderPayload.messages.at(-1).content.includes('已经整理过的潮线方向。'));
+assert.equal(commentProviderPayload.messages.at(-1).content.includes('今天把日报岛接到服务器。'), false);
 globalThis.fetch = originalFetch;
 
 const rangeResponse = await routeApi(new Request('https://coast.test/api/daily/summary/range?timezone_offset_minutes=0'), {

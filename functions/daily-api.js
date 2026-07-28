@@ -16,6 +16,7 @@ import {
   setMomentLike,
 } from './daily-store.js';
 import { dailySummaryRangeOptions, runDailySummary } from './daily-summary.js';
+import { createMyriMomentComment } from './daily-moment-comment.js';
 import { apiError, json, readJson } from './http.js';
 import { MemoryStoreError } from './memory-store.js';
 import { ModelRequestError } from './models.js';
@@ -80,6 +81,13 @@ async function moments(request, env, url) {
         author: 'xiaohan',
         text: value.text,
       }),
+    }, 201);
+  }
+  if (parts.length === 2 && parts[1] === 'myri-comment') {
+    if (request.method !== 'POST') return methodNotAllowed('POST');
+    return json({
+      ok: true,
+      ...await createMyriMomentComment(env, id, await body(request)),
     }, 201);
   }
   if (parts.length === 2 && parts[1] === 'like') {

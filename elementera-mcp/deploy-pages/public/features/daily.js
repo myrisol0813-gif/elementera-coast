@@ -68,7 +68,7 @@ function legacyId(prefix, value) {
   return `${prefix}-legacy-${String(value || Date.now())}`.replace(/[^\w:.-]/g, '_').slice(0, 160);
 }
 
-export function createDaily({ storage, router, toast }) {
+export function createDaily({ storage, router, toast, chat }) {
   const client = createDailyClient();
   const saved = storage.read().daily || {};
   const cache = saved.cache || {};
@@ -78,6 +78,7 @@ export function createDaily({ storage, router, toast }) {
     albumItems: cache.albumItems || [],
     summaries: cache.summaries || [],
     commentTarget: '',
+    myriCommentingTarget: '',
     diaryDate: dateKey(),
     momentCover: saved.momentCover || '',
     summaryDraft: null,
@@ -192,6 +193,15 @@ export function createDaily({ storage, router, toast }) {
     return '小寒';
   }
 
+  function shortModelName(modelId) {
+    const bare = String(modelId || '').split('/').at(-1)?.replace(/:free$/i, '') || '';
+    return bare.split(/[-_]+/).filter(Boolean).slice(0, 4).map((part) => {
+      if (part.toLowerCase() === 'gpt') return 'GPT';
+      if (/^[a-z]\d+[a-z]?$/i.test(part) || /^\d+[a-z]+$/i.test(part)) return part.toUpperCase();
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    }).join(' ') || modelId;
+  }
+
   function legacyCount() {
     const legacy = state.legacyDrafts || {};
     return ['moments', 'diaries', 'albumItems', 'summaries']
@@ -226,7 +236,10 @@ export function createDaily({ storage, router, toast }) {
   function momentComments(post) {
     const comments = post.comments || [];
     const list = comments.length
-      ? `<div class="moment-comments">${comments.map((comment) => `<p><b>${escapeHtml(comment.who)}:</b> ${escapeHtml(comment.text)}</p>`).join('')}</div>`
+      ? `<div class="moment-comments">${comments.map((comment) => {
+        const model = comment.modelId ? ` <small>· ${escapeHtml(shortModelName(comment.modelId))}</small>` : '';
+        return `<p><b>${escapeHtml(comment.who)}:</b> ${escapeHtml(comment.text)}${model}</p>`;
+      }).join('')}</div>`
       : '';
     const editor = state.commentTarget === post.id
       ? `<div class="moment-comment-editor"><input id="momentCommentInput" placeholder="写评论"><button type="button" data-action="daily:send-comment" data-id="${escapeAttribute(post.id)}">发送</button></div>`
@@ -242,11 +255,12 @@ export function createDaily({ storage, router, toast }) {
 
   function momentCard(post) {
     const stamp = `${dateLabel(entryDate(post))} · ${timeLabel(post.createdAt)}`;
+    const myriThinking = state.myriCommentingTarget === post.id;
     return `<article class="moment-post">
       <div>${momentAvatar(post.author)}</div>
       <div class="moment-main"><h3>${escapeHtml(authorName(post.author))}</h3><p>${escapeHtml(post.text || '（无正文）')}</p>
         ${post.image ? `<img class="moment-image" src="${escapeAttribute(post.image)}" alt="碳硅圈配图">` : ''}
-        <div class="moment-actions"><span>${stamp} · ${momentStatus(post)}</span><button class="${post.liked ? 'is-liked' : ''}" type="button" data-action="daily:like" data-id="${escapeAttribute(post.id)}">♡ ${Number(post.likeCount || 0)}</button><button type="button" data-action="daily:comment" data-id="${escapeAttribute(post.id)}">评论</button></div>
+        <div class="moment-actions"><span>${stamp} · ${momentStatus(post)}</span><button class="${post.liked ? 'is-liked' : ''}" type="button" data-action="daily:like" data-id="${escapeAttribute(post.id)}">♡ ${Number(post.likeCount || 0)}</button><button type="button" data-action="daily:comment" data-id="${escapeAttribute(post.id)}">评论</button><button type="button" data-action="daily:myri-comment" data-id="${escapeAttribute(post.id)}" ${myriThinking ? 'disabled' : ''}>${myriThinking ? 'Myri在看…' : 'Myri回一句'}</button></div>
         ${momentComments(post)}
       </div>
     </article>`;
@@ -274,8 +288,8 @@ export function createDaily({ storage, router, toast }) {
       title: '发表碳硅圈',
       subtitle: '发布到海岸内部服务器',
       className: 'daily-compose',
-      body: `<p class="daily-context">这条动态只会进入海岸内部碳硅圈，不会外发到微信、微博或 X。</p>
-        <textarea id="momentText" class="moment-compose-text" rows="8" placeholder="这一刻的想法..."></textarea>
+      body: `<p class="daily-context">这里适合短短记一瞬：小事、闪过去的念头、路过的心情。它只进入海岸内部碳硅圈，不会外发到微信、微博或 X。</p>
+        <textarea id="momentText" class="moment-compose-text" rows="8" placeholder="这一刻的小事、心情或好玩的念头..."></textarea>
         <section class="daily-form-surface">
           <label>图片引用（可选）<input id="momentImageRef" placeholder="https://… / coast://…"></label>
           <p class="daily-context">图片上传存储尚待接入；当前只保存稳定 URL 或 coast 引用，不把 base64 写进 D1。</p>
@@ -769,6 +783,28 @@ export function createDaily({ storage, router, toast }) {
       if (text) replaceMoment(await client.commentMoment(target.dataset.id, text));
       state.commentTarget = '';
       return router.refresh();
+    }
+    if (name === 'myri-comment') {
+      if (state.myriCommentingTarget) return;
+      const id = target.dataset.id;
+      const model = chat?.getProfile?.().current_chat_model || '';
+      if (!model) return toast('先在主页选择一个聊天模型。');
+      state.myriCommentingTarget = id;
+      await router.refresh();
+      try {
+        toast('Myri 正在读最近日记和思维壤……', 2600);
+        const result = await client.myriCommentMoment(id, {
+          model,
+          timezone_offset_minutes: new Date().getTimezoneOffset(),
+          local_date: dateKey(),
+        });
+        replaceMoment(result.moment);
+        toast('Myri 已经回了一句。', 2200);
+      } finally {
+        state.myriCommentingTarget = '';
+        await router.refresh();
+      }
+      return;
     }
     if (name === 'diary-date') {
       state.diaryDate = target.dataset.date || dateKey();

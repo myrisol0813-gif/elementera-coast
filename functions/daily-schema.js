@@ -5,6 +5,18 @@ async function run(db, sql, params = []) {
   return db.prepare(sql).bind(...params).run();
 }
 
+async function all(db, sql, params = []) {
+  const result = await db.prepare(sql).bind(...params).all();
+  return result?.results || [];
+}
+
+async function ensureColumn(db, table, column, declaration) {
+  const columns = await all(db, `PRAGMA table_info(${table})`);
+  if (!columns.some((item) => item.name === column)) {
+    await run(db, `ALTER TABLE ${table} ADD COLUMN ${column} ${declaration}`);
+  }
+}
+
 async function initialize(db) {
   await run(db, `CREATE TABLE IF NOT EXISTS schema_migrations (
     id TEXT PRIMARY KEY,
@@ -31,8 +43,10 @@ async function initialize(db) {
     moment_id TEXT NOT NULL,
     author TEXT NOT NULL,
     text TEXT NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    model_id TEXT
   )`);
+  await ensureColumn(db, 'daily_moment_comments', 'model_id', 'TEXT DEFAULT NULL');
   await run(db, `CREATE TABLE IF NOT EXISTS daily_moment_likes (
     moment_id TEXT NOT NULL,
     actor TEXT NOT NULL,

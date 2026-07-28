@@ -13,7 +13,7 @@ const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 const headers = await read(join(pages, '_headers'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-12"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-13"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 
@@ -84,7 +84,7 @@ assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(join(pages, 'service-worker.js'));
-assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-12';$/m);
+assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-13';$/m);
 assert.ok(worker.includes("url.pathname.startsWith('/api/')"));
 assert.equal(worker.includes("caches.match('/index.html')"), true);
 assert.equal(worker.includes('modules/legacy'), false);
@@ -182,6 +182,7 @@ const dailyApiSource = await read(join(repo, 'functions/daily-api.js'));
 const dailySchemaSource = await read(join(repo, 'functions/daily-schema.js'));
 const dailyStoreSource = await read(join(repo, 'functions/daily-store.js'));
 const dailySummarySource = await read(join(repo, 'functions/daily-summary.js'));
+const dailyMomentCommentSource = await read(join(repo, 'functions/daily-moment-comment.js'));
 const dailyToolsSource = await read(join(repo, 'functions/daily-model-tools.js'));
 const memoryStoreSource = await read(join(repo, 'functions/memory-store.js'));
 const embeddingSource = await read(join(repo, 'functions/embedding.js'));
@@ -196,10 +197,14 @@ for (const table of ['daily_moments', 'daily_moment_comments', 'daily_moment_lik
   assert.ok(dailySchemaSource.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `missing Daily table: ${table}`);
 }
 assert.ok(dailyApiSource.includes("'/api/daily'"));
+assert.ok(dailyApiSource.includes('myri-comment'));
 assert.ok(dailySummarySource.includes('organizedMemoryRecordsInRange'));
 assert.ok(dailySummarySource.includes('earliestOrganizedMemoryTimestamp'));
 assert.equal(dailySummarySource.includes('listActiveMessagesInRange'), false, 'Daily summary must not read raw chat messages');
 assert.equal(dailySummarySource.includes('earliestActiveMessageTimestamp'), false, 'raw chat timestamps must not define Daily ranges');
+assert.ok(dailyMomentCommentSource.includes('organizedMemoryRecordsInRange'));
+assert.ok(dailyMomentCommentSource.includes('momentCommentContext'));
+assert.equal(dailyMomentCommentSource.includes('listActiveMessagesInRange'), false, 'Myri moment comments must not read raw chat messages');
 assert.ok(dailySummarySource.includes('summary_invalid_model_response'));
 assert.ok(dailyToolsSource.includes("name: 'create_moment'"));
 assert.ok(dailyToolsSource.includes("name: 'save_album_reference'"));

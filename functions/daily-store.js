@@ -119,6 +119,7 @@ function commentFromRow(row) {
     moment_id: row.moment_id,
     author: row.author,
     text: row.text || '',
+    model_id: row.model_id || null,
     created_at: iso(row.created_at),
   };
 }
@@ -149,7 +150,7 @@ async function hydrateMoments(db, rows, actor = 'xiaohan') {
   if (!rows.length) return [];
   const ids = rows.map((row) => row.id);
   const placeholders = ids.map(() => '?').join(',');
-  const commentRows = await all(db, `SELECT id, moment_id, author, text, created_at
+  const commentRows = await all(db, `SELECT id, moment_id, author, text, model_id, created_at
     FROM daily_moment_comments
     WHERE moment_id IN (${placeholders})
     ORDER BY created_at ASC`, ids);
@@ -305,12 +306,13 @@ export async function addMomentComment(db, id, value = {}) {
     const existing = await first(db, 'SELECT id FROM daily_moment_comments WHERE id = ?', [commentId]);
     if (existing) return getMoment(db, momentId);
   }
-  await run(db, `INSERT INTO daily_moment_comments (id, moment_id, author, text, created_at)
-    VALUES (?, ?, ?, ?, ?)`, [
+  await run(db, `INSERT INTO daily_moment_comments (id, moment_id, author, text, model_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)`, [
     commentId,
     momentId,
     enumValue(value.author, COMMENT_AUTHORS, 'xiaohan', '评论作者'),
     text,
+    clip(value.model_id, 180) || null,
     Date.now(),
   ]);
   await run(db, 'UPDATE daily_moments SET updated_at = ? WHERE id = ?', [Date.now(), momentId]);
@@ -652,6 +654,31 @@ export async function dailyRecordsInRange(db, range) {
     moments: await hydrateMoments(db, moments),
     diaries: diaries.map(diaryFromRow),
     albums: albums.map(albumFromRow),
+  };
+}
+
+export async function momentCommentContext(db, id, {
+  diaryLimit = 8,
+  momentLimit = 5,
+  summaryLimit = 3,
+} = {}) {
+  await ensureDailySchema(db);
+  const target = await getMoment(db, id);
+  const diaries = await all(db, `SELECT * FROM daily_diaries
+    ORDER BY date DESC, created_at DESC
+    LIMIT ?`, [Math.min(20, Math.max(1, Number(diaryLimit || 8)))]);
+  const momentRows = await all(db, `SELECT * FROM daily_moments
+    WHERE id <> ? AND status = 'published'
+    ORDER BY COALESCE(published_at, created_at) DESC, created_at DESC
+    LIMIT ?`, [target.id, Math.min(20, Math.max(1, Number(momentLimit || 5)))]);
+  const summaries = await all(db, `SELECT * FROM daily_summaries
+    ORDER BY range_end DESC, created_at DESC
+    LIMIT ?`, [Math.min(10, Math.max(1, Number(summaryLimit || 3)))]);
+  return {
+    target,
+    diaries: diaries.map(diaryFromRow),
+    recent_moments: await hydrateMoments(db, momentRows),
+    summaries: summaries.map(summaryFromRow),
   };
 }
 
