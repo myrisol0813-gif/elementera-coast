@@ -22,6 +22,12 @@ import {
   parseDailySummaryResult,
   resolveDailySummaryRange,
 } from '../functions/daily-summary.js';
+import {
+  createEntry,
+  createPocket,
+  resolvePocket,
+  writeSoil,
+} from '../functions/memory-store.js';
 
 class D1Statement {
   constructor(database, sql, params = []) {
@@ -304,17 +310,45 @@ await writeConversationState(historyRangeDb, oldConversation.id, {
     },
   }],
 });
+const discardedHistory = await createEntry(historyRangeDb, {
+  entry_type: 'memory',
+  scope: 'conversation',
+  conversation_id: oldConversation.id,
+  title: '已经丢弃的旧条目',
+  life_core: '它不应决定日报范围。',
+  status: 'discarded',
+});
+historyRangeDb.database.prepare(`UPDATE memory_entries
+  SET created_at = ?, updated_at = ? WHERE id = ?`).run(
+  Date.parse('2026-07-25T09:00:00.000Z'),
+  Date.parse('2026-07-25T09:00:00.000Z'),
+  discardedHistory.id,
+);
+const organizedHistory = await createEntry(historyRangeDb, {
+  entry_type: 'seed',
+  scope: 'conversation',
+  conversation_id: oldConversation.id,
+  title: '仍在的旧种子',
+  life_core: '这才是一日总结可读取的最早整理物。',
+  status: 'dormant',
+});
+historyRangeDb.database.prepare(`UPDATE memory_entries
+  SET created_at = ?, updated_at = ? WHERE id = ?`).run(
+  Date.parse('2026-07-27T09:00:00.000Z'),
+  Date.parse('2026-07-27T09:00:00.000Z'),
+  organizedHistory.id,
+);
 const historyNow = Date.parse('2026-07-29T12:00:00.000Z');
 const historyRange = await resolveDailySummaryRange(historyRangeDb, {
   range_mode: 'since_last_summary',
   timezone_offset_minutes: 0,
 }, historyNow);
-assert.equal(new Date(historyRange.from).toISOString(), '2026-07-26T10:00:00.000Z');
+assert.equal(new Date(historyRange.from).toISOString(), '2026-07-27T09:00:00.000Z');
 assert.equal(historyRange.source, 'earliest_record');
 const historyOptions = await dailySummaryRangeOptions(historyRangeDb, {
   timezone_offset_minutes: 0,
 }, historyNow);
-assert.equal(historyOptions.since_last_summary.from, '2026-07-26T10:00:00.000Z');
+assert.equal(historyOptions.since_last_summary.from, '2026-07-27T09:00:00.000Z');
 assert.equal(historyOptions.since_last_summary.source, 'earliest_record');
 assert.equal(historyOptions.today.from, '2026-07-29T00:00:00.000Z');
 
@@ -393,6 +427,56 @@ await writeConversationState(summaryDb, conversation.id, {
     },
   }],
 });
+await writeSoil(summaryDb, conversation.id, {
+  current_text: '已经整理过的潮线方向。',
+  hand_seeds: [{
+    name: '潮线种子',
+    life_core: '把今天值得保留的结构继续往下搭。',
+    usage_hint: '',
+    avoid_hint: '',
+  }],
+  do_not_repeat: '不要把待确认候选写成已完成。',
+  pocket_candidates: [],
+});
+await createPocket(summaryDb, {
+  conversation_id: conversation.id,
+  source_type: 'selection',
+  source_text: '仍在待确认袋里的微光。',
+  title: '微光落袋',
+  life_core: '这是一条已整理但仍待确认的落袋。',
+});
+const stonePocket = await createPocket(summaryDb, {
+  conversation_id: conversation.id,
+  source_type: 'selection',
+  source_text: '沉下去但仍然保留的旧岔路。',
+  title: '旧岔路',
+  life_core: '它已经成为石头。',
+});
+await resolvePocket(summaryDb, stonePocket.id, { action: 'stone' });
+await createEntry(summaryDb, {
+  entry_type: 'seed',
+  scope: 'conversation',
+  conversation_id: conversation.id,
+  title: '日报岛种子',
+  life_core: '日报只读取整理后的东西。',
+  status: 'dormant',
+});
+await createEntry(summaryDb, {
+  entry_type: 'memory',
+  scope: 'global',
+  title: '总记忆里的潮声',
+  life_core: '原始聊天只是思维壤，不直接进入一日总结。',
+  status: 'active',
+});
+const otherConversation = await createConversation(summaryDb, '另一个仍在的窗口');
+await createEntry(summaryDb, {
+  entry_type: 'memory',
+  scope: 'conversation',
+  conversation_id: otherConversation.id,
+  title: '跨窗口记忆',
+  life_core: '一日总结会读取所有仍存在窗口的整理物。',
+  status: 'active',
+});
 await writeProfile(summaryDb, {
   current_chat_model: 'openai/gpt-4.1-nano',
   model_box: { chat: ['openai/gpt-4.1-nano'], free: [], image: [] },
@@ -439,9 +523,22 @@ assert.equal(summaryResponse.status, 200);
 const summaryData = await summaryResponse.json();
 assert.equal(summaryData.draft.summary.text, '模型整理出的今天。');
 assert.match(summaryData.draft.id, /^summary_/);
-assert.equal(summaryData.source_counts.chat_messages, 2);
+assert.equal(summaryData.source_counts.soils, 1);
+assert.equal(summaryData.source_counts.pockets, 2);
+assert.equal(summaryData.source_counts.seeds, 1);
+assert.equal(summaryData.source_counts.memories, 2);
+assert.equal(summaryData.source_counts.stones, 1);
+assert.equal(Object.hasOwn(summaryData.source_counts, 'chat_messages'), false);
 assert.equal(summaryProviderPayload.response_format.type, 'json_object');
-assert.ok(summaryProviderPayload.messages.at(-1).content.includes('今天把日报岛接到服务器。'));
+const summaryInput = JSON.parse(summaryProviderPayload.messages.at(-1).content);
+assert.equal(Object.hasOwn(summaryInput, 'chat_messages'), false);
+assert.ok(summaryProviderPayload.messages.at(-1).content.includes('已经整理过的潮线方向。'));
+assert.ok(summaryProviderPayload.messages.at(-1).content.includes('仍在待确认袋里的微光。'));
+assert.ok(summaryProviderPayload.messages.at(-1).content.includes('它已经成为石头。'));
+assert.ok(summaryProviderPayload.messages.at(-1).content.includes('日报岛种子'));
+assert.ok(summaryProviderPayload.messages.at(-1).content.includes('总记忆里的潮声'));
+assert.ok(summaryProviderPayload.messages.at(-1).content.includes('跨窗口记忆'));
+assert.equal(summaryProviderPayload.messages.at(-1).content.includes('今天把日报岛接到服务器。'), false);
 globalThis.fetch = originalFetch;
 
 const rangeResponse = await routeApi(new Request('https://coast.test/api/daily/summary/range?timezone_offset_minutes=0'), {
@@ -450,6 +547,6 @@ const rangeResponse = await routeApi(new Request('https://coast.test/api/daily/s
 assert.equal(rangeResponse.status, 200);
 const rangeData = await rangeResponse.json();
 assert.equal(rangeData.ranges.since_last_summary.source, 'earliest_record');
-assert.equal(rangeData.ranges.since_last_summary.from, '2026-07-26T10:00:00.000Z');
+assert.equal(rangeData.ranges.since_last_summary.from, '2026-07-27T09:00:00.000Z');
 
 console.log('daily: ok');

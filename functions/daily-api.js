@@ -17,6 +17,7 @@ import {
 } from './daily-store.js';
 import { dailySummaryRangeOptions, runDailySummary } from './daily-summary.js';
 import { apiError, json, readJson } from './http.js';
+import { MemoryStoreError } from './memory-store.js';
 import { ModelRequestError } from './models.js';
 
 const DAILY_PATH = '/api/daily';
@@ -195,7 +196,10 @@ export async function routeDailyApi(request, env) {
     if (url.pathname === `${DAILY_PATH}/albums`) return await albums(request, env, url);
     return await summaries(request, env, url);
   } catch (error) {
-    if (error instanceof DailyStoreError || error instanceof ChatStoreError || error instanceof ModelRequestError) {
+    if (error instanceof DailyStoreError
+      || error instanceof ChatStoreError
+      || error instanceof MemoryStoreError
+      || error instanceof ModelRequestError) {
       return apiError(error.type, error.message, error.status, error.details || {});
     }
     const reference = crypto.randomUUID().slice(0, 8);

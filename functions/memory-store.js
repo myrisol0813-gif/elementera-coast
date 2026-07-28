@@ -55,6 +55,16 @@ function iso(value) {
   return Number.isFinite(number) && number > 0 ? new Date(number).toISOString() : null;
 }
 
+function summaryRange(value = {}) {
+  const parse = (input) => typeof input === 'number' ? input : Date.parse(String(input || ''));
+  const from = Math.trunc(parse(value.from));
+  const to = Math.trunc(parse(value.to));
+  if (!Number.isFinite(from) || !Number.isFinite(to) || from <= 0 || from >= to) {
+    throw new MemoryStoreError('invalid_memory_summary_range', '整理物的总结时间范围无效。');
+  }
+  return { from, to };
+}
+
 async function run(db, sql, params = []) {
   return db.prepare(sql).bind(...params).run();
 }
@@ -706,6 +716,115 @@ function entryFromRow(row) {
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
     deleted_at: iso(row.deleted_at),
+  };
+}
+
+function withConversationTitle(item, row) {
+  return {
+    ...item,
+    conversation_title: row.conversation_title || null,
+  };
+}
+
+export async function earliestOrganizedMemoryTimestamp(db) {
+  await ensureMemorySchema(db);
+  const row = await first(db, `SELECT MIN(recorded_at) AS recorded_at FROM (
+    SELECT s.created_at AS recorded_at
+    FROM conversation_soils s
+    INNER JOIN conversations c ON c.id = s.conversation_id
+    WHERE c.user_id = ? AND c.deleted_at IS NULL
+      AND (
+        s.current_text <> ''
+        OR s.hand_seeds_json <> '[]'
+        OR s.do_not_repeat <> ''
+        OR s.pocket_candidates_json <> '[]'
+      )
+    UNION ALL
+    SELECT p.created_at AS recorded_at
+    FROM memory_pockets p
+    INNER JOIN conversations c ON c.id = p.conversation_id
+    WHERE p.user_id = ? AND p.deleted_at IS NULL
+      AND p.status IN ('pending', 'confirmed', 'stone', 'archived')
+      AND c.user_id = ? AND c.deleted_at IS NULL
+    UNION ALL
+    SELECT e.created_at AS recorded_at
+    FROM memory_entries e
+    LEFT JOIN conversations c ON c.id = e.conversation_id
+    WHERE e.user_id = ? AND e.deleted_at IS NULL
+      AND e.status IN ('active', 'dormant', 'archived', 'stone')
+      AND (
+        (e.scope = 'global' AND e.conversation_id IS NULL)
+        OR (e.scope = 'conversation' AND c.user_id = ? AND c.deleted_at IS NULL)
+      )
+  )`, [
+    MEMORY_OWNER_ID,
+    MEMORY_OWNER_ID,
+    MEMORY_OWNER_ID,
+    MEMORY_OWNER_ID,
+    MEMORY_OWNER_ID,
+  ]);
+  const value = Number(row?.recorded_at);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export async function organizedMemoryRecordsInRange(db, value = {}) {
+  await ensureMemorySchema(db);
+  const range = summaryRange(value);
+  const timeParams = [range.from, range.to, range.from, range.to];
+  const [soilRows, pocketRows, entryRows] = await Promise.all([
+    all(db, `SELECT s.*, c.title AS conversation_title
+      FROM conversation_soils s
+      INNER JOIN conversations c ON c.id = s.conversation_id
+      WHERE c.user_id = ? AND c.deleted_at IS NULL
+        AND (
+          s.current_text <> ''
+          OR s.hand_seeds_json <> '[]'
+          OR s.do_not_repeat <> ''
+          OR s.pocket_candidates_json <> '[]'
+        )
+        AND (
+          s.created_at BETWEEN ? AND ?
+          OR s.updated_at BETWEEN ? AND ?
+        )
+      ORDER BY s.updated_at ASC, s.created_at ASC`, [MEMORY_OWNER_ID, ...timeParams]),
+    all(db, `SELECT p.*, c.title AS conversation_title
+      FROM memory_pockets p
+      INNER JOIN conversations c ON c.id = p.conversation_id
+      WHERE p.user_id = ? AND p.deleted_at IS NULL
+        AND p.status IN ('pending', 'confirmed', 'stone', 'archived')
+        AND c.user_id = ? AND c.deleted_at IS NULL
+        AND (
+          p.created_at BETWEEN ? AND ?
+          OR p.updated_at BETWEEN ? AND ?
+        )
+      ORDER BY p.updated_at ASC, p.created_at ASC`, [
+      MEMORY_OWNER_ID,
+      MEMORY_OWNER_ID,
+      ...timeParams,
+    ]),
+    all(db, `SELECT e.*, c.title AS conversation_title
+      FROM memory_entries e
+      LEFT JOIN conversations c ON c.id = e.conversation_id
+      WHERE e.user_id = ? AND e.deleted_at IS NULL
+        AND e.status IN ('active', 'dormant', 'archived', 'stone')
+        AND (
+          (e.scope = 'global' AND e.conversation_id IS NULL)
+          OR (e.scope = 'conversation' AND c.user_id = ? AND c.deleted_at IS NULL)
+        )
+        AND (
+          e.created_at BETWEEN ? AND ?
+          OR e.updated_at BETWEEN ? AND ?
+        )
+      ORDER BY e.updated_at ASC, e.created_at ASC`, [
+      MEMORY_OWNER_ID,
+      MEMORY_OWNER_ID,
+      ...timeParams,
+    ]),
+  ]);
+  return {
+    soils: soilRows.map((row) => withConversationTitle(soilFromRow(row), row)),
+    pockets: pocketRows.map((row) => withConversationTitle(pocketFromRow(row), row)),
+    entries: entryRows.map((row) => withConversationTitle(entryFromRow(row), row)),
   };
 }
 

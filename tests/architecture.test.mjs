@@ -196,8 +196,10 @@ for (const table of ['daily_moments', 'daily_moment_comments', 'daily_moment_lik
   assert.ok(dailySchemaSource.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `missing Daily table: ${table}`);
 }
 assert.ok(dailyApiSource.includes("'/api/daily'"));
-assert.ok(dailySummarySource.includes('listActiveMessagesInRange'));
-assert.ok(dailySummarySource.includes('earliestActiveMessageTimestamp'));
+assert.ok(dailySummarySource.includes('organizedMemoryRecordsInRange'));
+assert.ok(dailySummarySource.includes('earliestOrganizedMemoryTimestamp'));
+assert.equal(dailySummarySource.includes('listActiveMessagesInRange'), false, 'Daily summary must not read raw chat messages');
+assert.equal(dailySummarySource.includes('earliestActiveMessageTimestamp'), false, 'raw chat timestamps must not define Daily ranges');
 assert.ok(dailySummarySource.includes('summary_invalid_model_response'));
 assert.ok(dailyToolsSource.includes("name: 'create_moment'"));
 assert.ok(dailyToolsSource.includes("name: 'save_album_reference'"));
