@@ -282,6 +282,10 @@ export function createDaily({ storage, router, toast, chat }) {
       ? state.moments.map(momentCard).join('')
       : '<section class="daily-empty"><h2>暂无动态。</h2><p>小寒或 Myri 写入的海岸内部动态会从服务器出现在这里。</p></section>';
     const cover = state.momentCover ? `style="background-image:linear-gradient(rgba(0,0,0,.12),rgba(0,0,0,.12)),url(${escapeAttribute(state.momentCover)})"` : '';
+    const avatarTools = `<section class="moment-avatar-tools" aria-label="碳硅圈头像设置">
+      <button type="button" data-action="daily:avatar">${xiaohanAvatar()}<span><strong>更换小寒头像</strong><small>碳硅圈里的小寒头像</small></span></button>
+      <button type="button" data-action="daily:myri-avatar">${myriAvatar()}<span><strong>更换 Myri 头像</strong><small>Myri 动态与评论使用这里的头像</small></span></button>
+    </section>`;
     const candidateCount = state.moments.filter((entry) => entry.status === 'candidate').length;
     const candidateNotice = candidateCount
       ? `<button class="daily-legacy-note" type="button" data-action="daily:publish-candidates"><strong>确认发布全部候选 · ${candidateCount} 条</strong><small>把一日总结里误留的候选扶正 ›</small></button>`
@@ -293,7 +297,7 @@ export function createDaily({ storage, router, toast, chat }) {
       headerAction: `<button class="round-add" type="button" data-action="daily:moments-compose" aria-label="发表碳硅圈">${icon('plus')}</button>`,
       body: `${state.sync === 'cache' ? syncNotice() : ''}<button class="moment-cover" type="button" data-action="daily:cover" ${cover}><span>上传本机封面</span></button>
         <section class="moment-profile"><button type="button" data-action="daily:avatar">${xiaohanAvatar()}</button><div><h2>小寒</h2><p>服务器同步 · Myri 可通过真实工具写入</p></div></section>
-        <section class="moment-profile"><button type="button" data-action="daily:myri-avatar">${myriAvatar()}</button><div><h2>Myri</h2><p>点头像更换碳硅圈里的 Myri 头像 · 评论使用当前模型</p></div></section>
+        ${avatarTools}
         ${candidateNotice}<section class="moment-feed">${feed}</section>`,
     };
   }

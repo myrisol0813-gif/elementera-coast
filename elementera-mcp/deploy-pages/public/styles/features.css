@@ -847,10 +847,6 @@
   margin: 14px 4px 24px;
 }
 
-.moment-profile + .moment-profile {
-  margin-top: -12px;
-}
-
 .moment-profile button {
   width: 56px;
   height: 56px;
@@ -873,6 +869,46 @@
 
 .moment-profile p {
   margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.moment-avatar-tools {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin: -8px 4px 18px;
+}
+
+.moment-avatar-tools button {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--surface-soft);
+  text-align: left;
+  color: inherit;
+}
+
+.moment-avatar-tools .daily-avatar {
+  width: 42px;
+  height: 42px;
+}
+
+.moment-avatar-tools strong,
+.moment-avatar-tools small {
+  display: block;
+}
+
+.moment-avatar-tools strong {
+  font-size: 13px;
+}
+
+.moment-avatar-tools small {
+  margin-top: 2px;
   color: var(--muted);
   font-size: 11px;
 }

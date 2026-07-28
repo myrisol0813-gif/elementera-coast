@@ -887,6 +887,7 @@ assert.equal(document.querySelector('.daily-hero'), null);
 document.querySelector('[data-action="daily:moments"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'moments', 'moments route');
 assert.ok(document.querySelector('.moment-profile > div h2'));
+assert.ok(document.querySelector('[data-action="daily:myri-avatar"]')?.textContent.includes('更换 Myri 头像'));
 assert.equal(document.querySelector('.moment-feed > .feature-card'), null);
 document.querySelector('[data-action="daily:moments-compose"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'moments-compose', 'moments composer');
