@@ -607,6 +607,19 @@ export async function latestSummary(db) {
   return row ? summaryFromRow(row) : null;
 }
 
+export async function earliestDailyRecordTimestamp(db) {
+  await ensureDailySchema(db);
+  const row = await first(db, `SELECT MIN(created_at) AS created_at FROM (
+    SELECT created_at FROM daily_moments
+    UNION ALL
+    SELECT created_at FROM daily_diaries
+    UNION ALL
+    SELECT created_at FROM daily_album_items
+  )`);
+  const value = Number(row?.created_at);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 async function committedSummaryResult(db, row) {
   const summary = summaryFromRow(row);
   const diaryRow = summary.diary_id

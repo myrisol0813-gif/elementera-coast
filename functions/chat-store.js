@@ -391,25 +391,14 @@ export async function writeConversationState(db, id, value) {
   return state;
 }
 
-export async function listActiveMessagesInRange(db, from, to) {
+async function listActiveMessages(db) {
   await ensureChatSchema(db);
-  const rangeStart = Number(from);
-  const rangeEnd = Number(to);
-  if (!Number.isFinite(rangeStart) || !Number.isFinite(rangeEnd) || rangeStart >= rangeEnd) {
-    throw new ChatStoreError('invalid_request', '聊天记录汇总范围无效。', 400);
-  }
   const rows = await all(db, `SELECT c.id AS conversation_id, c.title, s.state_json
     FROM conversations c
     JOIN conversation_states s ON s.conversation_id = c.id
     WHERE c.user_id = ? AND c.deleted_at IS NULL
     ORDER BY c.updated_at ASC`, [USER_ID]);
   const messages = [];
-  const inRange = (variant) => {
-    const createdAt = Date.parse(String(variant?.created_at || ''));
-    return Number.isFinite(createdAt) && createdAt >= rangeStart && createdAt <= rangeEnd
-      ? createdAt
-      : null;
-  };
 
   for (const row of rows) {
     let state;
@@ -431,8 +420,8 @@ export async function listActiveMessagesInRange(db, from, to) {
       );
       const assistant = assistants[assistantIndex];
       for (const [role, variant] of [['user', user], ['assistant', assistant]]) {
-        const createdAt = inRange(variant);
-        if (!createdAt || typeof variant?.content !== 'string' || !variant.content.trim()) continue;
+        const createdAt = Date.parse(String(variant?.created_at || ''));
+        if (!Number.isFinite(createdAt) || createdAt <= 0 || typeof variant?.content !== 'string' || !variant.content.trim()) continue;
         messages.push({
           conversation_id: row.conversation_id,
           conversation_title: row.title || '新聊天',
@@ -446,6 +435,25 @@ export async function listActiveMessagesInRange(db, from, to) {
     }
   }
   return messages.sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at));
+}
+
+export async function earliestActiveMessageTimestamp(db) {
+  const messages = await listActiveMessages(db);
+  if (!messages.length) return null;
+  const timestamp = Date.parse(messages[0].created_at);
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null;
+}
+
+export async function listActiveMessagesInRange(db, from, to) {
+  const rangeStart = Number(from);
+  const rangeEnd = Number(to);
+  if (!Number.isFinite(rangeStart) || !Number.isFinite(rangeEnd) || rangeStart >= rangeEnd) {
+    throw new ChatStoreError('invalid_request', '聊天记录汇总范围无效。', 400);
+  }
+  return (await listActiveMessages(db)).filter((message) => {
+    const createdAt = Date.parse(message.created_at);
+    return createdAt >= rangeStart && createdAt <= rangeEnd;
+  });
 }
 
 function landingFromRow(row) {

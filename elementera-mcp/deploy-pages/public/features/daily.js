@@ -82,6 +82,7 @@ export function createDaily({ storage, router, toast }) {
     momentCover: saved.momentCover || '',
     summaryDraft: null,
     summaryModel: '',
+    summaryRanges: null,
     summaryRunning: false,
     summaryCommitting: false,
     loaded: false,
@@ -130,12 +131,15 @@ export function createDaily({ storage, router, toast }) {
     if (state.loaded && !force) return Promise.resolve();
     state.sync = 'loading';
     state.syncError = '';
-    state.loadPromise = client.load()
+    state.loadPromise = client.load({
+      timezone_offset_minutes: new Date().getTimezoneOffset(),
+    })
       .then((data) => {
         state.moments = data.moments;
         state.diaries = data.diaries;
         state.albumItems = data.albumItems;
         state.summaries = data.summaries;
+        state.summaryRanges = data.summaryRanges;
         state.loaded = true;
         state.sync = 'server';
         persistCache();
@@ -371,9 +375,12 @@ export function createDaily({ storage, router, toast }) {
   function summaryRangePicker() {
     const previous = state.summaries.find((entry) => entry.range?.to);
     const today = shortDateLabel();
-    const continuedRange = previous
-      ? `${shortDateLabel(previous.range.to)} 到 ${today}`
-      : `尚无上次记录 · 从 ${today} 开始`;
+    const rangePreview = state.summaryRanges?.since_last_summary || {};
+    const continuedFrom = previous?.range?.to || rangePreview.from;
+    const hasEarlierRecord = previous || rangePreview.source === 'earliest_record';
+    const continuedRange = hasEarlierRecord && continuedFrom
+      ? `${shortDateLabel(continuedFrom)} 到 ${today}`
+      : `尚无更早记录 · 从 ${today} 开始`;
     return `<fieldset class="summary-range-picker">
       <legend>这次收拢哪一段？</legend>
       <label>
@@ -398,7 +405,7 @@ export function createDaily({ storage, router, toast }) {
           <p class="daily-context">范围以点击生成的这一刻为终点；结果先进入确认页，不会立刻写入。</p>
           <button class="primary-wide" type="button" data-action="daily:run-summary">结束今日 / 生成一日总结</button>
         </section>
-        <section class="diary-stack summary-history">${state.summaries.length ? state.summaries.map(summaryCard).join('') : '<section class="daily-empty"><h2>还没有正式总结。</h2><p>第一次生成时，两种范围都会从今天开始。</p></section>'}</section>`,
+        <section class="diary-stack summary-history">${state.summaries.length ? state.summaries.map(summaryCard).join('') : '<section class="daily-empty"><h2>还没有正式总结。</h2><p>“上次记录后至今”会从最早仍可读取的海岸记录开始。</p></section>'}</section>`,
     };
   }
 
@@ -429,9 +436,9 @@ export function createDaily({ storage, router, toast }) {
       subtitle: rangeLabel(draft.range),
       className: 'diary-panel summary-confirm-panel',
       body: `<section class="daily-form-surface">
-          <h2>今日总结</h2>
+          <h2>本次总结</h2>
           <textarea id="summaryConfirmText" rows="10">${escapeHtml(draft.summary?.text || '')}</textarea>
-          <label>今日锚点（每行一项）<textarea id="summaryConfirmAnchors" class="summary-list-editor" rows="3">${escapeHtml((draft.summary?.anchors || []).join('\n'))}</textarea></label>
+          <label>本次锚点（每行一项）<textarea id="summaryConfirmAnchors" class="summary-list-editor" rows="3">${escapeHtml((draft.summary?.anchors || []).join('\n'))}</textarea></label>
           <label>未完成事项（每行一项）<textarea id="summaryConfirmUnresolved" class="summary-list-editor" rows="3">${escapeHtml((draft.summary?.unresolved || []).join('\n'))}</textarea></label>
         </section>
         <section class="daily-form-surface">

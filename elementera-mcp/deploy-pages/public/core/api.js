@@ -20,6 +20,7 @@ export const API = Object.freeze({
   dailyDiaries: '/api/daily/diaries',
   dailyAlbums: '/api/daily/albums',
   dailySummaries: '/api/daily/summaries',
+  dailySummaryRange: '/api/daily/summary/range',
   dailySummaryRun: '/api/daily/summary/run',
   dailySummaryCommit: '/api/daily/summary/commit',
 });

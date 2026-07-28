@@ -17,7 +17,11 @@ import {
   listSummaries,
   setMomentLike,
 } from '../functions/daily-store.js';
-import { parseDailySummaryResult, resolveDailySummaryRange } from '../functions/daily-summary.js';
+import {
+  dailySummaryRangeOptions,
+  parseDailySummaryResult,
+  resolveDailySummaryRange,
+} from '../functions/daily-summary.js';
 
 class D1Statement {
   constructor(database, sql, params = []) {
@@ -275,6 +279,45 @@ const firstTodayRange = await resolveDailySummaryRange(emptyRangeDb, {
 assert.equal(firstTodayRange.from, firstRange.from);
 assert.equal(firstTodayRange.mode, 'today');
 
+const historyRangeDb = new D1Database();
+const oldConversation = await createConversation(historyRangeDb, '有旧时间戳的窗口');
+await writeConversationState(historyRangeDb, oldConversation.id, {
+  turns: [{
+    id: 'old-summary-turn',
+    user: {
+      active: 0,
+      variants: [{
+        id: 'old-summary-user',
+        content: '这是一条更早的海岸聊天。',
+        created_at: '2026-07-26T10:00:00.000Z',
+      }],
+    },
+    assistant: {
+      activeByUserVariant: { 0: 0 },
+      variantsByUserVariant: {
+        0: [{
+          id: 'old-summary-assistant',
+          content: '它带着原本的时间戳。',
+          created_at: '2026-07-26T10:01:00.000Z',
+        }],
+      },
+    },
+  }],
+});
+const historyNow = Date.parse('2026-07-29T12:00:00.000Z');
+const historyRange = await resolveDailySummaryRange(historyRangeDb, {
+  range_mode: 'since_last_summary',
+  timezone_offset_minutes: 0,
+}, historyNow);
+assert.equal(new Date(historyRange.from).toISOString(), '2026-07-26T10:00:00.000Z');
+assert.equal(historyRange.source, 'earliest_record');
+const historyOptions = await dailySummaryRangeOptions(historyRangeDb, {
+  timezone_offset_minutes: 0,
+}, historyNow);
+assert.equal(historyOptions.since_last_summary.from, '2026-07-26T10:00:00.000Z');
+assert.equal(historyOptions.since_last_summary.source, 'earliest_record');
+assert.equal(historyOptions.today.from, '2026-07-29T00:00:00.000Z');
+
 const fixedLater = Date.parse('2026-07-29T12:00:00.000Z');
 const continuedRange = await resolveDailySummaryRange(db, {
   range_mode: 'since_last_summary',
@@ -400,5 +443,13 @@ assert.equal(summaryData.source_counts.chat_messages, 2);
 assert.equal(summaryProviderPayload.response_format.type, 'json_object');
 assert.ok(summaryProviderPayload.messages.at(-1).content.includes('今天把日报岛接到服务器。'));
 globalThis.fetch = originalFetch;
+
+const rangeResponse = await routeApi(new Request('https://coast.test/api/daily/summary/range?timezone_offset_minutes=0'), {
+  COAST_CHAT_DB: historyRangeDb,
+}, { exp: 1 });
+assert.equal(rangeResponse.status, 200);
+const rangeData = await rangeResponse.json();
+assert.equal(rangeData.ranges.since_last_summary.source, 'earliest_record');
+assert.equal(rangeData.ranges.since_last_summary.from, '2026-07-26T10:00:00.000Z');
 
 console.log('daily: ok');

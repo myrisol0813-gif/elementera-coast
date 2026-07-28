@@ -88,18 +88,20 @@ function summary(value = {}) {
 }
 
 export function createDailyClient() {
-  async function load() {
-    const [momentsData, diariesData, albumsData, summariesData] = await Promise.all([
+  async function load({ timezone_offset_minutes = 0 } = {}) {
+    const [momentsData, diariesData, albumsData, summariesData, rangesData] = await Promise.all([
       requestJson(API.dailyMoments),
       requestJson(API.dailyDiaries),
       requestJson(API.dailyAlbums),
       requestJson(API.dailySummaries),
+      requestJson(`${API.dailySummaryRange}?timezone_offset_minutes=${encodeURIComponent(timezone_offset_minutes)}`),
     ]);
     return {
       moments: (momentsData.moments || []).map(moment),
       diaries: (diariesData.diaries || []).map(diary),
       albumItems: (albumsData.albums || []).map(album),
       summaries: (summariesData.summaries || []).map(summary),
+      summaryRanges: rangesData.ranges || null,
     };
   }
 

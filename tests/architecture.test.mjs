@@ -13,7 +13,7 @@ const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 const headers = await read(join(pages, '_headers'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-11"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-12"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 
@@ -84,7 +84,7 @@ assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(join(pages, 'service-worker.js'));
-assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-11';$/m);
+assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-12';$/m);
 assert.ok(worker.includes("url.pathname.startsWith('/api/')"));
 assert.equal(worker.includes("caches.match('/index.html')"), true);
 assert.equal(worker.includes('modules/legacy'), false);
@@ -141,7 +141,7 @@ assert.ok(chatSource.includes('runtime.deletedIds.add(conversationId)'));
 assert.equal(dailySource.includes('localStorage'), false, 'Daily UI cannot own browser persistence directly');
 assert.ok(dailySource.includes("createDailyClient()"), 'Daily UI must use the API client owner');
 assert.ok(dailySource.includes('legacyDrafts'), 'old Daily content must have an explicit confirmation area');
-for (const endpoint of ['dailyMoments', 'dailyDiaries', 'dailyAlbums', 'dailySummaries', 'dailySummaryRun', 'dailySummaryCommit']) {
+for (const endpoint of ['dailyMoments', 'dailyDiaries', 'dailyAlbums', 'dailySummaries', 'dailySummaryRange', 'dailySummaryRun', 'dailySummaryCommit']) {
   assert.ok(dailyClientSource.includes(`API.${endpoint}`), `Daily client is missing ${endpoint}`);
 }
 for (const copy of [
@@ -197,6 +197,7 @@ for (const table of ['daily_moments', 'daily_moment_comments', 'daily_moment_lik
 }
 assert.ok(dailyApiSource.includes("'/api/daily'"));
 assert.ok(dailySummarySource.includes('listActiveMessagesInRange'));
+assert.ok(dailySummarySource.includes('earliestActiveMessageTimestamp'));
 assert.ok(dailySummarySource.includes('summary_invalid_model_response'));
 assert.ok(dailyToolsSource.includes("name: 'create_moment'"));
 assert.ok(dailyToolsSource.includes("name: 'save_album_reference'"));

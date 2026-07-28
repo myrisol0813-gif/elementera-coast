@@ -15,7 +15,7 @@ import {
   patchMoment,
   setMomentLike,
 } from './daily-store.js';
-import { runDailySummary } from './daily-summary.js';
+import { dailySummaryRangeOptions, runDailySummary } from './daily-summary.js';
 import { apiError, json, readJson } from './http.js';
 import { ModelRequestError } from './models.js';
 
@@ -146,6 +146,15 @@ async function albums(request, env, url) {
 }
 
 async function summaries(request, env, url) {
+  if (url.pathname === `${DAILY_PATH}/summary/range`) {
+    if (request.method !== 'GET') return methodNotAllowed('GET');
+    return json({
+      ok: true,
+      ranges: await dailySummaryRangeOptions(env.COAST_CHAT_DB, {
+        timezone_offset_minutes: url.searchParams.get('timezone_offset_minutes'),
+      }),
+    });
+  }
   if (url.pathname === `${DAILY_PATH}/summaries`) {
     if (request.method !== 'GET') return methodNotAllowed('GET');
     return json({ ok: true, summaries: await listSummaries(env.COAST_CHAT_DB) });
@@ -168,6 +177,7 @@ export function isDailyApiPath(pathname) {
     || pathname.startsWith(`${DAILY_PATH}/diaries/`)
     || pathname === `${DAILY_PATH}/albums`
     || pathname === `${DAILY_PATH}/summaries`
+    || pathname === `${DAILY_PATH}/summary/range`
     || pathname === `${DAILY_PATH}/summary/run`
     || pathname === `${DAILY_PATH}/summary/commit`;
 }

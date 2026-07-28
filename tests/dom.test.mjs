@@ -280,6 +280,23 @@ globalThis.fetch = async (input, options = {}) => {
   if (url.pathname === '/api/daily/summaries') {
     return response({ ok: true, summaries: dailySummaries });
   }
+  if (url.pathname === '/api/daily/summary/range') {
+    return response({
+      ok: true,
+      ranges: {
+        since_last_summary: {
+          from: '2026-07-27T08:00:00.000Z',
+          to: now(),
+          source: 'earliest_record',
+        },
+        today: {
+          from: '2026-07-28T00:00:00.000Z',
+          to: now(),
+          source: 'local_day_start',
+        },
+      },
+    });
+  }
   if (url.pathname === '/api/daily/summary/run') {
     dailySummaryRuns += 1;
     dailySummaryBodies.push(body);
@@ -876,6 +893,7 @@ document.querySelector('[data-action="daily:summary"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'summary', 'summary route');
 assert.equal(document.querySelectorAll('[name="summaryRangeMode"]').length, 2);
 assert.ok(document.querySelector('.summary-history'));
+assert.ok(document.querySelector('.summary-range-picker').textContent.includes('7月27日'));
 document.querySelector('[name="summaryRangeMode"][value="today"]').click();
 document.querySelector('[data-action="daily:run-summary"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'summary-confirm', 'summary confirmation');
