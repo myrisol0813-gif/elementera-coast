@@ -181,9 +181,16 @@ export function createDaily({ storage, router, toast, chat }) {
       : '<span class="daily-avatar">寒</span>';
   }
 
+  function myriAvatar() {
+    const image = storage.read().preferences.myriAvatar || '';
+    return image
+      ? `<span class="daily-avatar is-myri has-image" style="background-image:url(${escapeAttribute(image)})"></span>`
+      : '<span class="daily-avatar is-myri">M</span>';
+  }
+
   function momentAvatar(author) {
     if (author === 'xiaohan') return xiaohanAvatar();
-    return '<span class="daily-avatar">溟</span>';
+    return myriAvatar();
   }
 
   function authorName(author) {
@@ -256,11 +263,14 @@ export function createDaily({ storage, router, toast, chat }) {
   function momentCard(post) {
     const stamp = `${dateLabel(entryDate(post))} · ${timeLabel(post.createdAt)}`;
     const myriThinking = state.myriCommentingTarget === post.id;
+    const publishAction = post.status === 'published'
+      ? ''
+      : `<button type="button" data-action="daily:publish-moment-status" data-id="${escapeAttribute(post.id)}">确认发布</button>`;
     return `<article class="moment-post">
       <div>${momentAvatar(post.author)}</div>
       <div class="moment-main"><h3>${escapeHtml(authorName(post.author))}</h3><p>${escapeHtml(post.text || '（无正文）')}</p>
         ${post.image ? `<img class="moment-image" src="${escapeAttribute(post.image)}" alt="碳硅圈配图">` : ''}
-        <div class="moment-actions"><span>${stamp} · ${momentStatus(post)}</span><button class="${post.liked ? 'is-liked' : ''}" type="button" data-action="daily:like" data-id="${escapeAttribute(post.id)}">♡ ${Number(post.likeCount || 0)}</button><button type="button" data-action="daily:comment" data-id="${escapeAttribute(post.id)}">评论</button><button type="button" data-action="daily:myri-comment" data-id="${escapeAttribute(post.id)}" ${myriThinking ? 'disabled' : ''}>${myriThinking ? 'Myri在看…' : 'Myri回一句'}</button></div>
+        <div class="moment-actions"><span>${stamp} · ${momentStatus(post)}</span>${publishAction}<button class="${post.liked ? 'is-liked' : ''}" type="button" data-action="daily:like" data-id="${escapeAttribute(post.id)}">♡ ${Number(post.likeCount || 0)}</button><button type="button" data-action="daily:comment" data-id="${escapeAttribute(post.id)}">评论</button><button type="button" data-action="daily:myri-comment" data-id="${escapeAttribute(post.id)}" ${myriThinking ? 'disabled' : ''}>${myriThinking ? 'Myri在看…' : 'Myri回一句'}</button></div>
         ${momentComments(post)}
       </div>
     </article>`;
@@ -272,6 +282,10 @@ export function createDaily({ storage, router, toast, chat }) {
       ? state.moments.map(momentCard).join('')
       : '<section class="daily-empty"><h2>暂无动态。</h2><p>小寒或 Myri 写入的海岸内部动态会从服务器出现在这里。</p></section>';
     const cover = state.momentCover ? `style="background-image:linear-gradient(rgba(0,0,0,.12),rgba(0,0,0,.12)),url(${escapeAttribute(state.momentCover)})"` : '';
+    const candidateCount = state.moments.filter((entry) => entry.status === 'candidate').length;
+    const candidateNotice = candidateCount
+      ? `<button class="daily-legacy-note" type="button" data-action="daily:publish-candidates"><strong>确认发布全部候选 · ${candidateCount} 条</strong><small>把一日总结里误留的候选扶正 ›</small></button>`
+      : '';
     return {
       title: '碳硅圈',
       subtitle: state.sync === 'server' ? '海岸内部 · 服务器同步' : '本机缓存',
@@ -279,7 +293,8 @@ export function createDaily({ storage, router, toast, chat }) {
       headerAction: `<button class="round-add" type="button" data-action="daily:moments-compose" aria-label="发表碳硅圈">${icon('plus')}</button>`,
       body: `${state.sync === 'cache' ? syncNotice() : ''}<button class="moment-cover" type="button" data-action="daily:cover" ${cover}><span>上传本机封面</span></button>
         <section class="moment-profile"><button type="button" data-action="daily:avatar">${xiaohanAvatar()}</button><div><h2>小寒</h2><p>服务器同步 · Myri 可通过真实工具写入</p></div></section>
-        <section class="moment-feed">${feed}</section>`,
+        <section class="moment-profile"><button type="button" data-action="daily:myri-avatar">${myriAvatar()}</button><div><h2>Myri</h2><p>点头像更换碳硅圈里的 Myri 头像 · 评论使用当前模型</p></div></section>
+        ${candidateNotice}<section class="moment-feed">${feed}</section>`,
     };
   }
 
@@ -424,11 +439,13 @@ export function createDaily({ storage, router, toast, chat }) {
   }
 
   function summaryMomentCandidate(candidate, index) {
+    const selectedStatus = candidate.status === 'draft' ? 'draft' : 'published';
+    const statusHint = '默认发布；候选是先放待确认，草稿是只存草稿。';
     return `<article class="summary-candidate" data-summary-moment="${index}">
       <label class="summary-select"><input type="checkbox" checked>写入碳硅圈</label>
       <textarea rows="4">${escapeHtml(candidate.text || '')}</textarea>
-      <label>状态<select><option value="candidate" ${candidate.status === 'candidate' ? 'selected' : ''}>候选</option><option value="published" ${candidate.status === 'published' ? 'selected' : ''}>发布</option><option value="draft" ${candidate.status === 'draft' ? 'selected' : ''}>草稿</option></select></label>
-      <small>${escapeHtml(candidate.reason || '')}</small>
+      <label>状态<select><option value="published" ${selectedStatus === 'published' ? 'selected' : ''}>发布</option><option value="candidate" ${selectedStatus === 'candidate' ? 'selected' : ''}>候选</option><option value="draft" ${selectedStatus === 'draft' ? 'selected' : ''}>草稿</option></select></label>
+      <small>${escapeHtml([candidate.reason, statusHint].filter(Boolean).join(' · '))}</small>
     </article>`;
   }
 
@@ -534,6 +551,19 @@ export function createDaily({ storage, router, toast, chat }) {
     input.click();
   }
 
+  async function chooseMyriAvatar() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.addEventListener('change', async () => {
+      const image = await readImageFile(input.files?.[0]).catch(() => '');
+      if (!image) return;
+      storage.update((local) => { local.preferences.myriAvatar = image; });
+      router.refresh();
+    }, { once: true });
+    input.click();
+  }
+
   async function chooseCover() {
     const input = document.createElement('input');
     input.type = 'file';
@@ -583,7 +613,7 @@ export function createDaily({ storage, router, toast, chat }) {
         ...source,
         selected: Boolean(root.querySelector('input[type="checkbox"]')?.checked),
         text: root.querySelector('textarea')?.value.trim() || '',
-        status: root.querySelector('select')?.value || 'candidate',
+        status: root.querySelector('select')?.value || 'published',
       };
     });
     const albums = [...document.querySelectorAll('[data-summary-album]')].map((root) => {
@@ -743,6 +773,7 @@ export function createDaily({ storage, router, toast, chat }) {
     if (name === 'diary-compose') return router.open('diary-compose');
     if (name === 'album-compose') return router.open('album-compose');
     if (name === 'avatar') return chooseAvatar();
+    if (name === 'myri-avatar') return chooseMyriAvatar();
     if (name === 'cover') return chooseCover();
     if (name === 'location') return toast('所在位置暂未接入。');
     if (name === 'run-summary') return runSummary();
@@ -772,6 +803,20 @@ export function createDaily({ storage, router, toast, chat }) {
       const current = state.moments.find((entry) => entry.id === target.dataset.id);
       if (!current) return;
       replaceMoment(await client.setMomentLike(current.id, !current.liked));
+      return router.refresh();
+    }
+    if (name === 'publish-moment-status') {
+      const current = state.moments.find((entry) => entry.id === target.dataset.id);
+      if (!current) return;
+      replaceMoment(await client.patchMoment(current.id, { status: 'published' }));
+      toast('这条动态已经确认发布。', 1800);
+      return router.refresh();
+    }
+    if (name === 'publish-candidates') {
+      const candidates = state.moments.filter((entry) => entry.status === 'candidate');
+      if (!candidates.length) return toast('现在没有候选动态。');
+      for (const entry of candidates) replaceMoment(await client.patchMoment(entry.id, { status: 'published' }));
+      toast(`已确认发布 ${candidates.length} 条候选动态。`, 2200);
       return router.refresh();
     }
     if (name === 'comment') {

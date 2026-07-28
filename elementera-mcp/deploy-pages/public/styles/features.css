@@ -847,6 +847,10 @@
   margin: 14px 4px 24px;
 }
 
+.moment-profile + .moment-profile {
+  margin-top: -12px;
+}
+
 .moment-profile button {
   width: 56px;
   height: 56px;
@@ -882,6 +886,11 @@
   background: linear-gradient(145deg, #efe3ca, #b9cad4) center/cover no-repeat;
   color: #3a332a;
   font-weight: 720;
+}
+
+.daily-avatar.is-myri {
+  background: radial-gradient(circle at 35% 25%, #fff8dc, #f1c7b8 42%, #b7c7dd 100%) center/cover no-repeat;
+  color: #4b3b58;
 }
 
 .daily-avatar.has-image {

@@ -68,6 +68,7 @@ function defaults() {
       xiaohanAvatar: '',
       xiaohanName: '小寒',
       xiaohanNote: '',
+      myriAvatar: '',
       myriName: 'Myri',
       myriPortrait: 'Myrisol / Myri · 海岸小蛇 · 小蛇书桌主人。',
       myriNote: '',
