@@ -121,7 +121,8 @@ assert.throws(
     [emailVerifiedClaim]: true,
     scope: 'read:coast',
   }, authConfig, ['read:coast']),
-  (error) => error.type === 'mcp_subject_denied',
+  (error) => error.type === 'mcp_subject_denied'
+    && error.failureCode === 'subject_not_allowed',
 );
 assert.throws(
   () => validateMcpClaims({
@@ -130,7 +131,18 @@ assert.throws(
     [emailVerifiedClaim]: false,
     scope: 'read:coast',
   }, authConfig, ['read:coast']),
-  (error) => error.type === 'mcp_email_denied',
+  (error) => error.type === 'mcp_email_denied'
+    && error.failureCode === 'email_not_verified',
+);
+assert.throws(
+  () => validateMcpClaims({
+    sub: subject,
+    [emailClaim]: 'another@example.test',
+    [emailVerifiedClaim]: true,
+    scope: 'read:coast',
+  }, authConfig, ['read:coast']),
+  (error) => error.type === 'mcp_email_denied'
+    && error.failureCode === 'email_not_allowed',
 );
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -178,6 +190,28 @@ const tamperedToken = [
   fullTokenParts[1],
   `${fullTokenParts[2][0] === 'A' ? 'B' : 'A'}${fullTokenParts[2].slice(1)}`,
 ].join('.');
+
+async function rejectedAuth({
+  authorization,
+  requiredScopes = ['read:coast'],
+  authEnv = env,
+}) {
+  const headers = authorization == null ? {} : { Authorization: authorization };
+  try {
+    await requireMcpAuth(new Request('https://coast.test/mcp', { headers }), authEnv, requiredScopes);
+  } catch (error) {
+    return error;
+  }
+  assert.fail('expected MCP auth to fail');
+}
+
+const missingHeaderError = await rejectedAuth({});
+assert.equal(missingHeaderError.failureCode, 'missing_authorization_header');
+assert.equal(missingHeaderError.details.auth_diagnostic.authorization_header_present, false);
+const malformedBearerError = await rejectedAuth({ authorization: 'Basic not-a-bearer-token' });
+assert.equal(malformedBearerError.failureCode, 'malformed_bearer_token');
+assert.equal(malformedBearerError.details.auth_diagnostic.authorization_header_present, true);
+
 const directAuth = await requireMcpAuth(new Request('https://coast.test/mcp', {
   headers: { Authorization: `Bearer ${fullToken}` },
 }), env, ['write:soil']);
@@ -192,18 +226,46 @@ await assert.rejects(
   (error) => error.type === 'mcp_email_denied',
 );
 for (const rejectedToken of [
-  await token(['read:coast'], { issuer: 'https://other-issuer.example/' }),
-  await token(['read:coast'], { audience: 'https://other-resource.example/mcp' }),
-  await token(['read:coast'], { expired: true }),
-  tamperedToken,
+  [await token(['read:coast'], { issuer: 'https://other-issuer.example/' }), 'issuer_mismatch'],
+  [await token(['read:coast'], { audience: 'https://other-resource.example/mcp' }), 'audience_mismatch'],
+  [await token(['read:coast'], { expired: true }), 'expired_token'],
+  [tamperedToken, 'jwt_verify_failed'],
 ]) {
-  await assert.rejects(
-    () => requireMcpAuth(new Request('https://coast.test/mcp', {
-      headers: { Authorization: `Bearer ${rejectedToken}` },
-    }), env, ['read:coast']),
-    (error) => error.type === 'invalid_access_token',
-  );
+  const error = await rejectedAuth({ authorization: `Bearer ${rejectedToken[0]}` });
+  assert.equal(error.failureCode, rejectedToken[1]);
+  if (error.failureCode === 'jwt_verify_failed') {
+    assert.equal(error.details.auth_diagnostic.jwt_verified, false);
+    assert.deepEqual(error.details.auth_diagnostic.actual_scopes, []);
+  } else {
+    assert.equal(error.details.auth_diagnostic.jwt_verified, true);
+    assert.deepEqual(error.details.auth_diagnostic.actual_scopes, ['read:coast']);
+  }
 }
+
+for (const [rejectedToken, failureCode] of [
+  [await token(['read:coast'], { subject: 'auth0|not-xiaohan' }), 'subject_not_allowed'],
+  [await token(['read:coast'], { email: 'another@example.test' }), 'email_not_allowed'],
+  [await token(['read:coast'], { email_verified: false }), 'email_not_verified'],
+]) {
+  const error = await rejectedAuth({ authorization: `Bearer ${rejectedToken}` });
+  assert.equal(error.failureCode, failureCode);
+}
+
+const missingScopeError = await rejectedAuth({
+  authorization: `Bearer ${await token(['read:coast'])}`,
+  requiredScopes: ['write:radio'],
+});
+assert.equal(missingScopeError.failureCode, 'scope_missing');
+assert.deepEqual(missingScopeError.details.auth_diagnostic.required_scopes, ['write:radio']);
+assert.deepEqual(missingScopeError.details.auth_diagnostic.actual_scopes, ['read:coast']);
+assert.deepEqual(missingScopeError.details.auth_diagnostic.claim_checks, {
+  iss_matches: true,
+  aud_matches: true,
+  token_expired: false,
+  sub_allowed: true,
+  email_allowed: true,
+  email_verified: true,
+});
 
 const mcpHeaders = {
   Accept: 'application/json, text/event-stream',
@@ -257,6 +319,9 @@ const initializedNotification = await routeMcpRequest(new Request('https://coast
 }), env);
 assert.equal(initializedNotification.status, 202);
 
+const authWarnings = [];
+const originalWarn = console.warn;
+console.warn = (...values) => authWarnings.push(values.join(' '));
 const missingAuth = await mcp({
   jsonrpc: '2.0',
   id: 3,
@@ -265,6 +330,8 @@ const missingAuth = await mcp({
 });
 assert.equal(missingAuth.result.isError, true);
 assert.match(missingAuth.result._meta['mcp/www_authenticate'][0], /invalid_token/);
+assert.equal(missingAuth.result._meta.failure_code, 'missing_authorization_header');
+assert.equal(missingAuth.result._meta.auth_diagnostic.authorization_header_present, false);
 
 const soilCall = {
   jsonrpc: '2.0',
@@ -318,6 +385,16 @@ const deniedRadio = await mcp({
 }, insufficientToken);
 assert.equal(deniedRadio.result.isError, true);
 assert.match(deniedRadio.result._meta['mcp/www_authenticate'][0], /insufficient_scope/);
+assert.equal(deniedRadio.result._meta.failure_code, 'scope_missing');
+assert.deepEqual(deniedRadio.result._meta.auth_diagnostic.actual_scopes, ['read:coast']);
+assert.equal(JSON.stringify(deniedRadio).includes(insufficientToken), false);
+console.warn = originalWarn;
+const authWarningText = authWarnings.join('\n');
+assert.match(authWarningText, /"failure_code":"missing_authorization_header"/);
+assert.match(authWarningText, /"failure_code":"scope_missing"/);
+for (const forbiddenValue of [fullToken, insufficientToken, issuer, audience, subject, email]) {
+  assert.equal(authWarningText.includes(forbiddenValue), false, 'auth logs cannot contain token or identity values');
+}
 
 const manualRadioResponse = await routeApi(new Request('https://coast.test/api/radio/messages', {
   method: 'POST',

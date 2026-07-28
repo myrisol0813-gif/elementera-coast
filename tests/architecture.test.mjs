@@ -241,6 +241,20 @@ assert.equal(
   'Pages Functions MCP owners must remain deployable without an npm install build step',
 );
 assert.equal(packageSource.dependencies, undefined, 'production Functions must not rely on uninstalled npm dependencies');
+for (const failureCode of [
+  'missing_authorization_header',
+  'malformed_bearer_token',
+  'jwt_verify_failed',
+  'issuer_mismatch',
+  'audience_mismatch',
+  'expired_token',
+  'scope_missing',
+  'subject_not_allowed',
+  'email_not_allowed',
+  'email_not_verified',
+]) {
+  assert.ok(mcpOwnerSource.includes(`'${failureCode}'`), `missing safe MCP auth diagnostic: ${failureCode}`);
+}
 for (const deferredTool of [
   'create_moment_from_mcp',
   'save_album_reference_from_mcp',

@@ -200,14 +200,29 @@ function errorResult(error) {
   };
 }
 
-function authErrorResult(request, error, scopes) {
+function authErrorResult(request, error, scopes, toolName) {
   if (!(error instanceof McpAuthError)) return errorResult(error);
+  const failureCode = error.failureCode || 'jwt_verify_failed';
+  const diagnostic = error.details?.auth_diagnostic || {
+    authorization_header_present: request.headers.has('Authorization'),
+    required_scopes: [...scopes],
+    actual_scopes: [],
+    jwt_verified: null,
+    claim_checks: {},
+  };
+  console.warn('[mcp-auth-failed]', JSON.stringify({
+    tool_name: toolName,
+    failure_code: failureCode,
+    ...diagnostic,
+  }));
   return {
     isError: true,
     content: [{ type: 'text', text: error.message }],
     _meta: {
       'mcp/www_authenticate': [mcpAuthChallenge(request, error, scopes)],
       error_type: error.type,
+      failure_code: failureCode,
+      auth_diagnostic: diagnostic,
     },
   };
 }
@@ -351,7 +366,7 @@ export async function callCoastMcpTool(name, args, request, env, requestMeta = {
     await requireMcpAuth(request, env, scopes);
     return await executeTool(definition.name, args, request, env, requestMeta);
   } catch (error) {
-    return authErrorResult(request, error, scopes);
+    return authErrorResult(request, error, scopes, definition.name);
   }
 }
 
