@@ -3,6 +3,10 @@ import { icon } from '../core/icons.js';
 import { createDailyClient } from './daily-client.js';
 
 const CATEGORIES = Object.freeze({ xiaohan: '小寒', myri: 'Myri', together: '蛇蛇狗合照' });
+const SUMMARY_RANGE_MODES = Object.freeze({
+  SINCE_LAST: 'since_last_summary',
+  TODAY: 'today',
+});
 const DAILY_ROUTES = new Set([
   'daily-home',
   'daily-legacy',
@@ -35,6 +39,12 @@ function rangeLabel(range = {}) {
   const from = new Date(range.from || Date.now());
   const to = new Date(range.to || Date.now());
   return `${dateLabel(dateKey(from))} ${timeLabel(from)} — ${dateLabel(dateKey(to))} ${timeLabel(to)}`;
+}
+
+function shortDateLabel(value = Date.now()) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
 function uniqueDates(current, ...collections) {
@@ -178,10 +188,6 @@ export function createDaily({ storage, router, toast }) {
     return '小寒';
   }
 
-  function summaryForToday() {
-    return state.summaries.find((entry) => dateKey(new Date(entry.updatedAt || entry.createdAt)) === dateKey()) || null;
-  }
-
   function legacyCount() {
     const legacy = state.legacyDrafts || {};
     return ['moments', 'diaries', 'albumItems', 'summaries']
@@ -198,7 +204,7 @@ export function createDaily({ storage, router, toast }) {
   function dailyHomeView() {
     if (!state.loaded) return loadStateView('海岸日报', '正在连接服务器');
     const entries = [
-      ['summary', '一日总结', summaryForToday() ? '今天已经收束' : '把今天轻轻合上', 'edit'],
+      ['summary', '一日总结', state.summaries.length ? '从上次记录继续' : '选择一段时间收拢', 'edit'],
       ['moments', '碳硅圈', '海岸内部朋友圈', 'heart'],
       ['diary', '日记', '留下今天的纸页', 'edit'],
       ['album', '相册', '海岸图片引用墙', 'image'],
@@ -209,8 +215,7 @@ export function createDaily({ storage, router, toast }) {
       title: '海岸日报',
       subtitle: state.sync === 'server' ? '服务器同步的日常岛' : '本机缓存',
       className: 'daily-panel',
-      body: `${syncNotice()}${legacyNotice()}<section class="daily-hero"><h2>海岸日报</h2><p>这里承接一日总结、碳硅圈、日记、相册和小组件入口。</p></section>
-        <section class="daily-grid">${entries.map(([route, title, subtitle, iconName]) => `<button type="button" data-action="daily:${route}"><span>${icon(iconName)}</span><strong>${title}</strong><small>${subtitle}</small></button>`).join('')}</section>`,
+      body: `${legacyNotice()}<section class="daily-grid">${entries.map(([route, title, subtitle, iconName]) => `<button type="button" data-action="daily:${route}"><span>${icon(iconName)}</span><strong>${title}</strong><small>${subtitle}</small></button>`).join('')}</section>`,
     };
   }
 
@@ -363,17 +368,37 @@ export function createDaily({ storage, router, toast }) {
     return `<article class="diary-paper"><header><b>一日总结</b><span>${escapeHtml(stamp)}</span></header><p>${escapeHtml(entry.text)}</p>${entry.unresolved?.length ? `<small>待续：${escapeHtml(entry.unresolved.join('、'))}</small>` : ''}</article>`;
   }
 
+  function summaryRangePicker() {
+    const previous = state.summaries.find((entry) => entry.range?.to);
+    const today = shortDateLabel();
+    const continuedRange = previous
+      ? `${shortDateLabel(previous.range.to)} 到 ${today}`
+      : `尚无上次记录 · 从 ${today} 开始`;
+    return `<fieldset class="summary-range-picker">
+      <legend>这次收拢哪一段？</legend>
+      <label>
+        <input type="radio" name="summaryRangeMode" value="${SUMMARY_RANGE_MODES.SINCE_LAST}" checked>
+        <span><strong>上次记录后至今</strong><small>${escapeHtml(continuedRange)}</small></span>
+      </label>
+      <label>
+        <input type="radio" name="summaryRangeMode" value="${SUMMARY_RANGE_MODES.TODAY}">
+        <span><strong>仅记录今天</strong><small>${escapeHtml(today)}</small></span>
+      </label>
+    </fieldset>`;
+  }
+
   function summaryView() {
     if (!state.loaded) return loadStateView('一日总结', '正在连接服务器');
     return {
       title: '一日总结',
-      subtitle: '上次总结后至今',
-      className: 'diary-panel',
-      body: `${state.sync === 'cache' ? syncNotice() : ''}<section class="daily-form-surface">
-          <p class="daily-context">模型会读取上一次已确认总结之后至今；如果还没有总结，就从今天起点开始。生成结果不会立刻写入。</p>
+      subtitle: '选择这次的记录范围',
+      className: 'diary-panel summary-panel',
+      body: `${state.sync === 'cache' ? syncNotice() : ''}<section class="daily-form-surface summary-run-surface">
+          ${summaryRangePicker()}
+          <p class="daily-context">范围以点击生成的这一刻为终点；结果先进入确认页，不会立刻写入。</p>
           <button class="primary-wide" type="button" data-action="daily:run-summary">结束今日 / 生成一日总结</button>
         </section>
-        <section class="diary-stack">${state.summaries.length ? state.summaries.map(summaryCard).join('') : '<section class="daily-empty"><h2>还没有正式总结。</h2><p>第一次生成会从今天起点开始。</p></section>'}</section>`,
+        <section class="diary-stack summary-history">${state.summaries.length ? state.summaries.map(summaryCard).join('') : '<section class="daily-empty"><h2>还没有正式总结。</h2><p>第一次生成时，两种范围都会从今天开始。</p></section>'}</section>`,
     };
   }
 
@@ -504,10 +529,14 @@ export function createDaily({ storage, router, toast }) {
     if (state.summaryRunning) return;
     state.summaryRunning = true;
     const button = q('[data-action="daily:run-summary"]');
+    const rangeMode = q('input[name="summaryRangeMode"]:checked')?.value || SUMMARY_RANGE_MODES.SINCE_LAST;
     if (button) button.disabled = true;
-    toast('正在收拢上次总结后至今的海岸记录……', 3200);
+    toast(rangeMode === SUMMARY_RANGE_MODES.TODAY
+      ? '正在收拢今天的海岸记录……'
+      : '正在收拢上次记录后至今的海岸记录……', 3200);
     try {
       const data = await client.runSummary({
+        range_mode: rangeMode,
         timezone_offset_minutes: new Date().getTimezoneOffset(),
         local_date: dateKey(),
       });

@@ -52,6 +52,7 @@ let formalFinishReason = 'length';
 let failNextSoilOrganize = false;
 let dailySequence = 0;
 let dailySummaryRuns = 0;
+const dailySummaryBodies = [];
 const dailyMoments = [];
 const dailyDiaries = [];
 const dailyAlbums = [];
@@ -281,6 +282,7 @@ globalThis.fetch = async (input, options = {}) => {
   }
   if (url.pathname === '/api/daily/summary/run') {
     dailySummaryRuns += 1;
+    dailySummaryBodies.push(body);
     const to = now();
     const from = new Date(Date.parse(to) - 60 * 60 * 1000).toISOString();
     return response({
@@ -849,7 +851,8 @@ assert.equal(document.querySelector('#modelQuickPicker').hidden, true);
 document.querySelector('[data-action="daily:home"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'daily-home', 'daily route');
 await waitFor(() => document.querySelectorAll('.daily-grid button').length === 6, 'Daily server load');
-assert.ok(document.querySelector('#overlayRoot').textContent.includes('服务器已同步'));
+assert.equal(document.querySelector('.daily-sync-note'), null);
+assert.equal(document.querySelector('.daily-hero'), null);
 document.querySelector('[data-action="daily:moments"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'moments', 'moments route');
 assert.ok(document.querySelector('.moment-profile > div h2'));
@@ -871,9 +874,13 @@ await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'd
   && document.querySelectorAll('.daily-grid button').length === 6, 'return Daily home');
 document.querySelector('[data-action="daily:summary"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'summary', 'summary route');
+assert.equal(document.querySelectorAll('[name="summaryRangeMode"]').length, 2);
+assert.ok(document.querySelector('.summary-history'));
+document.querySelector('[name="summaryRangeMode"][value="today"]').click();
 document.querySelector('[data-action="daily:run-summary"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'summary-confirm', 'summary confirmation');
 assert.equal(dailySummaryRuns, 1);
+assert.equal(dailySummaryBodies[0].range_mode, 'today');
 assert.equal(dailySummaries.length, 0, 'summary run must not write before confirmation');
 assert.equal(dailyDiaries.length, 0, 'summary run must not write a diary before confirmation');
 assert.ok(document.querySelector('#summaryConfirmText').value.includes('接到了服务器'));

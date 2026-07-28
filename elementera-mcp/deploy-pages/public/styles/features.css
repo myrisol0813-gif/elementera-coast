@@ -687,14 +687,6 @@
 }
 
 /* Daily */
-.daily-hero {
-  margin-bottom: 16px;
-  padding: 20px;
-  border: 0;
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface-soft));
-}
-
 .daily-sync-note {
   margin: 14px 16px 0;
   padding: 13px 14px;
@@ -748,22 +740,6 @@
 
 .daily-legacy-note small {
   color: var(--muted);
-}
-
-.daily-hero h2,
-.daily-hero p {
-  margin: 0;
-}
-
-.daily-hero h2 {
-  font-size: 23px;
-  font-weight: 720;
-}
-
-.daily-hero p {
-  margin-top: 7px;
-  color: var(--text-soft);
-  line-height: 1.55;
 }
 
 .daily-grid {
@@ -1170,6 +1146,78 @@
 .daily-form-surface > h2 {
   margin: 0 0 10px;
   font-size: 16px;
+}
+
+.summary-range-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.summary-range-picker legend {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.summary-range-picker label {
+  position: relative;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.summary-range-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  opacity: 0;
+}
+
+.summary-range-picker span {
+  display: grid;
+  align-content: center;
+  min-height: 78px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+
+.summary-range-picker input:checked + span {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-raised));
+}
+
+.summary-range-picker input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.summary-range-picker strong,
+.summary-range-picker small {
+  display: block;
+  min-width: 0;
+}
+
+.summary-range-picker strong {
+  font-size: 14px;
+}
+
+.summary-range-picker small {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.summary-history {
+  margin-top: 16px;
 }
 
 .summary-candidate {

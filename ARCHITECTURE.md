@@ -125,7 +125,7 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 - `/api/daily/diaries[/:id]`: list/create/update Diary pages with explicit append-or-replace conflict handling.
 - `/api/daily/albums`: list/create stable Album references.
 - `/api/daily/summaries`: list committed summaries.
-- `/api/daily/summary/run`: generate a strict, editable summary draft without writing records.
+- `/api/daily/summary/run`: generate a strict, editable summary draft without writing records; `range_mode` is either `since_last_summary` or `today`, and the server resolves the click-time endpoint.
 - `/api/daily/summary/commit`: atomically commit the confirmed summary and selected candidates.
 
 All mutating API methods require a same-origin `Origin` or `Referer`. All app routes and assets require a valid session.

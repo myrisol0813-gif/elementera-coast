@@ -11,6 +11,7 @@ import { performFormalChat } from './models.js';
 const DEFAULT_MODEL = 'openai/gpt-4.1-nano';
 const MOMENT_STATUSES = new Set(['draft', 'candidate', 'published']);
 const CATEGORIES = new Set(['xiaohan', 'myri', 'together']);
+const SUMMARY_RANGE_MODES = new Set(['since_last_summary', 'today']);
 
 function clip(value, max = 24000) {
   return String(value ?? '').trim().slice(0, max);
@@ -137,18 +138,18 @@ export function parseDailySummaryResult(raw, {
 }
 
 export async function resolveDailySummaryRange(db, value = {}, now = Date.now()) {
-  const explicit = value.range || {};
-  const to = explicit.to ? timestamp(explicit.to, '总结终点') : now;
-  let from;
-  if (explicit.from) from = timestamp(explicit.from, '总结起点');
-  else {
+  const mode = clip(value.range_mode, 40) || 'since_last_summary';
+  if (!SUMMARY_RANGE_MODES.has(mode)) {
+    throw new DailyStoreError('invalid_daily_range_mode', '总结范围只能选择“上次记录后至今”或“仅记录今天”。', 400);
+  }
+  const to = timestamp(now, '总结终点');
+  let from = localDayStart(to, value.timezone_offset_minutes);
+  if (mode === 'since_last_summary') {
     const previous = await latestSummary(db);
-    from = previous
-      ? timestamp(previous.range.to, '上次总结终点')
-      : localDayStart(to, value.timezone_offset_minutes);
+    if (previous) from = timestamp(previous.range.to, '上次总结终点');
   }
   if (from >= to) throw new DailyStoreError('invalid_daily_range', '总结起点必须早于终点。', 400);
-  return { from, to };
+  return { from, to, mode };
 }
 
 function summaryPrompt(range, previousSummary, chats, daily) {
@@ -241,7 +242,7 @@ const SUMMARY_SYSTEM_PROMPT = `你是 Elementera Coast 海岸日报的结构化�
 export async function runDailySummary(env, value = {}) {
   const db = env.COAST_CHAT_DB;
   const range = await resolveDailySummaryRange(db, value);
-  const previousSummary = await latestSummary(db);
+  const previousSummary = range.mode === 'since_last_summary' ? await latestSummary(db) : null;
   const [chats, daily, profile] = await Promise.all([
     listActiveMessagesInRange(db, range.from, range.to),
     dailyRecordsInRange(db, range),

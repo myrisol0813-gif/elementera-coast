@@ -261,9 +261,35 @@ assert.equal((await listSummaries(db)).length, 1);
 
 const emptyRangeDb = new D1Database();
 const fixedNow = Date.parse('2026-07-28T18:00:00.000Z');
-const firstRange = await resolveDailySummaryRange(emptyRangeDb, { timezone_offset_minutes: -120 }, fixedNow);
+const firstRange = await resolveDailySummaryRange(emptyRangeDb, {
+  range_mode: 'since_last_summary',
+  timezone_offset_minutes: -120,
+}, fixedNow);
 assert.equal(new Date(firstRange.from).toISOString(), '2026-07-27T22:00:00.000Z');
 assert.equal(firstRange.to, fixedNow);
+assert.equal(firstRange.mode, 'since_last_summary');
+const firstTodayRange = await resolveDailySummaryRange(emptyRangeDb, {
+  range_mode: 'today',
+  timezone_offset_minutes: -120,
+}, fixedNow);
+assert.equal(firstTodayRange.from, firstRange.from);
+assert.equal(firstTodayRange.mode, 'today');
+
+const fixedLater = Date.parse('2026-07-29T12:00:00.000Z');
+const continuedRange = await resolveDailySummaryRange(db, {
+  range_mode: 'since_last_summary',
+  timezone_offset_minutes: 0,
+}, fixedLater);
+assert.equal(new Date(continuedRange.from).toISOString(), range.to);
+const todayRange = await resolveDailySummaryRange(db, {
+  range_mode: 'today',
+  timezone_offset_minutes: 0,
+}, fixedLater);
+assert.equal(new Date(todayRange.from).toISOString(), '2026-07-29T00:00:00.000Z');
+await assert.rejects(
+  () => resolveDailySummaryRange(db, { range_mode: 'unknown' }, fixedLater),
+  (error) => error.type === 'invalid_daily_range_mode',
+);
 
 const forbidden = await routeApi(new Request('https://coast.test/api/daily/moments', {
   method: 'POST',
