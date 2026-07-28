@@ -1,7 +1,14 @@
 import { apiError, json, readJson, sameOrigin } from './http.js';
+import { DAILY_MODEL_TOOLS, executeDailyModelTool } from './daily-model-tools.js';
 import { buildMemoryContext, formatMemoryContext } from './memory-recall.js';
 import { MEMORY_OWNER_ID } from './memory-store.js';
-import { ModelRequestError, modelErrorResponse, performFormalChat, performFormalChatStream } from './models.js';
+import {
+  ModelRequestError,
+  modelErrorResponse,
+  performFormalChat,
+  performFormalChatStream,
+  performFormalChatWithTools,
+} from './models.js';
 import {
   ChatStoreError,
   createConversation,
@@ -43,6 +50,17 @@ async function body(request) {
 
 function requireSameOrigin(request) {
   if (!sameOrigin(request)) throw new ChatStoreError('forbidden', 'Forbidden.', 403);
+}
+
+function localDate(value) {
+  const clean = String(value || '').trim();
+  const parsed = new Date(`${clean}T00:00:00.000Z`);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)
+    && !Number.isNaN(parsed.getTime())
+    && parsed.toISOString().slice(0, 10) === clean) {
+    return clean;
+  }
+  return new Date().toISOString().slice(0, 10);
 }
 
 async function conversations(request, env, pathname) {
@@ -141,7 +159,7 @@ function safeStreamError(error) {
   return { type: 'stream_error', message: '流式生成中断，请稍后重试。' };
 }
 
-function streamFormalChat(request, env, input, assembled, memory) {
+function streamFormalChat(request, env, input, assembled, memory, executeTool) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
@@ -150,7 +168,12 @@ function streamFormalChat(request, env, input, assembled, memory) {
           model: input.model,
           messages: assembled.messages,
           settings: input.settings,
-        }, { allowSystem: assembled.messages[0]?.role === 'system', signal: request.signal })) {
+          tools: DAILY_MODEL_TOOLS,
+        }, {
+          allowSystem: assembled.messages[0]?.role === 'system',
+          signal: request.signal,
+          executeTool,
+        })) {
           controller.enqueue(encoder.encode(sseEvent(item.event, item.data)));
         }
       } catch (error) {
@@ -177,6 +200,9 @@ async function formalChat(request, env) {
   requireSameOrigin(request);
   const value = await body(request);
   const conversationId = sanitizeId(value.conversation_id || '', 'conversation');
+  const sourceTurnId = value.source_turn_id
+    ? sanitizeId(value.source_turn_id, 'turn')
+    : null;
   await getConversation(env.COAST_CHAT_DB, conversationId);
   const requestSettings = formalChatRequestSettings(value.settings);
   const messages = Array.isArray(value.messages) ? value.messages : [];
@@ -200,17 +226,26 @@ async function formalChat(request, env) {
   }
 
   const assembled = budgetChatMessages(messages, softContext, requestSettings);
+  const executeTool = (toolCall) => executeDailyModelTool(env.COAST_CHAT_DB, toolCall, {
+    conversation_id: conversationId,
+    source_turn_id: sourceTurnId,
+    local_date: localDate(value.local_date),
+  });
   if (value.stream === true) {
     return streamFormalChat(request, env, {
       model: value.model,
       settings: requestSettings,
-    }, assembled, memory);
+    }, assembled, memory, executeTool);
   }
-  const result = await performFormalChat(env, {
+  const result = await performFormalChatWithTools(env, {
     model: value.model,
     messages: assembled.messages,
     settings: requestSettings,
-  }, { allowSystem: assembled.messages[0]?.role === 'system' });
+    tools: DAILY_MODEL_TOOLS,
+  }, {
+    allowSystem: assembled.messages[0]?.role === 'system',
+    executeTool,
+  });
   return json({
     ...result,
     max_tokens: requestSettings.max_tokens ?? null,

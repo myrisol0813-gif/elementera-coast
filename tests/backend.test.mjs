@@ -7,6 +7,7 @@ import {
   normalizeUsage,
   performFormalChat,
   performFormalChatStream,
+  performFormalChatWithTools,
 } from '../functions/models.js';
 
 const encoder = new TextEncoder();
@@ -111,7 +112,7 @@ const modelCatalogPayload = {
     name: 'GPT-4.1 Nano',
     architecture: { output_modalities: ['text'] },
     pricing: { prompt: '0.1', completion: '0.2' },
-    supported_parameters: ['temperature'],
+    supported_parameters: ['temperature', 'tools', 'tool_choice'],
   }],
 };
 const modelEnv = { OPENROUTER_API_KEY: 'test-key' };
@@ -147,6 +148,66 @@ await performFormalChat(modelEnv, {
 });
 assert.equal(nonStreamingPayload.max_completion_tokens, 1234, 'configured output ceiling must be sent to OpenRouter');
 
+const testTools = [{
+  type: 'function',
+  function: {
+    name: 'create_moment',
+    description: 'test',
+    parameters: {
+      type: 'object',
+      properties: { text: { type: 'string' } },
+      required: ['text'],
+    },
+  },
+}];
+const toolPayloads = [];
+let executedTool = null;
+globalThis.fetch = async (_url, options = {}) => {
+  const payload = JSON.parse(options.body);
+  toolPayloads.push(payload);
+  if (toolPayloads.length === 1) {
+    return new Response(JSON.stringify({
+      model: 'openai/gpt-4.1-nano',
+      choices: [{
+        message: {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{
+            id: 'call-json-1',
+            type: 'function',
+            function: { name: 'create_moment', arguments: '{"text":"海岸动态"}' },
+          }],
+        },
+        finish_reason: 'tool_calls',
+      }],
+      usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+  return new Response(JSON.stringify({
+    model: 'openai/gpt-4.1-nano',
+    choices: [{ message: { role: 'assistant', content: '已经写进碳硅圈。' }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 15, completion_tokens: 5, total_tokens: 20 },
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+};
+const toolResult = await performFormalChatWithTools(modelEnv, {
+  model: 'openai/gpt-4.1-nano',
+  messages: [{ role: 'user', content: '发一条动态' }],
+  tools: testTools,
+}, {
+  executeTool: async (call) => {
+    executedTool = call;
+    return { ok: true, id: 'moment-1' };
+  },
+});
+assert.equal(executedTool.id, 'call-json-1');
+assert.equal(executedTool.function.name, 'create_moment');
+assert.equal(toolPayloads[0].tools[0].function.name, 'create_moment');
+assert.equal(toolPayloads[1].tool_choice, 'none');
+assert.equal(toolPayloads[1].messages.at(-1).role, 'tool');
+assert.equal(toolResult.message.content, '已经写进碳硅圈。');
+assert.deepEqual(toolResult.usage, { prompt_tokens: 25, completion_tokens: 7, total_tokens: 32 });
+assert.equal(toolResult.tool_results[0].result.id, 'moment-1');
+
 let streamingPayload = null;
 const streamBytes = [
   ': keepalive\n\n',
@@ -179,6 +240,56 @@ assert.deepEqual(streamEvents[0].data, { model: 'openai/gpt-4.1-nano', generatio
 assert.equal(streamEvents.filter((item) => item.event === 'delta').map((item) => item.data.content).join(''), '海岸');
 assert.deepEqual(streamEvents.find((item) => item.event === 'usage').data, { prompt_tokens: 21, completion_tokens: 2, total_tokens: 23 });
 assert.equal(streamEvents.at(-1).data.finish_reason, 'stop');
+
+const toolStreamPayloads = [];
+let streamedTool = null;
+const toolStreamResponses = [
+  [
+    'data: {"id":"gen-tool-1","model":"openai/gpt-4.1-nano","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-stream-1","type":"function","function":{"name":"create_","arguments":"{\\"text\\":\\""}}]}}]}\n\n',
+    'data: {"id":"gen-tool-1","model":"openai/gpt-4.1-nano","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"moment","arguments":"海岸动态\\"}"}}]}}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}\n\n',
+    'data: {"id":"gen-tool-1","model":"openai/gpt-4.1-nano","choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\n',
+    'data: [DONE]\n\n',
+  ],
+  [
+    'data: {"id":"gen-tool-2","model":"openai/gpt-4.1-nano","choices":[{"delta":{"content":"已经"}}]}\n\n',
+    'data: {"id":"gen-tool-2","model":"openai/gpt-4.1-nano","choices":[{"delta":{"content":"发布。"}}],"usage":{"prompt_tokens":15,"completion_tokens":3,"total_tokens":18}}\n\n',
+    'data: {"id":"gen-tool-2","model":"openai/gpt-4.1-nano","choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+    'data: [DONE]\n\n',
+  ],
+];
+globalThis.fetch = async (_url, options = {}) => {
+  toolStreamPayloads.push(JSON.parse(options.body));
+  const chunks = toolStreamResponses[toolStreamPayloads.length - 1];
+  return new Response(new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+      controller.close();
+    },
+  }), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+};
+const toolStreamEvents = [];
+for await (const item of performFormalChatStream(modelEnv, {
+  model: 'openai/gpt-4.1-nano',
+  messages: [{ role: 'user', content: '流式发布动态' }],
+  tools: testTools,
+}, {
+  executeTool: async (call) => {
+    streamedTool = call;
+    return { ok: true, id: 'moment-stream-1' };
+  },
+})) toolStreamEvents.push(item);
+assert.equal(streamedTool.function.arguments, '{"text":"海岸动态"}');
+assert.equal(toolStreamPayloads.length, 2);
+assert.equal(toolStreamPayloads[1].tool_choice, 'none');
+assert.equal(toolStreamPayloads[1].messages.at(-1).role, 'tool');
+assert.equal(toolStreamEvents.find((item) => item.event === 'tool').data.ok, true);
+assert.equal(toolStreamEvents.filter((item) => item.event === 'delta').map((item) => item.data.content).join(''), '已经发布。');
+assert.deepEqual(toolStreamEvents.find((item) => item.event === 'usage').data, {
+  prompt_tokens: 25,
+  completion_tokens: 5,
+  total_tokens: 30,
+});
+assert.equal(toolStreamEvents.at(-1).data.finish_reason, 'stop');
 
 let incompleteError = null;
 globalThis.fetch = async () => new Response(new ReadableStream({

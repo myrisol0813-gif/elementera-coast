@@ -695,6 +695,61 @@
   background: color-mix(in srgb, var(--accent) 10%, var(--surface-soft));
 }
 
+.daily-sync-note {
+  margin: 14px 16px 0;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+.daily-sync-note.is-offline {
+  border-color: color-mix(in srgb, #b66a3c 35%, var(--line));
+  background: color-mix(in srgb, #b66a3c 8%, var(--surface));
+}
+
+.daily-sync-note strong,
+.daily-sync-note p {
+  display: block;
+  margin: 0;
+}
+
+.daily-sync-note p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.daily-sync-note button {
+  margin-top: 9px;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+}
+
+.daily-legacy-note {
+  display: flex;
+  width: calc(100% - 32px);
+  margin: 10px 16px 0;
+  padding: 13px 14px;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--text);
+  background: var(--surface);
+  text-align: left;
+}
+
+.daily-legacy-note small {
+  color: var(--muted);
+}
+
 .daily-hero h2,
 .daily-hero p {
   margin: 0;
@@ -1110,6 +1165,56 @@
   padding: 14px;
   border-radius: 16px;
   background: var(--surface-soft);
+}
+
+.daily-form-surface > h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.summary-candidate {
+  display: grid;
+  gap: 9px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.summary-candidate textarea {
+  min-height: 104px;
+}
+
+.daily-form-surface .summary-list-editor {
+  min-height: 84px;
+}
+
+.summary-candidate:first-of-type {
+  border-top: 0;
+}
+
+.summary-select {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.summary-select input {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+}
+
+.summary-confirm-actions {
+  display: grid;
+  gap: 10px;
+  padding: 0 16px 24px;
+}
+
+.summary-confirm-actions > button:not(.primary-wide) {
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--muted);
+  background: var(--surface);
 }
 
 .daily-form-surface input,

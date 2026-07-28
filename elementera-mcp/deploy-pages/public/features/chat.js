@@ -20,6 +20,10 @@ import {
 const DEFAULT_MODEL = 'openai/gpt-4.1-nano';
 const CONNECTING_TEXT = '正在连接当前模型……';
 
+function localDateKey(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 export function shortModelName(modelId) {
   const bare = String(modelId || '').split('/').at(-1)?.replace(/:free$/i, '') || '';
   if (!bare) return '';
@@ -582,6 +586,8 @@ export function createChat({ storage, toast }) {
     const modelId = runtime.profile.current_chat_model || DEFAULT_MODEL;
     const payload = {
       conversation_id: conversationId,
+      source_turn_id: turnId,
+      local_date: localDateKey(),
       model: modelId,
       messages: contextMessages(appended.state, turnId),
       recent_entry_ids: requestContext.recentEntryIds,

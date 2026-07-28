@@ -391,6 +391,63 @@ export async function writeConversationState(db, id, value) {
   return state;
 }
 
+export async function listActiveMessagesInRange(db, from, to) {
+  await ensureChatSchema(db);
+  const rangeStart = Number(from);
+  const rangeEnd = Number(to);
+  if (!Number.isFinite(rangeStart) || !Number.isFinite(rangeEnd) || rangeStart >= rangeEnd) {
+    throw new ChatStoreError('invalid_request', '聊天记录汇总范围无效。', 400);
+  }
+  const rows = await all(db, `SELECT c.id AS conversation_id, c.title, s.state_json
+    FROM conversations c
+    JOIN conversation_states s ON s.conversation_id = c.id
+    WHERE c.user_id = ? AND c.deleted_at IS NULL
+    ORDER BY c.updated_at ASC`, [USER_ID]);
+  const messages = [];
+  const inRange = (variant) => {
+    const createdAt = Date.parse(String(variant?.created_at || ''));
+    return Number.isFinite(createdAt) && createdAt >= rangeStart && createdAt <= rangeEnd
+      ? createdAt
+      : null;
+  };
+
+  for (const row of rows) {
+    let state;
+    try {
+      state = JSON.parse(row.state_json || '{}');
+    } catch {
+      continue;
+    }
+    for (const turn of Array.isArray(state?.turns) ? state.turns : []) {
+      const users = Array.isArray(turn?.user?.variants) ? turn.user.variants : [];
+      const userIndex = clamp(turn?.user?.active, users.length || 1);
+      const user = users[userIndex];
+      const assistants = Array.isArray(turn?.assistant?.variantsByUserVariant?.[String(userIndex)])
+        ? turn.assistant.variantsByUserVariant[String(userIndex)]
+        : [];
+      const assistantIndex = clamp(
+        turn?.assistant?.activeByUserVariant?.[String(userIndex)],
+        assistants.length || 1,
+      );
+      const assistant = assistants[assistantIndex];
+      for (const [role, variant] of [['user', user], ['assistant', assistant]]) {
+        const createdAt = inRange(variant);
+        if (!createdAt || typeof variant?.content !== 'string' || !variant.content.trim()) continue;
+        messages.push({
+          conversation_id: row.conversation_id,
+          conversation_title: row.title || '新聊天',
+          turn_id: turn.id || null,
+          variant_id: variant.id || null,
+          role,
+          content: variant.content.slice(0, MAX_CONTENT),
+          created_at: new Date(createdAt).toISOString(),
+        });
+      }
+    }
+  }
+  return messages.sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at));
+}
+
 function landingFromRow(row) {
   if (!row) return { sent: false };
   return {

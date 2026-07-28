@@ -13,7 +13,7 @@ const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 const headers = await read(join(pages, '_headers'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-09"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-10"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 
@@ -84,7 +84,7 @@ assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(join(pages, 'service-worker.js'));
-assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-09';$/m);
+assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-10';$/m);
 assert.ok(worker.includes("url.pathname.startsWith('/api/')"));
 assert.equal(worker.includes("caches.match('/index.html')"), true);
 assert.equal(worker.includes('modules/legacy'), false);
@@ -113,7 +113,7 @@ const moduleFiles = [
   'app.js',
   'core/api.js', 'core/dom.js', 'core/icons.js', 'core/router.js', 'core/storage.js',
   'content/letters.js',
-  'features/chat-state.js', 'features/chat.js', 'features/daily.js', 'features/letters.js',
+  'features/chat-state.js', 'features/chat.js', 'features/daily-client.js', 'features/daily.js', 'features/letters.js',
   'features/memory.js', 'features/models.js', 'features/rooms.js', 'features/settings.js', 'features/shell.js', 'features/tools.js',
 ].map((path) => join(moduleRoot, path));
 
@@ -127,6 +127,8 @@ for (const file of moduleFiles) {
 }
 
 const chatSource = await read(join(moduleRoot, 'features/chat.js'));
+const dailyClientSource = await read(join(moduleRoot, 'features/daily-client.js'));
+const dailySource = await read(join(moduleRoot, 'features/daily.js'));
 const memorySource = await read(join(moduleRoot, 'features/memory.js'));
 const roomsSource = await read(join(moduleRoot, 'features/rooms.js'));
 const modelsBackendSource = await read(join(repo, 'functions/models.js'));
@@ -136,6 +138,12 @@ for (const name of ['edit', 'trash', 'copy', 'like', 'refresh', 'heart']) {
 assert.equal(chatSource.includes('localStorage'), false, 'main chat cannot use browser history storage');
 assert.equal(chatSource.includes('history sync'), false);
 assert.ok(chatSource.includes('runtime.deletedIds.add(conversationId)'));
+assert.equal(dailySource.includes('localStorage'), false, 'Daily UI cannot own browser persistence directly');
+assert.ok(dailySource.includes("createDailyClient()"), 'Daily UI must use the API client owner');
+assert.ok(dailySource.includes('legacyDrafts'), 'old Daily content must have an explicit confirmation area');
+for (const endpoint of ['dailyMoments', 'dailyDiaries', 'dailyAlbums', 'dailySummaries', 'dailySummaryRun', 'dailySummaryCommit']) {
+  assert.ok(dailyClientSource.includes(`API.${endpoint}`), `Daily client is missing ${endpoint}`);
+}
 for (const copy of [
   '图片消息还没接入。本轮主聊天先支持文字、思维壤与记忆。',
   '语音输入还没接入。',
@@ -170,6 +178,11 @@ const middleware = await read(join(repo, 'functions/_middleware.js'));
 const chatRouter = await read(join(repo, 'functions/chat-router.js'));
 const storeSource = await read(join(repo, 'functions/chat-store.js'));
 const schemaSource = await read(join(repo, 'functions/chat-schema.js'));
+const dailyApiSource = await read(join(repo, 'functions/daily-api.js'));
+const dailySchemaSource = await read(join(repo, 'functions/daily-schema.js'));
+const dailyStoreSource = await read(join(repo, 'functions/daily-store.js'));
+const dailySummarySource = await read(join(repo, 'functions/daily-summary.js'));
+const dailyToolsSource = await read(join(repo, 'functions/daily-model-tools.js'));
 const memoryStoreSource = await read(join(repo, 'functions/memory-store.js'));
 const embeddingSource = await read(join(repo, 'functions/embedding.js'));
 const memoryRecallSource = await read(join(repo, 'functions/memory-recall.js'));
@@ -179,6 +192,23 @@ assert.equal(/_middleware\.full|legacyOnRequest|COAST_CHAT_STORE/.test(middlewar
 assert.equal(/readLegacy|importLegacy|\bturns\s+WHERE|user_variants|assistant_variants/.test(storeSource), false);
 assert.ok(chatRouter.includes("source: 'd1-json-v4'"));
 assert.ok(storeSource.includes('conversation_states'));
+for (const table of ['daily_moments', 'daily_moment_comments', 'daily_moment_likes', 'daily_diaries', 'daily_album_items', 'daily_summaries']) {
+  assert.ok(dailySchemaSource.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `missing Daily table: ${table}`);
+}
+assert.ok(dailyApiSource.includes("'/api/daily'"));
+assert.ok(dailySummarySource.includes('listActiveMessagesInRange'));
+assert.ok(dailySummarySource.includes('summary_invalid_model_response'));
+assert.ok(dailyToolsSource.includes("name: 'create_moment'"));
+assert.ok(dailyToolsSource.includes("name: 'save_album_reference'"));
+assert.equal(dailyToolsSource.includes("name: 'create_diary'"), false, 'ordinary chat must not receive a diary tool');
+assert.ok(chatRouter.includes('DAILY_MODEL_TOOLS'));
+assert.ok(chatRouter.includes('executeDailyModelTool'));
+assert.ok(modelsBackendSource.includes("role: 'tool'"));
+assert.ok(modelsBackendSource.includes('tool_calls'));
+assert.ok(dailyStoreSource.includes('image_data_url_not_allowed'));
+assert.equal(/hidden[_ -]?marker|reply[_ -]?scanner|scanReply|MutationObserver/.test(
+  `${dailySource}\n${dailyClientSource}\n${dailyToolsSource}\n${chatRouter}`,
+), false, 'Daily tools cannot be implemented through reply markers or DOM scanning');
 for (const table of ['conversation_soils', 'memory_pockets', 'pocket_recall_memberships', 'memory_entries']) {
   assert.ok(memoryStoreSource.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `missing memory table: ${table}`);
 }

@@ -36,6 +36,9 @@ assert.equal(storage.read().runControl.seedCooldownTurns, 2);
 assert.equal(storage.read().runControl.conversationSeedStallLimit, 4);
 assert.equal(storage.read().runControl.autoRefreshEveryTurns, 1);
 assert.equal(storage.read().runControl.maxHandSeeds, 7);
+assert.equal(storage.read().version, 2);
+assert.deepEqual(storage.read().daily.cache.moments, []);
+assert.equal(storage.read().daily.legacyStatus, 'none');
 
 storage.completeMigration();
 assert.equal(localStorage.getItem('coast_main_windows_v097'), null);
@@ -43,5 +46,46 @@ assert.equal(localStorage.getItem('ec.chat.state.v3.old-window'), null);
 assert.equal(localStorage.getItem('gpt_like_shell_theme_clean_v1'), null);
 assert.equal(localStorage.getItem('coast_lighthouse_draft_v095'), null);
 assert.equal(JSON.parse(localStorage.getItem('elementera.local.v1')).migration.pending, false);
+
+localStorage.clear();
+localStorage.setItem('elementera.local.v1', JSON.stringify({
+  version: 1,
+  preferences: { theme: 'light' },
+  daily: {
+    momentCover: 'data:image/png;base64,COVER',
+    moments: [{
+      id: 'old-moment',
+      date: '2026-07-28',
+      text: '本机碳硅圈草稿',
+      image: 'data:image/png;base64,MOMENT',
+      createdAt: 100,
+    }],
+    momentLikes: { 'old-moment': true },
+    momentComments: { 'old-moment': [{ who: '小寒', text: '旧评论' }] },
+    diaries: [{
+      id: 'old-diary',
+      date: '2026-07-28',
+      author: 'xiaohan',
+      weather: '雨',
+      mood: '安心',
+      text: '旧日记',
+      image: '',
+      updatedAt: 200,
+    }],
+    albumItems: [],
+    summaries: [{ id: 'old-summary', date: '2026-07-28', text: '旧总结', updatedAt: 300 }],
+  },
+  migration: { pending: false, profile: null },
+}));
+const secondModule = await import(`${pathToFileURL(storageFile).href}?daily-migration=${Date.now()}`);
+const migrated = secondModule.createStorage();
+assert.equal(migrated.read().version, 2);
+assert.deepEqual(migrated.read().daily.cache.moments, [], 'legacy content cannot become the server read cache');
+assert.equal(migrated.read().daily.legacyStatus, 'pending');
+assert.equal(migrated.read().daily.legacyDrafts.moments[0].text, '本机碳硅圈草稿');
+assert.equal(migrated.read().daily.legacyDrafts.moments[0].image, 'data:image/png;base64,MOMENT');
+assert.equal(migrated.read().daily.legacyDrafts.diaries[0].text, '旧日记');
+assert.equal(migrated.read().daily.legacyDrafts.summaries[0].text, '旧总结');
+assert.equal(JSON.parse(localStorage.getItem('elementera.local.v1')).daily.legacyStatus, 'pending');
 
 console.log('storage: ok');

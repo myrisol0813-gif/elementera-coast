@@ -10,7 +10,7 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 1. `index.html` is the only app document and loads one module entry: `public/app.js`. `/app.html` and `/gptlike` are URL aliases declared in `_redirects`, not duplicate documents.
 2. Each feature has one controller and one state owner. A feature may call shared services, but it may not scan for or replace another feature's DOM.
 3. Runtime ownership must not depend on global guard flags, delayed reclaims, `MutationObserver`, dynamic script injection, selector sweeps, duplicate DOM normalization, or compatibility loaders.
-4. D1 is the only owner of main-chat conversations, histories, and synced model profile. Local storage is reserved for explicitly local preferences and local-only rooms.
+4. D1 is the only owner of main-chat conversations, histories, synced model profile, and committed Daily content. Local storage is reserved for explicitly local preferences, local-only rooms, Daily read cache, and unconfirmed legacy drafts.
 5. Every visible icon is real inline SVG produced by the icon module. No empty pseudo-element, font glyph, base64 duplicate, or selector-dependent icon ownership is allowed.
 6. A failed request is shown as a failed request. The app must not silently switch data owners or resurrect deleted data.
 7. The rebuild contains one explicit local-storage migration and one versioned D1 schema migration. After the local migration succeeds, old keys are removed. There are no permanent fallback readers.
@@ -29,12 +29,14 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 | Model box | `public/features/models.js` | Catalog, current model, synced model profile |
 | Wolf Den and Serpent Desk | `public/features/settings.js` | Appearance, profile, export/import, notes, diagnostics |
 | Radio and lighthouse rooms | `public/features/rooms.js` | Local room windows and local messages |
-| Coast Daily | `public/features/daily.js` | Daily home, Moments, Diary, Album, Widgets/Pets placeholders |
+| Coast Daily UI | `public/features/daily.js`, `public/features/daily-client.js` | Existing Daily views, server requests, summary confirmation, one-time legacy-draft migration |
 | Island letter and lovebook | `public/features/letters.js` | Per-main-window/per-model letter state and editing |
 | Run control and API sandbox | `public/features/tools.js` | Request preferences, cleanup, fixed sandbox request |
 | Auth and protected routing | `functions/auth.js`, `functions/_middleware.js` | Gate, cookie session, protected assets/API |
 | Model API | `functions/models.js`, `functions/api-router.js` | Catalog, formal chat, sandbox |
 | Main-chat API | `functions/chat-router.js`, `functions/chat-store.js`, `functions/chat-schema.js` | Conversations, histories, profile, title, versioned D1 migration |
+| Daily persistence and API | `functions/daily-schema.js`, `functions/daily-store.js`, `functions/daily-api.js` | Non-destructive D1 schema, Daily records, authenticated REST routes, atomic summary commit |
+| Daily summary and model tools | `functions/daily-summary.js`, `functions/daily-model-tools.js`, `functions/models.js` | Summary range/source assembly, strict JSON draft, real server-side tool calls for Moments and Album references |
 
 ## UI and behavior acceptance contract
 
@@ -85,11 +87,13 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 
 ### Coast Daily
 
-- Daily home opens from the sidebar and contains Moments, Diary, Album, Widgets, and Pets.
-- Moments keeps avatar/cover selection, compose, like, comment, and send-comment interactions.
-- Diary keeps date switching, author/weather/mood/text/image composition, and local preview entries.
-- Album keeps categories, image selection, local preview entries, and download.
-- Daily draft content remains runtime-only, matching current behavior; the UI states that refresh may clear it.
+- Daily home opens from the sidebar and contains Summary, Moments, Diary, Album, Widgets, and Pets without redesigning the established entry layout.
+- Moments, Diary, Album metadata, and committed summaries are read from and written to D1. Refresh and another device using the same Coast session see the same committed records.
+- Moments keeps avatar/cover selection, compose, like, comment, and send-comment interactions. Main chat can create a Moment only through a real provider tool call executed on the server.
+- Diary keeps date switching and manual author/weather/mood/text/image-reference composition. Ordinary chat has no diary tool; model-authored diary content is committed only from the Summary confirmation flow.
+- Summary run reads the last committed summary boundary (or the current local-day start), gathers active main-chat and Daily records, and returns an editable draft. Run performs no writes; commit atomically writes the summary and selected Diary, Moment, and Album candidates.
+- Album keeps categories, stable image references, captions, preview, and download. D1 never stores base64 image data; upload storage remains pending R2 or another durable file owner.
+- Local storage is a clearly labelled read cache and one-time legacy-draft holding area, never a silent canonical fallback. Stable references and text migrate only after confirmation; local base64 images and range-less old summaries remain visible locally.
 - Widgets and Pets remain explicit placeholders.
 
 ### Island letter and lovebook
@@ -117,6 +121,12 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 - `/api/chat/history?conversation_id=...`: read/replace one complete version-4 state.
 - `/api/chat/profile`: read/replace synced avatar and model selection.
 - `/api/chat/title`: one automatic title attempt for a default first-turn title.
+- `/api/daily/moments[/:id]`: list/create/update internal Moments; nested comments and like endpoints persist interactions.
+- `/api/daily/diaries[/:id]`: list/create/update Diary pages with explicit append-or-replace conflict handling.
+- `/api/daily/albums`: list/create stable Album references.
+- `/api/daily/summaries`: list committed summaries.
+- `/api/daily/summary/run`: generate a strict, editable summary draft without writing records.
+- `/api/daily/summary/commit`: atomically commit the confirmed summary and selected candidates.
 
 All mutating API methods require a same-origin `Origin` or `Referer`. All app routes and assets require a valid session.
 
@@ -124,10 +134,10 @@ All mutating API methods require a same-origin `Origin` or `Referer`. All app ro
 
 Canonical keys after migration:
 
-- `elementera.local.v1`: local preferences, room data, Daily-independent notes, run-control settings, and letter data.
+- `elementera.local.v1`: local preferences, room data, run-control settings, letter data, latest Daily read cache, and unconfirmed legacy Daily drafts.
 - `elementera.currentConversation`: currently selected D1 conversation ID only.
 
-The migration imports supported values from the existing keys, then deletes those old keys. Main-chat content is not imported from browser storage because D1 already owns it at this baseline.
+The migration imports supported values from the existing keys, then deletes those old keys. Main-chat content is not imported from browser storage because D1 already owns it at this baseline. Existing Daily content moves once into an explicit legacy-draft area; it is never silently deleted or continuously read as live data.
 
 ## Removal list after parity
 
@@ -145,8 +155,8 @@ The migration imports supported values from the existing keys, then deletes thos
 
 1. Static architecture test: one document and one script entry; no duplicate app document, legacy path, guard flag, observer, ownership timer, dynamic script injection, or missing SVG symbol.
 2. State unit tests: user/assistant branch edit/delete/regenerate/reaction behavior.
-3. D1 tests: three conversations; rename/delete tombstones; full history isolation; profile and automatic title rules.
-4. DOM interaction tests: sidebar uniqueness, menus, SVG presence, local rooms, panels, Daily actions, letter actions, model selection.
+3. D1 tests: chat isolation and profile rules; Daily schema, provenance, conflict handling, image-reference boundary, atomic summary commit, and tool-call idempotency.
+4. DOM interaction tests: sidebar uniqueness, menus, SVG presence, local rooms, panels, Daily server reads and summary confirmation, letter actions, model selection.
 5. Service-worker test: every cached URL exists; API/login are never cached; cache version changes exactly once.
 6. Mobile render checks at 360×800 and 412×915 in light/dark/gold themes.
 7. Connector readback of every changed file and final branch diff before any main deployment.

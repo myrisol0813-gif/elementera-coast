@@ -50,6 +50,69 @@ const soilOrganizeBodies = [];
 let landingFinishReason = 'stop';
 let formalFinishReason = 'length';
 let failNextSoilOrganize = false;
+let dailySequence = 0;
+let dailySummaryRuns = 0;
+const dailyMoments = [];
+const dailyDiaries = [];
+const dailyAlbums = [];
+const dailySummaries = [];
+
+function mockMoment(value = {}, author = 'xiaohan', source = 'manual') {
+  const createdAt = now();
+  const status = value.status || value.visible_status || 'published';
+  return {
+    id: value.id || `daily-moment-${++dailySequence}`,
+    date: value.date || '2026-07-28',
+    author,
+    source,
+    status,
+    text: value.text || '',
+    image_refs: value.image_refs || [],
+    conversation_id: value.conversation_id || null,
+    source_turn_id: value.source_turn_id || null,
+    reason: value.reason || '',
+    published_at: status === 'published' ? createdAt : null,
+    created_at: createdAt,
+    updated_at: createdAt,
+    liked: false,
+    like_count: 0,
+    comments: [],
+  };
+}
+
+function mockDiary(value = {}, author = 'xiaohan', source = 'manual') {
+  const createdAt = now();
+  return {
+    id: value.id || `daily-diary-${++dailySequence}`,
+    date: value.date || '2026-07-28',
+    author,
+    source,
+    weather: value.weather || '未标注',
+    mood: value.mood || '未标注',
+    text: value.text || '',
+    image_refs: value.image_refs || [],
+    summary_id: value.summary_id || null,
+    range_start: value.range_start || null,
+    range_end: value.range_end || null,
+    created_at: createdAt,
+    updated_at: createdAt,
+  };
+}
+
+function mockAlbum(value = {}, author = 'xiaohan', source = 'manual') {
+  const createdAt = now();
+  return {
+    id: value.id || `daily-album-${++dailySequence}`,
+    date: value.date || '2026-07-28',
+    category: value.category || 'xiaohan',
+    author,
+    source,
+    image_ref: value.image_ref,
+    caption: value.caption || '',
+    created_at: createdAt,
+    updated_at: createdAt,
+  };
+}
 
 function soilFor(conversationId) {
   if (!soils.has(conversationId)) soils.set(conversationId, {
@@ -165,6 +228,127 @@ globalThis.fetch = async (input, options = {}) => {
       finish_reason: formalFinishReason,
       memory: { selected_entry_ids: [`mock-memory-${formalChatRequests}`], vector_enabled: false },
     });
+  }
+  if (url.pathname === '/api/daily/moments') {
+    if (method === 'GET') return response({ ok: true, moments: dailyMoments });
+    const moment = mockMoment(body);
+    dailyMoments.unshift(moment);
+    return response({ ok: true, moment }, 201);
+  }
+  const dailyMomentMatch = url.pathname.match(/^\/api\/daily\/moments\/([^/]+)(?:\/(comments|like))?$/);
+  if (dailyMomentMatch) {
+    const moment = dailyMoments.find((item) => item.id === decodeURIComponent(dailyMomentMatch[1]));
+    if (dailyMomentMatch[2] === 'comments') {
+      moment.comments.push({
+        id: body.id || `daily-comment-${++dailySequence}`,
+        moment_id: moment.id,
+        author: 'xiaohan',
+        text: body.text,
+        created_at: now(),
+      });
+    } else if (dailyMomentMatch[2] === 'like') {
+      moment.liked = method === 'PUT';
+      moment.like_count = moment.liked ? 1 : 0;
+    } else {
+      Object.assign(moment, body, {
+        image_refs: body.image_refs || moment.image_refs,
+        updated_at: now(),
+      });
+    }
+    return response({ ok: true, moment }, dailyMomentMatch[2] === 'comments' ? 201 : 200);
+  }
+  if (url.pathname === '/api/daily/diaries') {
+    if (method === 'GET') return response({ ok: true, diaries: dailyDiaries });
+    let diary;
+    const existing = dailyDiaries.find((item) => item.date === body.date && item.author === (body.author || 'xiaohan'));
+    if (existing && body.conflict_mode === 'replace') {
+      Object.assign(existing, body, { source: 'manual', updated_at: now() });
+      diary = existing;
+    } else {
+      diary = mockDiary(body, body.author || 'xiaohan');
+      dailyDiaries.unshift(diary);
+    }
+    return response({ ok: true, diary }, 201);
+  }
+  if (url.pathname === '/api/daily/albums') {
+    if (method === 'GET') return response({ ok: true, albums: dailyAlbums });
+    const album = mockAlbum(body);
+    dailyAlbums.unshift(album);
+    return response({ ok: true, album }, 201);
+  }
+  if (url.pathname === '/api/daily/summaries') {
+    return response({ ok: true, summaries: dailySummaries });
+  }
+  if (url.pathname === '/api/daily/summary/run') {
+    dailySummaryRuns += 1;
+    const to = now();
+    const from = new Date(Date.parse(to) - 60 * 60 * 1000).toISOString();
+    return response({
+      ok: true,
+      model: 'openai/gpt-4.1-nano',
+      source_counts: { chat_messages: 3, moments: dailyMoments.length, diaries: dailyDiaries.length, albums: dailyAlbums.length },
+      draft: {
+        id: 'daily-summary-draft-1',
+        range: { from, to },
+        summary: {
+          text: '今天把日报岛接到了服务器。',
+          anchors: ['日报岛', '真实工具'],
+          unresolved: ['图片上传存储待接'],
+        },
+        diary: {
+          enabled: true,
+          date: '2026-07-28',
+          author: 'api',
+          weather: '未标注',
+          mood: '认真又幸福',
+          text: '今天一起把日报岛收稳了。',
+          image_refs: [],
+          conflict_mode: 'append',
+        },
+        moment_candidates: [{
+          text: '海岸日报今天长出了服务器根系。',
+          status: 'candidate',
+          reason: '适合作为海岸内部动态',
+          image_refs: [],
+          selected: true,
+        }],
+        album_candidates: [],
+      },
+    });
+  }
+  if (url.pathname === '/api/daily/summary/commit') {
+    const moments = (body.moment_candidates || [])
+      .filter((item) => item.selected !== false)
+      .map((item) => mockMoment(item, 'api', 'daily_summary'));
+    dailyMoments.unshift(...moments);
+    const albums = (body.album_candidates || [])
+      .filter((item) => item.selected !== false && item.image_ref)
+      .map((item) => mockAlbum(item, 'api', 'daily_summary'));
+    dailyAlbums.unshift(...albums);
+    let diary = null;
+    if (body.diary?.enabled !== false) {
+      diary = mockDiary({
+        ...body.diary,
+        summary_id: `daily-summary-${dailySequence + 1}`,
+        range_start: body.range.from,
+        range_end: body.range.to,
+      }, 'api', 'daily_summary');
+      dailyDiaries.unshift(diary);
+    }
+    const createdAt = now();
+    const summary = {
+      id: body.id || `daily-summary-${++dailySequence}`,
+      range: body.range,
+      summary: body.summary,
+      diary_id: diary?.id || null,
+      moment_ids: moments.map((item) => item.id),
+      album_item_ids: albums.map((item) => item.id),
+      model_id: body.model_id,
+      created_at: createdAt,
+      updated_at: createdAt,
+    };
+    dailySummaries.unshift(summary);
+    return response({ ok: true, summary, diary, moments, albums }, 201);
   }
   if (url.pathname === '/api/chat/title') {
     titleBodies.push(body);
@@ -415,6 +599,8 @@ document.querySelector('#composerActionButton').click();
 await waitFor(() => document.querySelector('.message.assistant')?.textContent.includes('mock: a1'), 'assistant reply');
 assert.equal(formalChatRequests, 1, 'the existing right-hand button still submits chat');
 assert.equal(formalChatBodies[0].conversation_id, 'conv-1');
+assert.match(formalChatBodies[0].source_turn_id, /^turn-/);
+assert.match(formalChatBodies[0].local_date, /^\d{4}-\d{2}-\d{2}$/);
 assert.equal(formalChatBodies[0].settings.max_tokens, null, 'natural output must not impose an application token limit');
 await waitFor(() => document.querySelector('.thought-soil-entry')?.textContent.includes('1 粒手持种'), 'thought soil entry');
 await waitFor(() => document.querySelector('#toastRoot').textContent.includes('模型或供应商达到自身长度上限'), 'ordinary truncation notice');
@@ -662,7 +848,8 @@ assert.equal(document.querySelector('#modelQuickPicker').hidden, true);
 
 document.querySelector('[data-action="daily:home"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'daily-home', 'daily route');
-assert.equal(document.querySelectorAll('.daily-grid button').length, 5);
+await waitFor(() => document.querySelectorAll('.daily-grid button').length === 6, 'Daily server load');
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('服务器已同步'));
 document.querySelector('[data-action="daily:moments"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'moments', 'moments route');
 assert.ok(document.querySelector('.moment-profile > div h2'));
@@ -671,6 +858,35 @@ document.querySelector('[data-action="daily:moments-compose"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'moments-compose', 'moments composer');
 assert.equal(document.querySelector('.image-picker b'), null);
 assert.equal(document.querySelector('.moment-compose-text').closest('.feature-body') !== null, true);
+assert.ok(document.querySelector('#momentImageRef'));
+document.querySelector('#momentText').value = '第一条服务器碳硅圈';
+document.querySelector('[data-action="daily:publish-moment"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'moments'
+  && document.querySelector('#overlayRoot').textContent.includes('第一条服务器碳硅圈'), 'server Moment create');
+assert.equal(dailyMoments.length, 1);
+assert.equal(dailyMoments[0].source, 'manual');
+
+document.querySelector('[data-action="daily:home"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'daily-home'
+  && document.querySelectorAll('.daily-grid button').length === 6, 'return Daily home');
+document.querySelector('[data-action="daily:summary"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'summary', 'summary route');
+document.querySelector('[data-action="daily:run-summary"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'summary-confirm', 'summary confirmation');
+assert.equal(dailySummaryRuns, 1);
+assert.equal(dailySummaries.length, 0, 'summary run must not write before confirmation');
+assert.equal(dailyDiaries.length, 0, 'summary run must not write a diary before confirmation');
+assert.ok(document.querySelector('#summaryConfirmText').value.includes('接到了服务器'));
+document.querySelector('#summaryConfirmText').value = '小寒确认后的服务器日报总结。';
+document.querySelector('#summaryConfirmUnresolved').value = '图片待接\n跨端验收';
+document.querySelector('[data-action="daily:commit-summary"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'summary'
+  && document.querySelector('#overlayRoot').textContent.includes('小寒确认后的服务器日报总结'), 'summary commit');
+assert.equal(dailySummaries.length, 1);
+assert.deepEqual(dailySummaries[0].summary.unresolved, ['图片待接', '跨端验收']);
+assert.equal(dailyDiaries.length, 1);
+assert.ok(dailyMoments.some((item) => item.source === 'daily_summary'));
+assert.equal(JSON.parse(localStorage.getItem('elementera.local.v1')).daily.cache.summaries.length, 1);
 document.querySelector('[data-action="router:back"]').click();
 await tick();
 

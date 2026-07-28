@@ -1,7 +1,21 @@
-import { escapeAttribute, escapeHtml, id, q, readImageFile } from '../core/dom.js';
+import { escapeAttribute, escapeHtml, q, readImageFile } from '../core/dom.js';
 import { icon } from '../core/icons.js';
+import { createDailyClient } from './daily-client.js';
 
 const CATEGORIES = Object.freeze({ xiaohan: '小寒', myri: 'Myri', together: '蛇蛇狗合照' });
+const DAILY_ROUTES = new Set([
+  'daily-home',
+  'daily-legacy',
+  'summary',
+  'summary-confirm',
+  'moments',
+  'moments-compose',
+  'diary',
+  'diary-compose',
+  'album',
+  'album-compose',
+  'daily-placeholder',
+]);
 
 function dateKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -17,6 +31,12 @@ function timeLabel(value) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
+function rangeLabel(range = {}) {
+  const from = new Date(range.from || Date.now());
+  const to = new Date(range.to || Date.now());
+  return `${dateLabel(dateKey(from))} ${timeLabel(from)} — ${dateLabel(dateKey(to))} ${timeLabel(to)}`;
+}
+
 function uniqueDates(current, ...collections) {
   const dates = new Set([current, dateKey()]);
   for (const collection of collections) {
@@ -29,33 +49,114 @@ function entryDate(entry) {
   return entry.date || dateKey(new Date(Number(entry.createdAt) || Date.now()));
 }
 
+function stableImageRef(value) {
+  const clean = String(value || '').trim();
+  return /^(https?:\/\/|\/|r2:\/\/|asset:\/\/|coast:\/\/)/i.test(clean) && !/^data:/i.test(clean);
+}
+
+function legacyId(prefix, value) {
+  return `${prefix}-legacy-${String(value || Date.now())}`.replace(/[^\w:.-]/g, '_').slice(0, 160);
+}
+
 export function createDaily({ storage, router, toast }) {
+  const client = createDailyClient();
   const saved = storage.read().daily || {};
+  const cache = saved.cache || {};
   const state = {
-    moments: saved.moments || [],
-    momentLikes: saved.momentLikes || {},
-    momentComments: saved.momentComments || {},
+    moments: cache.moments || [],
+    diaries: cache.diaries || [],
+    albumItems: cache.albumItems || [],
+    summaries: cache.summaries || [],
     commentTarget: '',
-    momentCover: saved.momentCover || '',
-    diaries: saved.diaries || [],
     diaryDate: dateKey(),
-    albumItems: saved.albumItems || [],
-    summaries: saved.summaries || [],
-    summaryDate: dateKey(),
+    momentCover: saved.momentCover || '',
+    summaryDraft: null,
+    summaryModel: '',
+    summaryRunning: false,
+    summaryCommitting: false,
+    loaded: false,
+    loadPromise: null,
+    sync: 'idle',
+    syncError: '',
+    legacyDrafts: saved.legacyDrafts || null,
+    legacyStatus: saved.legacyStatus || 'none',
+    legacyMigrating: false,
   };
 
-  function persistDaily() {
+  function cacheSnapshot() {
+    return {
+      moments: state.moments,
+      diaries: state.diaries,
+      albumItems: state.albumItems,
+      summaries: state.summaries,
+      syncedAt: state.sync === 'server' ? Date.now() : Number(cache.syncedAt || 0),
+    };
+  }
+
+  function persistCache() {
+    try {
+      storage.update((local) => {
+        local.daily.cache = cacheSnapshot();
+        local.daily.momentCover = state.momentCover;
+      });
+    } catch (error) {
+      console.warn('[daily-cache]', error);
+    }
+  }
+
+  function persistLegacy() {
     storage.update((local) => {
-      local.daily = {
-        moments: state.moments,
-        momentLikes: state.momentLikes,
-        momentComments: state.momentComments,
-        momentCover: state.momentCover,
-        diaries: state.diaries,
-        albumItems: state.albumItems,
-        summaries: state.summaries,
-      };
+      local.daily.legacyDrafts = state.legacyDrafts;
+      local.daily.legacyStatus = state.legacyStatus;
     });
+  }
+
+  function currentDailyRoute() {
+    return DAILY_ROUTES.has(router.current()?.name);
+  }
+
+  function startLoad(force = false) {
+    if (state.loadPromise) return state.loadPromise;
+    if (state.loaded && !force) return Promise.resolve();
+    state.sync = 'loading';
+    state.syncError = '';
+    state.loadPromise = client.load()
+      .then((data) => {
+        state.moments = data.moments;
+        state.diaries = data.diaries;
+        state.albumItems = data.albumItems;
+        state.summaries = data.summaries;
+        state.loaded = true;
+        state.sync = 'server';
+        persistCache();
+      })
+      .catch((error) => {
+        state.loaded = true;
+        state.sync = 'cache';
+        state.syncError = error?.message || '服务器暂不可用。';
+      })
+      .finally(() => {
+        state.loadPromise = null;
+        if (currentDailyRoute()) router.refresh().catch(() => undefined);
+      });
+    return state.loadPromise;
+  }
+
+  function loadStateView(title, subtitle) {
+    startLoad();
+    return {
+      title,
+      subtitle,
+      className: 'daily-panel',
+      body: '<section class="daily-empty"><h2>正在从服务器读取……</h2><p>海岸日报正在把今天的纸页拿过来。</p></section>',
+    };
+  }
+
+  function syncNotice() {
+    if (state.sync === 'cache') {
+      return `<section class="daily-sync-note is-offline"><strong>当前显示本机缓存</strong><p>${escapeHtml(state.syncError)} 服务器恢复后可以重新载入。</p><button type="button" data-action="daily:reload">重新载入</button></section>`;
+    }
+    return '<section class="daily-sync-note"><strong>服务器已同步</strong><p>D1 是正式数据源；本机只保留最近一次读取缓存。</p></section>';
   }
 
   function xiaohanAvatar() {
@@ -65,66 +166,96 @@ export function createDaily({ storage, router, toast }) {
       : '<span class="daily-avatar">寒</span>';
   }
 
-  function summaryFor(date = dateKey()) {
-    return state.summaries.find((entry) => entry.date === date) || null;
+  function momentAvatar(author) {
+    if (author === 'xiaohan') return xiaohanAvatar();
+    return '<span class="daily-avatar">溟</span>';
+  }
+
+  function authorName(author) {
+    if (author === 'api') return '✦Myrisol';
+    if (author === 'mcp') return '≋Myrisol';
+    if (author === 'myri') return 'Myri';
+    return '小寒';
+  }
+
+  function summaryForToday() {
+    return state.summaries.find((entry) => dateKey(new Date(entry.updatedAt || entry.createdAt)) === dateKey()) || null;
+  }
+
+  function legacyCount() {
+    const legacy = state.legacyDrafts || {};
+    return ['moments', 'diaries', 'albumItems', 'summaries']
+      .reduce((total, key) => total + (Array.isArray(legacy[key]) ? legacy[key].length : 0), 0);
+  }
+
+  function legacyNotice() {
+    const count = legacyCount();
+    if (!count) return '';
+    const label = state.legacyStatus === 'completed' ? '仍保留旧本机图片或总结' : '发现旧本机草稿';
+    return `<button class="daily-legacy-note" type="button" data-action="daily:legacy"><strong>${escapeHtml(label)} · ${count} 项</strong><small>查看可迁移内容与只保留在本机的图片 ›</small></button>`;
   }
 
   function dailyHomeView() {
-    const today = dateKey();
-    const todaySummary = summaryFor(today);
+    if (!state.loaded) return loadStateView('海岸日报', '正在连接服务器');
     const entries = [
-      ['summary', '一日总结', todaySummary ? '今天已经收束' : '把今天轻轻合上', 'edit'],
-      ['moments', '碳硅圈', '小寒的朋友圈页面', 'heart'],
+      ['summary', '一日总结', summaryForToday() ? '今天已经收束' : '把今天轻轻合上', 'edit'],
+      ['moments', '碳硅圈', '海岸内部朋友圈', 'heart'],
       ['diary', '日记', '留下今天的纸页', 'edit'],
-      ['album', '相册', '海岸图片墙', 'image'],
+      ['album', '相册', '海岸图片引用墙', 'image'],
       ['widgets', '小组件', '暂未接入', 'plus'],
       ['pets', '宠物系统', '暂未接入', 'heart'],
     ];
     return {
       title: '海岸日报',
-      subtitle: '本机保存的日常岛',
+      subtitle: state.sync === 'server' ? '服务器同步的日常岛' : '本机缓存',
       className: 'daily-panel',
-      body: `<section class="daily-hero"><h2>海岸日报</h2><p>这里承接一日总结、碳硅圈、日记、相册和小组件入口。</p></section>
+      body: `${syncNotice()}${legacyNotice()}<section class="daily-hero"><h2>海岸日报</h2><p>这里承接一日总结、碳硅圈、日记、相册和小组件入口。</p></section>
         <section class="daily-grid">${entries.map(([route, title, subtitle, iconName]) => `<button type="button" data-action="daily:${route}"><span>${icon(iconName)}</span><strong>${title}</strong><small>${subtitle}</small></button>`).join('')}</section>`,
     };
   }
 
-  function momentComments(postId) {
-    const comments = state.momentComments[postId] || [];
+  function momentComments(post) {
+    const comments = post.comments || [];
     const list = comments.length
       ? `<div class="moment-comments">${comments.map((comment) => `<p><b>${escapeHtml(comment.who)}:</b> ${escapeHtml(comment.text)}</p>`).join('')}</div>`
       : '';
-    const editor = state.commentTarget === postId
-      ? `<div class="moment-comment-editor"><input id="momentCommentInput" placeholder="写评论"><button type="button" data-action="daily:send-comment" data-id="${escapeAttribute(postId)}">发送</button></div>`
+    const editor = state.commentTarget === post.id
+      ? `<div class="moment-comment-editor"><input id="momentCommentInput" placeholder="写评论"><button type="button" data-action="daily:send-comment" data-id="${escapeAttribute(post.id)}">发送</button></div>`
       : '';
     return list + editor;
   }
 
+  function momentStatus(post) {
+    if (post.status === 'draft') return '草稿';
+    if (post.status === 'candidate') return '候选';
+    return '已发布';
+  }
+
   function momentCard(post) {
-    const liked = Boolean(state.momentLikes[post.id]);
     const stamp = `${dateLabel(entryDate(post))} · ${timeLabel(post.createdAt)}`;
     return `<article class="moment-post">
-      <div>${xiaohanAvatar()}</div>
-      <div class="moment-main"><h3>小寒</h3><p>${escapeHtml(post.text || '（无正文）')}</p>
+      <div>${momentAvatar(post.author)}</div>
+      <div class="moment-main"><h3>${escapeHtml(authorName(post.author))}</h3><p>${escapeHtml(post.text || '（无正文）')}</p>
         ${post.image ? `<img class="moment-image" src="${escapeAttribute(post.image)}" alt="碳硅圈配图">` : ''}
-        <div class="moment-actions"><span>${stamp} · 本机保存</span><button class="${liked ? 'is-liked' : ''}" type="button" data-action="daily:like" data-id="${escapeAttribute(post.id)}">♡ ${liked ? 1 : 0}</button><button type="button" data-action="daily:comment" data-id="${escapeAttribute(post.id)}">评论</button></div>
-        ${momentComments(post.id)}
+        <div class="moment-actions"><span>${stamp} · ${momentStatus(post)}</span><button class="${post.liked ? 'is-liked' : ''}" type="button" data-action="daily:like" data-id="${escapeAttribute(post.id)}">♡ ${Number(post.likeCount || 0)}</button><button type="button" data-action="daily:comment" data-id="${escapeAttribute(post.id)}">评论</button></div>
+        ${momentComments(post)}
       </div>
     </article>`;
   }
 
   function momentsView() {
+    if (!state.loaded) return loadStateView('碳硅圈', '正在连接服务器');
     const feed = state.moments.length
       ? state.moments.map(momentCard).join('')
-      : '<section class="daily-empty"><h2>暂无动态。</h2><p>这里会放小寒写下的碳硅圈。内容会保存在本机，未来再接服务器同步。</p></section>';
+      : '<section class="daily-empty"><h2>暂无动态。</h2><p>小寒或 Myri 写入的海岸内部动态会从服务器出现在这里。</p></section>';
     const cover = state.momentCover ? `style="background-image:linear-gradient(rgba(0,0,0,.12),rgba(0,0,0,.12)),url(${escapeAttribute(state.momentCover)})"` : '';
     return {
       title: '碳硅圈',
-      subtitle: '小寒的页面 · 本机保存',
+      subtitle: state.sync === 'server' ? '海岸内部 · 服务器同步' : '本机缓存',
       className: 'moments-panel',
       headerAction: `<button class="round-add" type="button" data-action="daily:moments-compose" aria-label="发表碳硅圈">${icon('plus')}</button>`,
-      body: `<button class="moment-cover" type="button" data-action="daily:cover" ${cover}><span>上传封面</span></button>
-        <section class="moment-profile"><button type="button" data-action="daily:avatar">${xiaohanAvatar()}</button><div><h2>小寒</h2><p>本机保存 · 未来给 Myri / MCP / API 留入口</p></div></section>
+      body: `${state.sync === 'cache' ? syncNotice() : ''}<button class="moment-cover" type="button" data-action="daily:cover" ${cover}><span>上传本机封面</span></button>
+        <section class="moment-profile"><button type="button" data-action="daily:avatar">${xiaohanAvatar()}</button><div><h2>小寒</h2><p>服务器同步 · Myri 可通过真实工具写入</p></div></section>
         <section class="moment-feed">${feed}</section>`,
     };
   }
@@ -132,20 +263,17 @@ export function createDaily({ storage, router, toast }) {
   function momentsComposeView() {
     return {
       title: '发表碳硅圈',
-      subtitle: '本机保存',
+      subtitle: '发布到海岸内部服务器',
       className: 'daily-compose',
-      body: `<p class="daily-context">写给小寒自己的页面。现在先本机保存，未来再接服务器同步。</p>
+      body: `<p class="daily-context">这条动态只会进入海岸内部碳硅圈，不会外发到微信、微博或 X。</p>
         <textarea id="momentText" class="moment-compose-text" rows="8" placeholder="这一刻的想法..."></textarea>
-        <label class="image-picker" aria-label="选择配图"><input id="momentImageInput" type="file" accept="image/*" hidden><span>${icon('plus')}</span></label>
-        <div id="momentPreview" class="image-preview"></div>
+        <section class="daily-form-surface">
+          <label>图片引用（可选）<input id="momentImageRef" placeholder="https://… / coast://…"></label>
+          <p class="daily-context">图片上传存储尚待接入；当前只保存稳定 URL 或 coast 引用，不把 base64 写进 D1。</p>
+        </section>
         <button class="compose-location" type="button" data-action="daily:location"><span><strong>所在位置</strong><small>暂未接入</small></span><b>›</b></button>
         <button class="primary-wide" type="button" data-action="daily:publish-moment">发布到碳硅圈</button>`,
-      afterRender: () => bindPreview('#momentImageInput', '#momentPreview'),
     };
-  }
-
-  function authorName(author) {
-    return author === 'api' ? '✦Myrisol' : author === 'mcp' ? '≋Myrisol' : '小寒';
   }
 
   function diaryEntry(entry) {
@@ -153,125 +281,171 @@ export function createDaily({ storage, router, toast }) {
   }
 
   function diaryView() {
+    if (!state.loaded) return loadStateView('日记', '正在连接服务器');
     const dates = uniqueDates(state.diaryDate, state.diaries);
-    const entries = state.diaries.filter((entry) => entry.date === state.diaryDate).slice(0, 3);
+    const entries = state.diaries.filter((entry) => entry.date === state.diaryDate);
     return {
       title: '日记',
-      subtitle: '本机保存',
+      subtitle: state.sync === 'server' ? '服务器同步' : '本机缓存',
       className: 'diary-panel',
       headerAction: `<button class="round-add" type="button" data-action="daily:diary-compose" aria-label="写日记">${icon('plus')}</button>`,
-      body: `<section class="diary-filter">${dates.map((date) => `<button class="${date === state.diaryDate ? 'is-active' : ''}" type="button" data-action="daily:diary-date" data-date="${date}">${dateLabel(date)}</button>`).join('')}</section>
-        <section class="diary-stack">${entries.length ? entries.map(diaryEntry).join('') : '<section class="daily-empty"><h2>暂无日记。</h2><p>今天可以留下小寒、✦Myrisol、≋Myrisol 的纸页。</p></section>'}</section>`,
+      body: `${state.sync === 'cache' ? syncNotice() : ''}<section class="diary-filter">${dates.map((date) => `<button class="${date === state.diaryDate ? 'is-active' : ''}" type="button" data-action="daily:diary-date" data-date="${date}">${dateLabel(date)}</button>`).join('')}</section>
+        <section class="diary-stack">${entries.length ? entries.map(diaryEntry).join('') : '<section class="daily-empty"><h2>暂无日记。</h2><p>日记只由小寒手动写入，或从一日总结确认页提交。</p></section>'}</section>`,
     };
   }
 
   function diaryComposeView() {
     return {
       title: '写日记',
-      subtitle: '本机保存',
+      subtitle: '手动写入服务器',
       className: 'daily-compose',
-      body: `<p class="daily-context">一天最多三张纸页：小寒、✦Myrisol、≋Myrisol 各一张。同日同作者再次收笔会替换当天纸页。</p>
+      body: `<p class="daily-context">日记不会成为普通聊天工具。同日同作者已有纸页时，请明确选择追加或替换。</p>
         <section class="daily-form-surface">
           <div class="form-grid"><label>写作者<select id="diaryAuthor"><option value="xiaohan">小寒</option><option value="api">✦Myrisol / API</option><option value="mcp">≋Myrisol / MCP</option></select></label><label>天气<input id="diaryWeather" placeholder="晴 / 雨 / 雾"></label><label>心情<input id="diaryMood" placeholder="平静 / 开心 / 想你"></label></div>
           <textarea id="diaryText" rows="8" placeholder="今天的小句子..."></textarea>
-          <label class="image-picker" aria-label="选择日记配图"><input id="diaryImageInput" type="file" accept="image/*" hidden><span>${icon('plus')}</span></label>
-          <div id="diaryPreview" class="image-preview"></div>
+          <label>图片引用（可选）<input id="diaryImageRef" placeholder="https://… / coast://…"></label>
+          <label>同日同作者已有纸页时<select id="diaryConflictMode"><option value="append">追加一张</option><option value="replace">替换最新一张</option></select></label>
           <button class="primary-wide" type="button" data-action="daily:save-diary">收笔</button>
         </section>`,
-      afterRender: () => bindPreview('#diaryImageInput', '#diaryPreview'),
     };
   }
 
   function albumCard(item) {
-    return `<figure class="album-card"><img src="${escapeAttribute(item.image)}" alt="海岸涂鸦"><figcaption><span>${escapeHtml(CATEGORIES[item.cat] || CATEGORIES.xiaohan)}</span><button type="button" data-action="daily:download" data-id="${escapeAttribute(item.id)}">下载</button></figcaption></figure>`;
+    return `<figure class="album-card"><img src="${escapeAttribute(item.image)}" alt="${escapeAttribute(item.caption || '海岸图片')}"><figcaption><span>${escapeHtml(item.caption || CATEGORIES[item.cat] || CATEGORIES.xiaohan)}</span><button type="button" data-action="daily:download" data-id="${escapeAttribute(item.id)}">下载</button></figcaption></figure>`;
   }
 
   function albumView() {
+    if (!state.loaded) return loadStateView('相册', '正在连接服务器');
     const sections = Object.entries(CATEGORIES).map(([category, label]) => {
       const items = state.albumItems.filter((item) => item.cat === category);
-      return `<section class="album-section"><h2>${label}</h2><div class="album-grid">${items.length ? items.map(albumCard).join('') : '<div class="album-empty">暂无图片。这里会放海岸的小画片。</div>'}</div></section>`;
+      return `<section class="album-section"><h2>${label}</h2><div class="album-grid">${items.length ? items.map(albumCard).join('') : '<div class="album-empty">暂无图片引用。这里会放海岸的小画片。</div>'}</div></section>`;
     }).join('');
     return {
       title: '相册',
-      subtitle: '本机保存',
+      subtitle: state.sync === 'server' ? '服务器图片引用' : '本机缓存',
       className: 'album-panel',
-      headerAction: `<button class="round-add" type="button" data-action="daily:album-compose" aria-label="上传相册">${icon('plus')}</button>`,
-      body: `<p class="daily-context">本机保存的海岸图片墙。</p><section class="album-wall">${sections}</section>`,
+      headerAction: `<button class="round-add" type="button" data-action="daily:album-compose" aria-label="保存图片引用">${icon('plus')}</button>`,
+      body: `${state.sync === 'cache' ? syncNotice() : ''}<p class="daily-context">第一版同步图片 URL / image_ref / coast 引用；图片上传存储待 R2 或正式文件存储接入。</p><section class="album-wall">${sections}</section>`,
     };
+  }
+
+  function bindRefPreview() {
+    const input = q('#albumImageRef');
+    const preview = q('#albumPreview');
+    if (!input || !preview) return;
+    input.addEventListener('input', () => {
+      const value = input.value.trim();
+      preview.innerHTML = stableImageRef(value)
+        ? `<img src="${escapeAttribute(value)}" alt="preview">`
+        : '';
+    });
   }
 
   function albumComposeView() {
     return {
-      title: '上传相册',
-      subtitle: '本机保存',
+      title: '保存图片引用',
+      subtitle: '服务器相册',
       className: 'daily-compose',
-      body: `<p class="daily-context">选择一张小画片放进海岸相册。</p>
+      body: `<p class="daily-context">可以保存 GPT 生图结果的稳定引用，也可以手动填写已有图片地址。不会把大 base64 塞进 D1。</p>
         <section class="daily-form-surface album-compose-surface">
-          <label class="image-picker large" aria-label="选择一张图片"><input id="albumImageInput" type="file" accept="image/*" hidden><span>${icon('plus')}</span></label>
+          <label>图片引用<input id="albumImageRef" placeholder="https://… / coast://…"></label>
           <div id="albumPreview" class="image-preview"></div>
+          <label>说明<input id="albumCaption" placeholder="这张小画片的名字或故事"></label>
           <label class="select-row">归类<select id="albumCategory">${Object.entries(CATEGORIES).map(([key, label]) => `<option value="${key}">${label}</option>`).join('')}</select></label>
-          <button class="primary-wide" type="button" data-action="daily:save-album">保存到本机相册</button>
+          <button class="primary-wide" type="button" data-action="daily:save-album">保存到服务器相册</button>
         </section>`,
-      afterRender: () => bindPreview('#albumImageInput', '#albumPreview'),
+      afterRender: bindRefPreview,
     };
-  }
-
-  function entriesForSummary(date) {
-    return {
-      diaries: state.diaries.filter((entry) => entry.date === date),
-      moments: state.moments.filter((entry) => entryDate(entry) === date),
-      albums: state.albumItems.filter((entry) => entryDate(entry) === date),
-    };
-  }
-
-  function draftSummaryText(date) {
-    const { diaries, moments, albums } = entriesForSummary(date);
-    const lines = [`${dateLabel(date)}的一日总结`];
-
-    if (!diaries.length && !moments.length && !albums.length) {
-      lines.push('今天还没有留下纸页、动态或小画片。');
-      lines.push('也可以只写一句：今天在海岸停了一会儿。');
-      return lines.join('\n');
-    }
-
-    if (moments.length) {
-      lines.push('', '碳硅圈：');
-      for (const moment of moments.slice(0, 3)) lines.push(`- ${moment.text ? moment.text.slice(0, 80) : '留下了一张配图。'}`);
-    }
-
-    if (diaries.length) {
-      lines.push('', '日记：');
-      for (const diary of diaries.slice(0, 3)) {
-        const label = `${authorName(diary.author)} · ${diary.weather || '未标注'} · ${diary.mood || '未标注'}`;
-        lines.push(`- ${label}：${(diary.text || '留下了一张纸。').slice(0, 80)}`);
-      }
-    }
-
-    if (albums.length) lines.push('', `相册：今天收下 ${albums.length} 张小画片。`);
-    lines.push('', '今天可以这样合上：');
-    return lines.join('\n');
   }
 
   function summaryCard(entry) {
-    return `<article class="diary-paper"><header><b>一日总结</b><span>${dateLabel(entry.date)} · ${timeLabel(entry.updatedAt)}</span></header><p>${escapeHtml(entry.text)}</p></article>`;
+    const stamp = entry.range ? rangeLabel(entry.range) : dateLabel(entry.date);
+    return `<article class="diary-paper"><header><b>一日总结</b><span>${escapeHtml(stamp)}</span></header><p>${escapeHtml(entry.text)}</p>${entry.unresolved?.length ? `<small>待续：${escapeHtml(entry.unresolved.join('、'))}</small>` : ''}</article>`;
   }
 
   function summaryView() {
-    const dates = uniqueDates(state.summaryDate, state.summaries, state.diaries, state.moments, state.albumItems);
-    const summary = summaryFor(state.summaryDate);
-    const { diaries, moments, albums } = entriesForSummary(state.summaryDate);
-    const value = summary?.text || draftSummaryText(state.summaryDate);
+    if (!state.loaded) return loadStateView('一日总结', '正在连接服务器');
     return {
       title: '一日总结',
-      subtitle: `${dateLabel(state.summaryDate)} · 本机保存`,
+      subtitle: '上次总结后至今',
       className: 'diary-panel',
-      body: `<section class="diary-filter">${dates.map((date) => `<button class="${date === state.summaryDate ? 'is-active' : ''}" type="button" data-action="daily:summary-date" data-date="${date}">${dateLabel(date)}</button>`).join('')}</section>
-        <section class="daily-form-surface">
-          <p class="daily-context">今日来源：碳硅圈 ${moments.length} 条 · 日记 ${diaries.length} 张 · 相册 ${albums.length} 张。</p>
-          <textarea id="summaryText" rows="10" placeholder="把今天收束成几句话...">${escapeHtml(value)}</textarea>
-          <button class="primary-wide" type="button" data-action="daily:save-summary">保存一日总结</button>
+      body: `${state.sync === 'cache' ? syncNotice() : ''}<section class="daily-form-surface">
+          <p class="daily-context">模型会读取上一次已确认总结之后至今；如果还没有总结，就从今天起点开始。生成结果不会立刻写入。</p>
+          <button class="primary-wide" type="button" data-action="daily:run-summary">结束今日 / 生成一日总结</button>
         </section>
-        <section class="diary-stack">${summary ? summaryCard(summary) : ''}</section>`,
+        <section class="diary-stack">${state.summaries.length ? state.summaries.map(summaryCard).join('') : '<section class="daily-empty"><h2>还没有正式总结。</h2><p>第一次生成会从今天起点开始。</p></section>'}</section>`,
+    };
+  }
+
+  function summaryMomentCandidate(candidate, index) {
+    return `<article class="summary-candidate" data-summary-moment="${index}">
+      <label class="summary-select"><input type="checkbox" checked>写入碳硅圈</label>
+      <textarea rows="4">${escapeHtml(candidate.text || '')}</textarea>
+      <label>状态<select><option value="candidate" ${candidate.status === 'candidate' ? 'selected' : ''}>候选</option><option value="published" ${candidate.status === 'published' ? 'selected' : ''}>发布</option><option value="draft" ${candidate.status === 'draft' ? 'selected' : ''}>草稿</option></select></label>
+      <small>${escapeHtml(candidate.reason || '')}</small>
+    </article>`;
+  }
+
+  function summaryAlbumCandidate(candidate, index) {
+    return `<article class="summary-candidate" data-summary-album="${index}">
+      <label class="summary-select"><input type="checkbox" checked>保存到相册</label>
+      <input value="${escapeAttribute(candidate.image_ref || '')}" aria-label="图片引用">
+      <input value="${escapeAttribute(candidate.caption || '')}" aria-label="图片说明">
+      <label>分类<select><option value="xiaohan" ${candidate.category === 'xiaohan' ? 'selected' : ''}>小寒</option><option value="myri" ${candidate.category === 'myri' ? 'selected' : ''}>Myri</option><option value="together" ${candidate.category === 'together' ? 'selected' : ''}>蛇蛇狗合照</option></select></label>
+    </article>`;
+  }
+
+  function summaryConfirmView() {
+    const draft = state.summaryDraft;
+    if (!draft) return summaryView();
+    const diary = draft.diary || {};
+    return {
+      title: '确认一日总结',
+      subtitle: rangeLabel(draft.range),
+      className: 'diary-panel summary-confirm-panel',
+      body: `<section class="daily-form-surface">
+          <h2>今日总结</h2>
+          <textarea id="summaryConfirmText" rows="10">${escapeHtml(draft.summary?.text || '')}</textarea>
+          <label>今日锚点（每行一项）<textarea id="summaryConfirmAnchors" class="summary-list-editor" rows="3">${escapeHtml((draft.summary?.anchors || []).join('\n'))}</textarea></label>
+          <label>未完成事项（每行一项）<textarea id="summaryConfirmUnresolved" class="summary-list-editor" rows="3">${escapeHtml((draft.summary?.unresolved || []).join('\n'))}</textarea></label>
+        </section>
+        <section class="daily-form-surface">
+          <label class="summary-select"><input id="summaryDiaryEnabled" type="checkbox" ${diary.enabled ? 'checked' : ''}>保存日记草稿</label>
+          <div class="form-grid"><label>日期<input id="summaryDiaryDate" value="${escapeAttribute(diary.date || dateKey())}"></label><label>天气<input id="summaryDiaryWeather" value="${escapeAttribute(diary.weather || '未标注')}"></label><label>心情<input id="summaryDiaryMood" value="${escapeAttribute(diary.mood || '未标注')}"></label></div>
+          <textarea id="summaryDiaryText" rows="7">${escapeHtml(diary.text || '')}</textarea>
+          <label>同日已有 ✦Myrisol 日记时<select id="summaryDiaryConflict"><option value="append">追加一张</option><option value="replace">替换最新一张</option></select></label>
+        </section>
+        ${draft.moment_candidates?.length ? `<section class="daily-form-surface"><h2>碳硅圈候选</h2>${draft.moment_candidates.map(summaryMomentCandidate).join('')}</section>` : ''}
+        ${draft.album_candidates?.length ? `<section class="daily-form-surface"><h2>相册候选</h2>${draft.album_candidates.map(summaryAlbumCandidate).join('')}</section>` : ''}
+        <section class="summary-confirm-actions">
+          <button type="button" data-action="daily:discard-summary">丢弃本次结果</button>
+          <button class="primary-wide" type="button" data-action="daily:commit-summary">确认并写入服务器</button>
+        </section>`,
+    };
+  }
+
+  function legacySection(title, entries, render) {
+    if (!entries?.length) return '';
+    return `<section class="daily-form-surface"><h2>${escapeHtml(title)}</h2>${entries.map(render).join('')}</section>`;
+  }
+
+  function legacyView() {
+    const legacy = state.legacyDrafts || {};
+    const base64Count = [...(legacy.moments || []), ...(legacy.diaries || []), ...(legacy.albumItems || [])]
+      .filter((entry) => /^data:/i.test(String(entry.image || ''))).length;
+    return {
+      title: '旧草稿区',
+      subtitle: '一次性本机内容迁移',
+      className: 'diary-panel',
+      body: `<section class="daily-sync-note"><strong>旧内容不会被静默删除</strong><p>文字与稳定图片引用可以确认迁入服务器；base64 图片继续只留在本机，等待未来图片存储接入。</p></section>
+        ${legacySection('旧碳硅圈', legacy.moments, (entry) => `<article class="diary-paper"><p>${escapeHtml(entry.text || '（仅图片）')}</p></article>`)}
+        ${legacySection('旧日记', legacy.diaries, diaryEntry)}
+        ${legacySection('旧相册', legacy.albumItems, (entry) => `<article class="diary-paper"><p>${escapeHtml(stableImageRef(entry.image) ? entry.image : '本机图片（未同步）')}</p></article>`)}
+        ${legacySection('旧一日总结', legacy.summaries, summaryCard)}
+        <section class="daily-form-surface">
+          <p class="daily-context">共 ${legacyCount()} 项；其中 ${base64Count} 项含本机 base64 图片。旧总结先保留在这里，不伪造新的总结范围。</p>
+          <button class="primary-wide" type="button" data-action="daily:migrate-legacy" ${state.legacyMigrating ? 'disabled' : ''}>${state.legacyMigrating ? '正在迁移……' : '确认迁移可同步内容'}</button>
+        </section>`,
     };
   }
 
@@ -284,20 +458,10 @@ export function createDaily({ storage, router, toast }) {
     };
   }
 
-  async function bindPreview(inputSelector, previewSelector) {
-    const input = q(inputSelector);
-    const preview = q(previewSelector);
-    if (!input || !preview) return;
-    input.addEventListener('change', async () => {
-      const image = await readImageFile(input.files?.[0]).catch(() => '');
-      if (!image) return;
-      preview.dataset.image = image;
-      preview.innerHTML = `<img src="${escapeAttribute(image)}" alt="preview">`;
-    });
-  }
-
   router.register('daily-home', dailyHomeView);
+  router.register('daily-legacy', legacyView);
   router.register('summary', summaryView);
+  router.register('summary-confirm', summaryConfirmView);
   router.register('moments', momentsView);
   router.register('moments-compose', momentsComposeView);
   router.register('diary', diaryView);
@@ -305,6 +469,11 @@ export function createDaily({ storage, router, toast }) {
   router.register('album', albumView);
   router.register('album-compose', albumComposeView);
   router.register('daily-placeholder', placeholderView);
+
+  function replaceMoment(next) {
+    state.moments = state.moments.map((entry) => entry.id === next.id ? next : entry);
+    persistCache();
+  }
 
   async function chooseAvatar() {
     const input = document.createElement('input');
@@ -325,14 +494,195 @@ export function createDaily({ storage, router, toast }) {
     input.accept = 'image/*';
     input.addEventListener('change', async () => {
       state.momentCover = await readImageFile(input.files?.[0]).catch(() => '');
-      persistDaily();
+      persistCache();
       router.refresh();
     }, { once: true });
     input.click();
   }
 
-  function handleAction(name, target) {
-    if (name === 'home') return router.open('daily-home');
+  async function runSummary() {
+    if (state.summaryRunning) return;
+    state.summaryRunning = true;
+    const button = q('[data-action="daily:run-summary"]');
+    if (button) button.disabled = true;
+    toast('正在收拢上次总结后至今的海岸记录……', 3200);
+    try {
+      const data = await client.runSummary({
+        timezone_offset_minutes: new Date().getTimezoneOffset(),
+        local_date: dateKey(),
+      });
+      state.summaryDraft = data.draft;
+      state.summaryModel = data.model || '';
+      await router.open('summary-confirm', {}, { replace: true });
+    } finally {
+      state.summaryRunning = false;
+      if (button?.isConnected) button.disabled = false;
+    }
+  }
+
+  function collectSummaryCommit() {
+    const draft = state.summaryDraft;
+    const lines = (selector) => (q(selector)?.value || '')
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const moments = [...document.querySelectorAll('[data-summary-moment]')].map((root) => {
+      const index = Number(root.dataset.summaryMoment);
+      const source = draft.moment_candidates[index] || {};
+      return {
+        ...source,
+        selected: Boolean(root.querySelector('input[type="checkbox"]')?.checked),
+        text: root.querySelector('textarea')?.value.trim() || '',
+        status: root.querySelector('select')?.value || 'candidate',
+      };
+    });
+    const albums = [...document.querySelectorAll('[data-summary-album]')].map((root) => {
+      const index = Number(root.dataset.summaryAlbum);
+      const inputs = root.querySelectorAll('input');
+      return {
+        ...(draft.album_candidates[index] || {}),
+        selected: Boolean(root.querySelector('input[type="checkbox"]')?.checked),
+        image_ref: inputs[1]?.value.trim() || '',
+        caption: inputs[2]?.value.trim() || '',
+        category: root.querySelector('select')?.value || 'together',
+      };
+    });
+    return {
+      id: draft.id,
+      range: draft.range,
+      summary: {
+        ...draft.summary,
+        text: q('#summaryConfirmText')?.value.trim() || '',
+        anchors: lines('#summaryConfirmAnchors'),
+        unresolved: lines('#summaryConfirmUnresolved'),
+      },
+      diary: {
+        ...draft.diary,
+        enabled: Boolean(q('#summaryDiaryEnabled')?.checked),
+        date: q('#summaryDiaryDate')?.value.trim() || dateKey(),
+        weather: q('#summaryDiaryWeather')?.value.trim() || '未标注',
+        mood: q('#summaryDiaryMood')?.value.trim() || '未标注',
+        text: q('#summaryDiaryText')?.value.trim() || '',
+        conflict_mode: q('#summaryDiaryConflict')?.value || 'append',
+      },
+      moment_candidates: moments,
+      album_candidates: albums,
+      model_id: state.summaryModel,
+    };
+  }
+
+  async function commitSummaryDraft() {
+    if (state.summaryCommitting) return;
+    const value = collectSummaryCommit();
+    state.summaryCommitting = true;
+    const button = q('[data-action="daily:commit-summary"]');
+    if (button) button.disabled = true;
+    try {
+      const result = await client.commitSummary(value);
+      state.summaries = [result.summary, ...state.summaries.filter((entry) => entry.id !== result.summary.id)];
+      if (result.diary) {
+        state.diaries = [result.diary, ...state.diaries.filter((entry) => entry.id !== result.diary.id)];
+      }
+      const momentIds = new Set(result.moments.map((entry) => entry.id));
+      state.moments = [...result.moments, ...state.moments.filter((entry) => !momentIds.has(entry.id))];
+      const albumIds = new Set(result.albums.map((entry) => entry.id));
+      state.albumItems = [...result.albums, ...state.albumItems.filter((entry) => !albumIds.has(entry.id))];
+      state.summaryDraft = null;
+      state.summaryModel = '';
+      persistCache();
+      toast('一日总结与所选内容已经写入服务器。', 2800);
+      await router.open('summary', {}, { replace: true });
+    } finally {
+      state.summaryCommitting = false;
+      if (button?.isConnected) button.disabled = false;
+    }
+  }
+
+  async function migrateLegacy() {
+    const legacy = state.legacyDrafts;
+    if (!legacy || state.legacyMigrating) return;
+    state.legacyMigrating = true;
+    await router.refresh();
+    try {
+      const migratedMomentIds = new Set();
+      for (const entry of legacy.moments || []) {
+        const imageRef = stableImageRef(entry.image) ? entry.image : '';
+        if (!entry.text && !imageRef) continue;
+        const created = await client.createMoment({
+          id: legacyId('moment', entry.id),
+          date: entry.date || dateKey(new Date(entry.createdAt || Date.now())),
+          text: entry.text || '',
+          status: 'published',
+          image_refs: imageRef ? [imageRef] : [],
+        });
+        migratedMomentIds.add(entry.id);
+        for (const [index, comment] of (legacy.momentComments?.[entry.id] || []).entries()) {
+          await client.commentMoment(
+            created.id,
+            comment.text,
+            legacyId('comment', `${entry.id}-${index}`),
+          );
+        }
+        if (legacy.momentLikes?.[entry.id]) await client.setMomentLike(created.id, true);
+      }
+      for (const entry of legacy.diaries || []) {
+        const imageRef = stableImageRef(entry.image) ? entry.image : '';
+        if (!entry.text && !imageRef) continue;
+        await client.createDiary({
+          id: legacyId('diary', entry.id),
+          date: entry.date || dateKey(),
+          author: entry.author || 'xiaohan',
+          weather: entry.weather || '未标注',
+          mood: entry.mood || '未标注',
+          text: entry.text || '',
+          image_refs: imageRef ? [imageRef] : [],
+          conflict_mode: 'append',
+        });
+      }
+      for (const entry of legacy.albumItems || []) {
+        if (!stableImageRef(entry.image)) continue;
+        await client.createAlbum({
+          id: legacyId('album', entry.id),
+          date: entry.date || dateKey(),
+          category: entry.cat || 'xiaohan',
+          image_ref: entry.image,
+          caption: '',
+        });
+      }
+      const retainedMoments = (legacy.moments || [])
+        .filter((entry) => entry.image && !stableImageRef(entry.image));
+      const retainedMomentIds = new Set(retainedMoments.map((entry) => entry.id));
+      state.legacyDrafts = {
+        ...legacy,
+        moments: retainedMoments,
+        diaries: (legacy.diaries || []).filter((entry) => entry.image && !stableImageRef(entry.image)),
+        albumItems: (legacy.albumItems || []).filter((entry) => !stableImageRef(entry.image)),
+        summaries: legacy.summaries || [],
+        momentLikes: Object.fromEntries(Object.entries(legacy.momentLikes || {})
+          .filter(([id]) => retainedMomentIds.has(id) && !migratedMomentIds.has(id))),
+        momentComments: Object.fromEntries(Object.entries(legacy.momentComments || {})
+          .filter(([id]) => retainedMomentIds.has(id) && !migratedMomentIds.has(id))),
+      };
+      state.legacyStatus = legacyCount() ? 'completed' : 'none';
+      persistLegacy();
+      await startLoad(true);
+      toast('可同步的旧草稿已经迁入服务器；本机图片与旧总结仍安稳保留。', 3600);
+    } finally {
+      state.legacyMigrating = false;
+      await router.refresh();
+    }
+  }
+
+  async function handleAction(name, target) {
+    if (name === 'home') {
+      await router.open('daily-home');
+      return startLoad(true);
+    }
+    if (name === 'legacy') return router.open('daily-legacy');
+    if (name === 'reload') {
+      await startLoad(true);
+      return router.refresh();
+    }
     if (name === 'summary') return router.open('summary');
     if (name === 'moments') return router.open('moments');
     if (name === 'diary') return router.open('diary');
@@ -345,37 +695,33 @@ export function createDaily({ storage, router, toast }) {
     if (name === 'avatar') return chooseAvatar();
     if (name === 'cover') return chooseCover();
     if (name === 'location') return toast('所在位置暂未接入。');
-    if (name === 'summary-date') {
-      state.summaryDate = target.dataset.date || dateKey();
-      return router.refresh();
+    if (name === 'run-summary') return runSummary();
+    if (name === 'discard-summary') {
+      state.summaryDraft = null;
+      state.summaryModel = '';
+      toast('本次生成结果已经丢弃，没有写入服务器。');
+      return router.open('summary', {}, { replace: true });
     }
-    if (name === 'save-summary') {
-      const text = q('#summaryText')?.value.trim() || '';
-      if (!text) return toast('先写一点今天的收束。');
-      const existing = summaryFor(state.summaryDate);
-      if (existing) {
-        existing.text = text;
-        existing.updatedAt = Date.now();
-      } else {
-        state.summaries.unshift({ id: id('summary'), date: state.summaryDate, text, updatedAt: Date.now() });
-      }
-      persistDaily();
-      toast('一日总结已保存。');
-      return router.refresh();
-    }
+    if (name === 'commit-summary') return commitSummaryDraft();
+    if (name === 'migrate-legacy') return migrateLegacy();
     if (name === 'publish-moment') {
       const text = q('#momentText')?.value.trim() || '';
-      const image = q('#momentPreview')?.dataset.image || '';
-      if (text || image) {
-        const createdAt = Date.now();
-        state.moments.unshift({ id: id('moment'), date: dateKey(new Date(createdAt)), createdAt, text, image, location: '' });
-        persistDaily();
-      }
+      const imageRef = q('#momentImageRef')?.value.trim() || '';
+      if (!text && !imageRef) return toast('先写一点正文或图片引用。');
+      const created = await client.createMoment({
+        date: dateKey(),
+        text,
+        status: 'published',
+        image_refs: imageRef ? [imageRef] : [],
+      });
+      state.moments.unshift(created);
+      persistCache();
       return router.open('moments', {}, { replace: true });
     }
     if (name === 'like') {
-      state.momentLikes[target.dataset.id] = !state.momentLikes[target.dataset.id];
-      persistDaily();
+      const current = state.moments.find((entry) => entry.id === target.dataset.id);
+      if (!current) return;
+      replaceMoment(await client.setMomentLike(current.id, !current.liked));
       return router.refresh();
     }
     if (name === 'comment') {
@@ -384,10 +730,7 @@ export function createDaily({ storage, router, toast }) {
     }
     if (name === 'send-comment') {
       const text = q('#momentCommentInput')?.value.trim() || '';
-      if (text) {
-        state.momentComments[target.dataset.id] = [...(state.momentComments[target.dataset.id] || []), { who: '小寒', text }];
-        persistDaily();
-      }
+      if (text) replaceMoment(await client.commentMoment(target.dataset.id, text));
       state.commentTarget = '';
       return router.refresh();
     }
@@ -397,31 +740,32 @@ export function createDaily({ storage, router, toast }) {
     }
     if (name === 'save-diary') {
       const text = q('#diaryText')?.value.trim() || '';
-      const image = q('#diaryPreview')?.dataset.image || '';
-      const author = q('#diaryAuthor')?.value || 'xiaohan';
-      if (text || image) {
-        state.diaries = state.diaries.filter((entry) => !(entry.date === state.diaryDate && entry.author === author));
-        state.diaries.unshift({
-          id: id('diary'),
-          date: state.diaryDate,
-          author,
-          weather: q('#diaryWeather')?.value.trim() || '未标注',
-          mood: q('#diaryMood')?.value.trim() || '未标注',
-          text,
-          image,
-          updatedAt: Date.now(),
-        });
-        persistDaily();
-      }
+      const imageRef = q('#diaryImageRef')?.value.trim() || '';
+      if (!text && !imageRef) return toast('先写一点日记正文或图片引用。');
+      const created = await client.createDiary({
+        date: state.diaryDate,
+        author: q('#diaryAuthor')?.value || 'xiaohan',
+        weather: q('#diaryWeather')?.value.trim() || '未标注',
+        mood: q('#diaryMood')?.value.trim() || '未标注',
+        text,
+        image_refs: imageRef ? [imageRef] : [],
+        conflict_mode: q('#diaryConflictMode')?.value || 'append',
+      });
+      state.diaries = [created, ...state.diaries.filter((entry) => entry.id !== created.id)];
+      persistCache();
       return router.open('diary', {}, { replace: true });
     }
     if (name === 'save-album') {
-      const image = q('#albumPreview')?.dataset.image || '';
-      if (image) {
-        const createdAt = Date.now();
-        state.albumItems.unshift({ id: id('album'), image, cat: q('#albumCategory')?.value || 'xiaohan', date: dateKey(new Date(createdAt)), createdAt });
-        persistDaily();
-      }
+      const imageRef = q('#albumImageRef')?.value.trim() || '';
+      if (!imageRef) return toast('请先填写稳定图片引用。');
+      const created = await client.createAlbum({
+        date: dateKey(),
+        category: q('#albumCategory')?.value || 'xiaohan',
+        image_ref: imageRef,
+        caption: q('#albumCaption')?.value.trim() || '',
+      });
+      state.albumItems.unshift(created);
+      persistCache();
       return router.open('album', {}, { replace: true });
     }
     if (name === 'download') {

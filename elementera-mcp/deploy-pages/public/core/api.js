@@ -16,6 +16,12 @@ export const API = Object.freeze({
   memorySearch: '/api/memory/search',
   memoryRecall: '/api/memory/recall',
   memoryVectorStatus: '/api/memory/vector-status',
+  dailyMoments: '/api/daily/moments',
+  dailyDiaries: '/api/daily/diaries',
+  dailyAlbums: '/api/daily/albums',
+  dailySummaries: '/api/daily/summaries',
+  dailySummaryRun: '/api/daily/summary/run',
+  dailySummaryCommit: '/api/daily/summary/commit',
 });
 
 export class ApiError extends Error {

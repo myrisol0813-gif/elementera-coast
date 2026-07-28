@@ -45,19 +45,22 @@ function defaultRoom(kind) {
 
 function defaultDaily() {
   return {
-    moments: [],
-    momentLikes: {},
-    momentComments: {},
+    cache: {
+      moments: [],
+      diaries: [],
+      albumItems: [],
+      summaries: [],
+      syncedAt: 0,
+    },
+    legacyDrafts: null,
+    legacyStatus: 'none',
     momentCover: '',
-    diaries: [],
-    albumItems: [],
-    summaries: [],
   };
 }
 
 function defaults() {
   return {
-    version: 1,
+    version: 2,
     preferences: {
       theme: 'light',
       userBubble: '',
@@ -142,8 +145,7 @@ function normalizeRecord(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
 }
 
-function normalizeDaily(value) {
-  const base = defaultDaily();
+function normalizeLegacyDaily(value) {
   const daily = value && typeof value === 'object' ? value : {};
   const momentLikes = Object.fromEntries(Object.entries(normalizeRecord(daily.momentLikes))
     .filter(([key]) => key)
@@ -159,7 +161,6 @@ function normalizeDaily(value) {
       }))]));
 
   return {
-    ...base,
     momentCover: String(daily.momentCover || ''),
     momentLikes,
     momentComments,
@@ -209,10 +210,111 @@ function normalizeDaily(value) {
   };
 }
 
+function normalizeDailyCache(value) {
+  const cache = value && typeof value === 'object' ? value : {};
+  return {
+    moments: (Array.isArray(cache.moments) ? cache.moments : []).slice(0, 300).map((moment) => ({
+      id: cleanId(moment.id, `moment-${Number(moment.createdAt || Date.now())}`),
+      date: String(moment.date || '').slice(0, 10),
+      author: ['xiaohan', 'myri', 'api', 'mcp'].includes(moment.author) ? moment.author : 'xiaohan',
+      source: ['manual', 'chat_tool', 'daily_summary'].includes(moment.source) ? moment.source : 'manual',
+      status: ['draft', 'candidate', 'published'].includes(moment.status) ? moment.status : 'published',
+      text: cleanText(moment.text),
+      image: String(moment.image || ''),
+      imageRefs: (Array.isArray(moment.imageRefs) ? moment.imageRefs : []).map(String).slice(0, 6),
+      reason: cleanText(moment.reason, 1000),
+      createdAt: Number(moment.createdAt || Date.now()),
+      updatedAt: Number(moment.updatedAt || moment.createdAt || Date.now()),
+      publishedAt: moment.publishedAt ? Number(moment.publishedAt) : null,
+      liked: Boolean(moment.liked),
+      likeCount: Math.max(0, Number(moment.likeCount || 0)),
+      comments: (Array.isArray(moment.comments) ? moment.comments : []).slice(-80).map((comment) => ({
+        id: cleanId(comment.id, `comment-${Number(comment.createdAt || Date.now())}`),
+        who: String(comment.who || '小寒').slice(0, 40),
+        author: ['xiaohan', 'myri', 'api', 'mcp'].includes(comment.author) ? comment.author : 'xiaohan',
+        text: cleanText(comment.text, 2000),
+        createdAt: Number(comment.createdAt || Date.now()),
+      })),
+    })),
+    diaries: (Array.isArray(cache.diaries) ? cache.diaries : []).slice(0, 300).map((entry) => ({
+      id: cleanId(entry.id, `diary-${Number(entry.updatedAt || Date.now())}`),
+      date: String(entry.date || '').slice(0, 10),
+      author: ['xiaohan', 'myri', 'api', 'mcp'].includes(entry.author) ? entry.author : 'xiaohan',
+      source: ['manual', 'daily_summary'].includes(entry.source) ? entry.source : 'manual',
+      weather: String(entry.weather || '未标注').slice(0, 80),
+      mood: String(entry.mood || '未标注').slice(0, 120),
+      text: cleanText(entry.text),
+      image: String(entry.image || ''),
+      imageRefs: (Array.isArray(entry.imageRefs) ? entry.imageRefs : []).map(String).slice(0, 6),
+      createdAt: Number(entry.createdAt || entry.updatedAt || Date.now()),
+      updatedAt: Number(entry.updatedAt || Date.now()),
+    })),
+    albumItems: (Array.isArray(cache.albumItems) ? cache.albumItems : []).slice(0, 500).map((item) => ({
+      id: cleanId(item.id, `album-${Number(item.createdAt || Date.now())}`),
+      date: String(item.date || '').slice(0, 10),
+      cat: ['xiaohan', 'myri', 'together'].includes(item.cat) ? item.cat : 'xiaohan',
+      author: ['xiaohan', 'myri', 'api', 'mcp'].includes(item.author) ? item.author : 'xiaohan',
+      source: ['manual', 'chat_tool', 'daily_summary'].includes(item.source) ? item.source : 'manual',
+      image: String(item.image || ''),
+      imageRef: String(item.imageRef || item.image || ''),
+      caption: cleanText(item.caption, 1000),
+      createdAt: Number(item.createdAt || Date.now()),
+      updatedAt: Number(item.updatedAt || item.createdAt || Date.now()),
+    })),
+    summaries: (Array.isArray(cache.summaries) ? cache.summaries : []).slice(0, 200).map((summary) => ({
+      id: cleanId(summary.id, `summary-${Number(summary.updatedAt || Date.now())}`),
+      date: String(summary.date || '').slice(0, 10),
+      range: summary.range && typeof summary.range === 'object' ? {
+        from: String(summary.range.from || ''),
+        to: String(summary.range.to || ''),
+      } : null,
+      text: cleanText(summary.text),
+      anchors: (Array.isArray(summary.anchors) ? summary.anchors : []).map((item) => cleanText(item, 400)).slice(0, 20),
+      unresolved: (Array.isArray(summary.unresolved) ? summary.unresolved : []).map((item) => cleanText(item, 400)).slice(0, 20),
+      modelId: String(summary.modelId || '').slice(0, 180),
+      createdAt: Number(summary.createdAt || summary.updatedAt || Date.now()),
+      updatedAt: Number(summary.updatedAt || Date.now()),
+    })),
+    syncedAt: Math.max(0, Number(cache.syncedAt || 0)),
+  };
+}
+
+function legacyHasContent(value) {
+  return Boolean(
+    value.moments.length
+    || value.diaries.length
+    || value.albumItems.length
+    || value.summaries.length,
+  );
+}
+
+function normalizeDaily(value, previousVersion) {
+  const base = defaultDaily();
+  const daily = value && typeof value === 'object' ? value : {};
+  if (Number(previousVersion || 1) < 2 || !daily.cache) {
+    const legacy = normalizeLegacyDaily(daily);
+    return {
+      ...base,
+      momentCover: legacy.momentCover,
+      legacyDrafts: legacyHasContent(legacy) ? legacy : null,
+      legacyStatus: legacyHasContent(legacy) ? 'pending' : 'none',
+    };
+  }
+  const legacy = daily.legacyDrafts ? normalizeLegacyDaily(daily.legacyDrafts) : null;
+  return {
+    cache: normalizeDailyCache(daily.cache),
+    legacyDrafts: legacyHasContent(legacy || normalizeLegacyDaily({})) ? legacy : null,
+    legacyStatus: ['none', 'pending', 'completed', 'dismissed'].includes(daily.legacyStatus)
+      ? daily.legacyStatus
+      : legacy ? 'pending' : 'none',
+    momentCover: String(daily.momentCover || ''),
+  };
+}
+
 function normalize(value) {
   const base = defaults();
   return {
-    version: 1,
+    version: 2,
     preferences: { ...base.preferences, ...(value?.preferences || {}) },
     rooms: {
       radio: normalizeRoom(value?.rooms?.radio, 'radio'),
@@ -222,7 +324,7 @@ function normalize(value) {
       key,
       value?.runControl?.[key] ?? base.runControl[key],
     ])),
-    daily: normalizeDaily(value?.daily),
+    daily: normalizeDaily(value?.daily, value?.version),
     letters: value?.letters && typeof value.letters === 'object' ? value.letters : {},
     migration: {
       pending: Boolean(value?.migration?.pending),

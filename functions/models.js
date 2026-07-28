@@ -211,6 +211,31 @@ function supportsResponseFormat(model) {
   return Array.isArray(model?.supported_parameters) && model.supported_parameters.includes('response_format');
 }
 
+function supportsTools(modelId, model) {
+  const parameters = Array.isArray(model?.supported_parameters) ? model.supported_parameters : [];
+  if (parameters.length) {
+    return parameters.includes('tools') || parameters.includes('tool_choice');
+  }
+  return String(modelId || '').startsWith('openai/');
+}
+
+function normalizeTools(value) {
+  return (Array.isArray(value) ? value : [])
+    .filter((tool) => tool?.type === 'function'
+      && /^[a-zA-Z0-9_-]{1,64}$/.test(String(tool?.function?.name || ''))
+      && tool?.function?.parameters
+      && typeof tool.function.parameters === 'object')
+    .slice(0, 8)
+    .map((tool) => ({
+      type: 'function',
+      function: {
+        name: String(tool.function.name),
+        description: String(tool.function.description || '').slice(0, 2000),
+        parameters: tool.function.parameters,
+      },
+    }));
+}
+
 function chatPayload(modelId, messages, maxTokens, temperature, model, options = {}) {
   const payload = { model: modelId, messages };
   if (maxTokens !== null) {
@@ -220,6 +245,11 @@ function chatPayload(modelId, messages, maxTokens, temperature, model, options =
   if (supportsTemperature(modelId, model)) payload.temperature = temperature;
   if (options.responseFormat && supportsResponseFormat(model)) payload.response_format = options.responseFormat;
   if (options.reasoning && supportsReasoningControl(modelId, model)) payload.reasoning = options.reasoning;
+  const tools = supportsTools(modelId, model) ? normalizeTools(options.tools) : [];
+  if (tools.length) {
+    payload.tools = tools;
+    payload.tool_choice = options.toolChoice || 'auto';
+  }
   return payload;
 }
 
@@ -347,6 +377,8 @@ async function prepareFormalChat(env, input, allowSystem) {
     payload: chatPayload(modelId, messages, maxTokens, temperature, model, {
       responseFormat: input.response_format || null,
       reasoning: input.reasoning || null,
+      tools: input.tools,
+      toolChoice: input.tool_choice,
     }),
   };
 }
@@ -403,6 +435,77 @@ function streamChunkError(value, modelId) {
   return new ModelRequestError(type, message, 502, { model: modelId });
 }
 
+export function normalizeToolCalls(value) {
+  const calls = Array.isArray(value) ? value : [];
+  return calls.slice(0, 8).map((call) => {
+    const id = String(call?.id || '').slice(0, 160);
+    const name = String(call?.function?.name || '').slice(0, 64);
+    const rawArguments = call?.function?.arguments;
+    const args = typeof rawArguments === 'string'
+      ? rawArguments
+      : JSON.stringify(rawArguments && typeof rawArguments === 'object' ? rawArguments : {});
+    if (!id || !/^[a-zA-Z0-9_-]{1,64}$/.test(name)) {
+      throw new ModelRequestError('invalid_provider_response', '模型返回了无效的工具调用。', 502);
+    }
+    return {
+      id,
+      type: 'function',
+      function: {
+        name,
+        arguments: args.slice(0, 24000),
+      },
+    };
+  });
+}
+
+function addUsage(left, right) {
+  const current = normalizeUsage(left);
+  const next = normalizeUsage(right);
+  if (!current) return next;
+  if (!next) return current;
+  return {
+    prompt_tokens: current.prompt_tokens + next.prompt_tokens,
+    completion_tokens: current.completion_tokens + next.completion_tokens,
+    total_tokens: current.total_tokens + next.total_tokens,
+  };
+}
+
+function safeToolFailure(error) {
+  return {
+    ok: false,
+    error: {
+      type: String(error?.type || 'tool_execution_failed').slice(0, 120),
+      message: String(error?.message || '工具执行失败。').slice(0, 500),
+    },
+  };
+}
+
+async function executeToolCalls(calls, executeTool) {
+  const results = [];
+  const messages = [];
+  for (const call of calls) {
+    let value;
+    try {
+      value = await executeTool(call);
+    } catch (error) {
+      value = safeToolFailure(error);
+    }
+    const normalized = value && typeof value === 'object' ? value : { ok: true, result: value ?? null };
+    results.push({
+      id: call.id,
+      name: call.function.name,
+      result: normalized,
+    });
+    messages.push({
+      role: 'tool',
+      tool_call_id: call.id,
+      name: call.function.name,
+      content: JSON.stringify(normalized).slice(0, 12000),
+    });
+  }
+  return { results, messages };
+}
+
 export async function performFormalChat(env, input = {}, { allowSystem = false } = {}) {
   const prepared = await prepareFormalChat(env, input, allowSystem);
   const upstream = await requestOpenRouter(env, prepared.payload, 'Elementera Coast Formal Chat');
@@ -416,52 +519,183 @@ export async function performFormalChat(env, input = {}, { allowSystem = false }
   };
 }
 
-export async function* performFormalChatStream(env, input = {}, { allowSystem = false, signal } = {}) {
+export async function performFormalChatWithTools(env, input = {}, {
+  allowSystem = false,
+  executeTool,
+} = {}) {
   const prepared = await prepareFormalChat(env, input, allowSystem);
-  const payload = {
+  const upstream = await requestOpenRouter(env, prepared.payload, 'Elementera Coast Formal Chat');
+  const choice = upstream?.choices?.[0] || {};
+  const calls = normalizeToolCalls(choice?.message?.tool_calls);
+  if (!calls.length) {
+    return {
+      ok: true,
+      model: upstream?.model || prepared.modelId,
+      message: { role: 'assistant', content: typeof choice?.message?.content === 'string' ? choice.message.content : '' },
+      usage: normalizeUsage(upstream?.usage),
+      finish_reason: choice?.finish_reason || null,
+      tool_results: [],
+    };
+  }
+  if (choice?.finish_reason !== 'tool_calls') {
+    throw new ModelRequestError('invalid_provider_response', '模型返回了不完整的工具调用状态。', 502);
+  }
+  if (typeof executeTool !== 'function') {
+    throw new ModelRequestError('tool_executor_missing', '模型请求了工具，但海岸没有可用的执行器。', 502);
+  }
+  const executed = await executeToolCalls(calls, executeTool);
+  const followPayload = {
+    ...prepared.payload,
+    messages: [
+      ...prepared.payload.messages,
+      {
+        role: 'assistant',
+        content: typeof choice?.message?.content === 'string' ? choice.message.content : null,
+        tool_calls: calls,
+      },
+      ...executed.messages,
+    ],
+    tool_choice: 'none',
+  };
+  const follow = await requestOpenRouter(env, followPayload, 'Elementera Coast Formal Chat');
+  const followChoice = follow?.choices?.[0] || {};
+  if (normalizeToolCalls(followChoice?.message?.tool_calls).length) {
+    throw new ModelRequestError('invalid_provider_response', '模型返回了无法完成的连续工具调用。', 502);
+  }
+  return {
+    ok: true,
+    model: follow?.model || upstream?.model || prepared.modelId,
+    message: {
+      role: 'assistant',
+      content: typeof followChoice?.message?.content === 'string' ? followChoice.message.content : '',
+    },
+    usage: addUsage(upstream?.usage, follow?.usage),
+    finish_reason: followChoice?.finish_reason || null,
+    tool_results: executed.results,
+  };
+}
+
+function appendStreamToolCalls(target, chunks) {
+  for (const chunk of Array.isArray(chunks) ? chunks : []) {
+    const index = Number.isFinite(Number(chunk?.index)) ? Number(chunk.index) : target.size;
+    const current = target.get(index) || {
+      id: '',
+      type: 'function',
+      function: { name: '', arguments: '' },
+    };
+    if (chunk?.id) current.id = String(chunk.id).slice(0, 160);
+    if (chunk?.function?.name) current.function.name += String(chunk.function.name);
+    if (chunk?.function?.arguments) current.function.arguments += String(chunk.function.arguments);
+    target.set(index, current);
+  }
+}
+
+export async function* performFormalChatStream(env, input = {}, {
+  allowSystem = false,
+  signal,
+  executeTool,
+} = {}) {
+  const prepared = await prepareFormalChat(env, input, allowSystem);
+  let payload = {
     ...prepared.payload,
     stream: true,
     stream_options: { include_usage: true },
   };
-  const response = await requestOpenRouterStream(env, payload, 'Elementera Coast Formal Chat', signal);
   let metaSent = false;
   let actualModel = prepared.modelId;
   let generationId = crypto.randomUUID();
-  let finishReason = null;
-  let providerDone = false;
+  let totalUsage = null;
+  let toolRound = 0;
 
-  for await (const block of readProviderSse(response)) {
-    const data = sseData(block);
-    if (data == null) continue;
-    if (data.trim() === '[DONE]') {
-      providerDone = true;
-      break;
-    }
-    let value;
-    try {
-      value = JSON.parse(data);
-    } catch {
-      throw new ModelRequestError('invalid_provider_response', '上游返回了无效的流式响应。', 502, { model: prepared.modelId });
-    }
-    if (value?.error) throw streamChunkError(value, prepared.modelId);
-    actualModel = String(value?.model || actualModel || prepared.modelId);
-    generationId = String(value?.id || generationId);
-    if (!metaSent) {
-      metaSent = true;
-      yield { event: 'meta', data: { model: actualModel, generation_id: generationId } };
-    }
-    const content = value?.choices?.[0]?.delta?.content;
-    if (typeof content === 'string' && content) yield { event: 'delta', data: { content } };
-    const usage = normalizeUsage(value?.usage);
-    if (usage) yield { event: 'usage', data: usage };
-    if (value?.choices?.[0]?.finish_reason != null) finishReason = String(value.choices[0].finish_reason);
-  }
+  while (true) {
+    const response = await requestOpenRouterStream(env, payload, 'Elementera Coast Formal Chat', signal);
+    let finishReason = null;
+    let providerDone = false;
+    let roundContent = '';
+    const toolChunks = new Map();
 
-  if (!providerDone && finishReason == null) {
-    throw new ModelRequestError('stream_incomplete', '上游流式响应提前中断。', 502, { model: prepared.modelId });
+    for await (const block of readProviderSse(response)) {
+      const data = sseData(block);
+      if (data == null) continue;
+      if (data.trim() === '[DONE]') {
+        providerDone = true;
+        break;
+      }
+      let value;
+      try {
+        value = JSON.parse(data);
+      } catch {
+        throw new ModelRequestError('invalid_provider_response', '上游返回了无效的流式响应。', 502, { model: prepared.modelId });
+      }
+      if (value?.error) throw streamChunkError(value, prepared.modelId);
+      actualModel = String(value?.model || actualModel || prepared.modelId);
+      generationId = String(value?.id || generationId);
+      if (!metaSent) {
+        metaSent = true;
+        yield { event: 'meta', data: { model: actualModel, generation_id: generationId } };
+      }
+      const delta = value?.choices?.[0]?.delta || {};
+      const content = delta.content;
+      if (typeof content === 'string' && content) {
+        roundContent += content;
+        yield { event: 'delta', data: { content } };
+      }
+      appendStreamToolCalls(toolChunks, delta.tool_calls);
+      totalUsage = addUsage(totalUsage, value?.usage);
+      if (value?.choices?.[0]?.finish_reason != null) finishReason = String(value.choices[0].finish_reason);
+    }
+
+    if (!providerDone && finishReason == null) {
+      throw new ModelRequestError('stream_incomplete', '上游流式响应提前中断。', 502, { model: prepared.modelId });
+    }
+    const calls = normalizeToolCalls([...toolChunks.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([, call]) => call));
+    if (calls.length) {
+      if (finishReason !== 'tool_calls' || toolRound > 0 || typeof executeTool !== 'function') {
+        throw new ModelRequestError(
+          typeof executeTool === 'function' ? 'invalid_provider_response' : 'tool_executor_missing',
+          typeof executeTool === 'function'
+            ? '模型返回了无法完成的连续工具调用。'
+            : '模型请求了工具，但海岸没有可用的执行器。',
+          502,
+        );
+      }
+      const executed = await executeToolCalls(calls, executeTool);
+      for (const result of executed.results) {
+        yield {
+          event: 'tool',
+          data: {
+            id: result.id,
+            name: result.name,
+            ok: result.result?.ok !== false,
+            result: result.result,
+          },
+        };
+      }
+      payload = {
+        ...prepared.payload,
+        messages: [
+          ...prepared.payload.messages,
+          {
+            role: 'assistant',
+            content: roundContent || null,
+            tool_calls: calls,
+          },
+          ...executed.messages,
+        ],
+        tool_choice: 'none',
+        stream: true,
+        stream_options: { include_usage: true },
+      };
+      toolRound += 1;
+      continue;
+    }
+    if (!metaSent) yield { event: 'meta', data: { model: actualModel, generation_id: generationId } };
+    if (totalUsage) yield { event: 'usage', data: totalUsage };
+    yield { event: 'done', data: { finish_reason: finishReason } };
+    return;
   }
-  if (!metaSent) yield { event: 'meta', data: { model: actualModel, generation_id: generationId } };
-  yield { event: 'done', data: { finish_reason: finishReason } };
 }
 
 export async function handleModels(request, env) {
