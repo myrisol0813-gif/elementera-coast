@@ -7,10 +7,5 @@
   },
   "devDependencies": {
     "happy-dom": "18.0.1"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "1.30.0",
-    "jose": "6.2.4",
-    "zod": "4.3.6"
   }
 }

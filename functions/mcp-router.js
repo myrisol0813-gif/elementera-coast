@@ -1,13 +1,24 @@
-import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { apiError, json } from './http.js';
 import { McpAuthError, MCP_SCOPES, mcpResourceMetadata } from './mcp-auth.js';
-import { coastMcpToolNames, coastMcpVersion, createCoastMcpServer } from './mcp-tools.js';
+import {
+  callCoastMcpTool,
+  coastMcpInstructions,
+  coastMcpToolNames,
+  coastMcpVersion,
+  listCoastMcpTools,
+} from './mcp-tools.js';
 
 const PUBLIC_PATHS = new Set([
   '/.well-known/oauth-protected-resource',
   '/mcp',
   '/mcp/health',
   '/mcp/manifest',
+]);
+const SUPPORTED_PROTOCOL_VERSIONS = new Set([
+  '2024-11-05',
+  '2025-03-26',
+  '2025-06-18',
+  '2025-11-25',
 ]);
 
 function corsHeaders(extra = {}) {
@@ -20,14 +31,95 @@ function corsHeaders(extra = {}) {
   };
 }
 
-function withCors(response) {
-  const headers = new Headers(response.headers);
-  for (const [key, value] of Object.entries(corsHeaders())) headers.set(key, value);
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  });
+function rpcError(id, code, message, data) {
+  return {
+    jsonrpc: '2.0',
+    id: id ?? null,
+    error: {
+      code,
+      message,
+      ...(data === undefined ? {} : { data }),
+    },
+  };
+}
+
+function rpcResult(id, result) {
+  return { jsonrpc: '2.0', id, result };
+}
+
+function validRequest(value) {
+  return value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && value.jsonrpc === '2.0'
+    && typeof value.method === 'string';
+}
+
+function protocolVersion(params) {
+  const requested = String(params?.protocolVersion || '');
+  return SUPPORTED_PROTOCOL_VERSIONS.has(requested) ? requested : null;
+}
+
+async function handleRpcMessage(message, request, env) {
+  if (!validRequest(message)) return rpcError(message?.id, -32600, 'Invalid Request');
+  const notification = message.id === undefined;
+  if (notification) return null;
+  if (message.method === 'initialize') {
+    const version = protocolVersion(message.params);
+    if (!version) {
+      return rpcError(message.id, -32602, 'Unsupported protocolVersion', {
+        supported: [...SUPPORTED_PROTOCOL_VERSIONS],
+      });
+    }
+    return rpcResult(message.id, {
+      protocolVersion: version,
+      capabilities: { tools: { listChanged: false } },
+      serverInfo: {
+        name: 'elementera-coast-porch',
+        title: 'Elementera Coast MCP Porch',
+        version: coastMcpVersion,
+      },
+      instructions: coastMcpInstructions,
+    });
+  }
+  if (message.method === 'ping') return rpcResult(message.id, {});
+  if (message.method === 'tools/list') {
+    return rpcResult(message.id, { tools: listCoastMcpTools() });
+  }
+  if (message.method === 'tools/call') {
+    const params = message.params;
+    if (!params || typeof params !== 'object' || Array.isArray(params) || typeof params.name !== 'string') {
+      return rpcError(message.id, -32602, 'Invalid tools/call parameters');
+    }
+    const result = await callCoastMcpTool(
+      params.name,
+      params.arguments,
+      request,
+      env,
+      params._meta || {},
+    );
+    return rpcResult(message.id, result);
+  }
+  return rpcError(message.id, -32601, 'Method not found');
+}
+
+async function handleMcpPost(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json(rpcError(null, -32700, 'Parse error'), 400, corsHeaders());
+  }
+  if (Array.isArray(body)) {
+    if (!body.length) return json(rpcError(null, -32600, 'Invalid Request'), 400, corsHeaders());
+    const responses = (await Promise.all(body.map((message) => handleRpcMessage(message, request, env))))
+      .filter(Boolean);
+    if (!responses.length) return new Response(null, { status: 202, headers: corsHeaders() });
+    return json(responses, 200, corsHeaders());
+  }
+  const response = await handleRpcMessage(body, request, env);
+  if (!response) return new Response(null, { status: 202, headers: corsHeaders() });
+  return json(response, 200, corsHeaders());
 }
 
 export function isMcpPublicPath(pathname) {
@@ -62,19 +154,24 @@ export async function routeMcpRequest(request, env) {
     try {
       return json(mcpResourceMetadata(request, env), 200, corsHeaders());
     } catch (error) {
-      if (error instanceof McpAuthError) return apiError(error.type, error.message, error.status);
+      if (error instanceof McpAuthError) {
+        return json({ type: error.type, message: error.message }, error.status, corsHeaders());
+      }
       throw error;
     }
   }
   if (url.pathname !== '/mcp') return apiError('not_found', 'Not found.', 404);
-  if (!['GET', 'POST'].includes(request.method)) {
-    return new Response('Method Not Allowed', { status: 405, headers: corsHeaders({ Allow: 'GET, POST' }) });
+  if (request.method === 'GET') {
+    return new Response('Method Not Allowed', {
+      status: 405,
+      headers: corsHeaders({ Allow: 'POST' }),
+    });
   }
-  const transport = new WebStandardStreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-    enableJsonResponse: true,
-  });
-  const server = createCoastMcpServer(request, env);
-  await server.connect(transport);
-  return withCors(await transport.handleRequest(request));
+  if (request.method !== 'POST') {
+    return new Response('Method Not Allowed', {
+      status: 405,
+      headers: corsHeaders({ Allow: 'POST' }),
+    });
+  }
+  return handleMcpPost(request, env);
 }

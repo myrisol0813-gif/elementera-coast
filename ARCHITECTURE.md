@@ -38,7 +38,7 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 | Daily persistence and API | `functions/daily-schema.js`, `functions/daily-store.js`, `functions/daily-api.js` | Non-destructive D1 schema, Daily records, authenticated REST routes, atomic summary commit |
 | Daily summary and model tools | `functions/daily-summary.js`, `functions/daily-model-tools.js`, `functions/models.js` | Summary range/source assembly, strict JSON draft, real server-side tool calls for Moments and Album references |
 | MCP identity and OAuth | `functions/coast-identity.js`, `functions/mcp-auth.js` | Non-forgeable surface signatures, Auth0 issuer/audience/expiry/subject/email/scope verification |
-| MCP Streamable HTTP owner | `functions/mcp-router.js`, `functions/mcp-tools.js` | Public discovery, stateless Streamable HTTP, eight approved private tools |
+| MCP Streamable HTTP owner | `functions/mcp-router.js`, `functions/mcp-tools.js` | Native Pages JSON-RPC transport, public discovery, eight approved private tools, no npm-install build dependency |
 | Authored soil and room persistence | `functions/coast-schema.js`, `functions/official-soil-store.js`, `functions/radio-store.js`, `functions/lighthouse-store.js` | Append-only official soil, three-party radio, low-frequency lighthouse letters, provenance and idempotency |
 | Server room API | `functions/coast-api.js`, `functions/radio-myri.js`, `functions/authorized-memory.js` | Same-origin web room routes, API Myri radio response, curated memory reads without raw chat |
 

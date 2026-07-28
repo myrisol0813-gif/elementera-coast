@@ -1,10 +1,6 @@
 import assert from 'node:assert/strict';
+import { createSign, generateKeyPairSync } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import {
-  SignJWT,
-  exportJWK,
-  generateKeyPair,
-} from 'jose';
 import { routeApi } from '../functions/api-router.js';
 import { searchAuthorizedMemory } from '../functions/authorized-memory.js';
 import { ensureCoastSchema, coastMigrationIds } from '../functions/coast-schema.js';
@@ -137,52 +133,9 @@ assert.throws(
   (error) => error.type === 'mcp_email_denied',
 );
 
-const { privateKey, publicKey } = await generateKeyPair('RS256');
+const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const kid = 'coast-test-key';
-const publicJwk = { ...await exportJWK(publicKey), alg: 'RS256', use: 'sig', kid };
-async function token(scopes, overrides = {}) {
-  const now = Math.floor(Date.now() / 1000);
-  let builder = new SignJWT({
-    scope: scopes.join(' '),
-    [emailClaim]: overrides.email || email,
-    [emailVerifiedClaim]: overrides.email_verified ?? true,
-  })
-    .setProtectedHeader({ alg: 'RS256', kid })
-    .setIssuer(overrides.issuer || issuer)
-    .setAudience(overrides.audience || audience)
-    .setSubject(overrides.subject || subject)
-    .setIssuedAt(now)
-    .setExpirationTime(overrides.expired ? now - 60 : now + 300);
-  return builder.sign(privateKey);
-}
-
-const fullToken = await token(['read:coast', 'write:soil', 'write:radio', 'write:lighthouse']);
-const directAuth = await requireMcpAuth(new Request('https://coast.test/mcp', {
-  headers: { Authorization: `Bearer ${fullToken}` },
-}), env, ['write:soil'], publicKey);
-assert.equal(directAuth.subject, subject);
-await assert.rejects(
-  () => requireMcpAuth(new Request('https://coast.test/mcp', {
-    headers: { Authorization: `Bearer ${fullToken}` },
-  }), {
-    ...env,
-    COAST_MCP_ALLOWED_EMAILS: 'another@example.test',
-  }, ['read:coast'], publicKey),
-  (error) => error.type === 'mcp_email_denied',
-);
-for (const rejectedToken of [
-  await token(['read:coast'], { issuer: 'https://other-issuer.example/' }),
-  await token(['read:coast'], { audience: 'https://other-resource.example/mcp' }),
-  await token(['read:coast'], { expired: true }),
-]) {
-  await assert.rejects(
-    () => requireMcpAuth(new Request('https://coast.test/mcp', {
-      headers: { Authorization: `Bearer ${rejectedToken}` },
-    }), env, ['read:coast'], publicKey),
-    (error) => error.type === 'invalid_access_token',
-  );
-}
-
+const publicJwk = { ...publicKey.export({ format: 'jwk' }), alg: 'RS256', use: 'sig', kid };
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (input, options) => {
   if (String(input) === `${issuer}.well-known/jwks.json`) {
@@ -193,6 +146,64 @@ globalThis.fetch = async (input, options) => {
   }
   return originalFetch(input, options);
 };
+
+function jsonBase64Url(value) {
+  return Buffer.from(JSON.stringify(value)).toString('base64url');
+}
+
+async function token(scopes, overrides = {}) {
+  const now = Math.floor(Date.now() / 1000);
+  const header = jsonBase64Url({ alg: 'RS256', kid });
+  const payload = jsonBase64Url({
+    scope: scopes.join(' '),
+    [emailClaim]: overrides.email || email,
+    [emailVerifiedClaim]: overrides.email_verified ?? true,
+    iss: overrides.issuer || issuer,
+    aud: overrides.audience || audience,
+    sub: overrides.subject || subject,
+    iat: now,
+    exp: overrides.expired ? now - 60 : now + 300,
+  });
+  const signingInput = `${header}.${payload}`;
+  const signer = createSign('RSA-SHA256');
+  signer.update(signingInput);
+  signer.end();
+  return `${signingInput}.${signer.sign(privateKey).toString('base64url')}`;
+}
+
+const fullToken = await token(['read:coast', 'write:soil', 'write:radio', 'write:lighthouse']);
+const fullTokenParts = fullToken.split('.');
+const tamperedToken = [
+  fullTokenParts[0],
+  fullTokenParts[1],
+  `${fullTokenParts[2][0] === 'A' ? 'B' : 'A'}${fullTokenParts[2].slice(1)}`,
+].join('.');
+const directAuth = await requireMcpAuth(new Request('https://coast.test/mcp', {
+  headers: { Authorization: `Bearer ${fullToken}` },
+}), env, ['write:soil']);
+assert.equal(directAuth.subject, subject);
+await assert.rejects(
+  () => requireMcpAuth(new Request('https://coast.test/mcp', {
+    headers: { Authorization: `Bearer ${fullToken}` },
+  }), {
+    ...env,
+    COAST_MCP_ALLOWED_EMAILS: 'another@example.test',
+  }, ['read:coast']),
+  (error) => error.type === 'mcp_email_denied',
+);
+for (const rejectedToken of [
+  await token(['read:coast'], { issuer: 'https://other-issuer.example/' }),
+  await token(['read:coast'], { audience: 'https://other-resource.example/mcp' }),
+  await token(['read:coast'], { expired: true }),
+  tamperedToken,
+]) {
+  await assert.rejects(
+    () => requireMcpAuth(new Request('https://coast.test/mcp', {
+      headers: { Authorization: `Bearer ${rejectedToken}` },
+    }), env, ['read:coast']),
+    (error) => error.type === 'invalid_access_token',
+  );
+}
 
 const mcpHeaders = {
   Accept: 'application/json, text/event-stream',
@@ -236,7 +247,15 @@ assert.deepEqual(toolList.result.tools.map((tool) => tool.name), [
 for (const tool of toolList.result.tools) {
   assert.equal(tool._meta.securitySchemes[0].type, 'oauth2');
   assert.ok(tool._meta.securitySchemes[0].scopes.length >= 1);
+  assert.deepEqual(tool.securitySchemes, tool._meta.securitySchemes);
 }
+
+const initializedNotification = await routeMcpRequest(new Request('https://coast.test/mcp', {
+  method: 'POST',
+  headers: mcpHeaders,
+  body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+}), env);
+assert.equal(initializedNotification.status, 202);
 
 const missingAuth = await mcp({
   jsonrpc: '2.0',
@@ -348,7 +367,7 @@ assert.equal(manifest.status, 200);
 assert.equal((await manifest.json()).authentication, 'oauth2');
 const metadata = await routeMcpRequest(new Request('https://coast.test/.well-known/oauth-protected-resource'), env);
 assert.equal(metadata.status, 200);
-assert.equal((await metadata.json()).authorization_servers[0], issuer.replace(/\/$/, ''));
+assert.equal((await metadata.json()).authorization_servers[0], issuer);
 const health = await routeMcpRequest(new Request('https://coast.test/mcp/health'), {});
 assert.equal(health.status, 200);
 assert.equal((await health.json()).transport, 'streamable-http');

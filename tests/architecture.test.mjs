@@ -201,6 +201,7 @@ const mcpOwnerSource = (await Promise.all([
   'radio-store.js',
   'lighthouse-store.js',
 ].map((file) => read(join(repo, 'functions', file))))).join('\n');
+const packageSource = JSON.parse(await read(join(repo, 'package.json')));
 assert.equal(/_middleware\.full|legacyOnRequest|COAST_CHAT_STORE/.test(middleware + chatRouter + storeSource + schemaSource), false);
 assert.equal(/readLegacy|importLegacy|\bturns\s+WHERE|user_variants|assistant_variants/.test(storeSource), false);
 assert.ok(chatRouter.includes("source: 'd1-json-v4'"));
@@ -234,6 +235,12 @@ assert.equal(
   false,
   'MCP owners cannot use compatibility bridges, hidden markers, reply scanning, or dynamic scripts',
 );
+assert.equal(
+  /from\s+['"](?:@modelcontextprotocol\/sdk|jose|zod(?:\/v4)?)['"]/.test(mcpOwnerSource),
+  false,
+  'Pages Functions MCP owners must remain deployable without an npm install build step',
+);
+assert.equal(packageSource.dependencies, undefined, 'production Functions must not rely on uninstalled npm dependencies');
 for (const deferredTool of [
   'create_moment_from_mcp',
   'save_album_reference_from_mcp',

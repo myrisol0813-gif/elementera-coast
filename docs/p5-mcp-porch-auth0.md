@@ -5,6 +5,7 @@ This document is a configuration contract, not a credential file. Never place a 
 ## Security shape
 
 - Cloudflare Pages is the OAuth resource server and exposes the stable Streamable HTTP endpoint at `/mcp`.
+- The Pages Functions implementation uses Web Crypto and native JSON-RPC only, so the existing project can keep its empty build command and does not depend on an npm install step.
 - Auth0 is the authorization server. It signs RS256 access tokens and publishes JWKS.
 - ChatGPT is an OAuth public client using authorization code + PKCE, or a predefined client configured in the ChatGPT plugin connection.
 - Coast web login remains separate. The Coast password and `__Host-coast_session` cookie are never accepted as MCP credentials.
