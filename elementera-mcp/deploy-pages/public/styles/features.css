@@ -359,7 +359,7 @@
   gap: 11px;
 }
 
-/* Local radio and lighthouse rooms */
+/* Server radio and lighthouse rooms */
 .local-room .feature-body {
   padding-bottom: 22px;
 }
@@ -401,6 +401,30 @@
   font-size: 11px;
 }
 
+.local-message.is-official > div {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+.local-message.is-api > div {
+  box-shadow: inset 3px 0 0 #f59a58;
+}
+
+.local-room-state {
+  align-self: center;
+  justify-self: center;
+  color: var(--muted);
+  text-align: center;
+}
+
+.local-room-state button,
+.lighthouse-letter button {
+  margin-top: 9px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
 .local-room-composer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -428,6 +452,67 @@
   background: var(--accent);
   color: var(--accent-contrast);
   font-weight: 650;
+}
+
+.lighthouse-letter-list {
+  display: grid;
+  gap: 14px;
+}
+
+.lighthouse-letter {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface-soft);
+}
+
+.lighthouse-letter.is-unread {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.lighthouse-letter header {
+  display: grid;
+  gap: 4px;
+}
+
+.lighthouse-letter header small,
+.letter-read-state {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.lighthouse-letter > div {
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.lighthouse-letter button {
+  justify-self: start;
+}
+
+.lighthouse-composer {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.lighthouse-composer input {
+  grid-column: 1;
+  min-height: 38px;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--surface-soft);
+}
+
+.lighthouse-composer textarea {
+  grid-column: 1;
+  min-height: 70px;
+}
+
+.lighthouse-composer button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 /* Model box */

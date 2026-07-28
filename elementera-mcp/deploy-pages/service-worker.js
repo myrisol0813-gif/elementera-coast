@@ -1,13 +1,13 @@
-const CACHE_NAME = 'elementera-coast-app-15';
+const CACHE_NAME = 'elementera-coast-app-16';
 const CORE = Object.freeze([
   '/',
   '/index.html',
   '/manifest.json',
-  '/public/styles/tokens.css?v=coast-app-15',
-  '/public/styles/shell.css?v=coast-app-15',
-  '/public/styles/chat.css?v=coast-app-15',
-  '/public/styles/features.css?v=coast-app-15',
-  '/public/app.js?v=coast-app-15',
+  '/public/styles/tokens.css?v=coast-app-16',
+  '/public/styles/shell.css?v=coast-app-16',
+  '/public/styles/chat.css?v=coast-app-16',
+  '/public/styles/features.css?v=coast-app-16',
+  '/public/app.js?v=coast-app-16',
   '/public/core/api.js',
   '/public/core/dom.js',
   '/public/core/icons.js',
@@ -51,7 +51,10 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith('/api/') || ['/login', '/logout'].includes(url.pathname)) return;
+  if (url.pathname.startsWith('/api/')
+    || url.pathname.startsWith('/mcp')
+    || url.pathname.startsWith('/.well-known/')
+    || ['/login', '/logout'].includes(url.pathname)) return;
 
   if (request.mode === 'navigate') {
     event.respondWith(fetch(request).catch(async () => (

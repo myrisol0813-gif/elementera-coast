@@ -23,6 +23,9 @@ export const API = Object.freeze({
   dailySummaryRange: '/api/daily/summary/range',
   dailySummaryRun: '/api/daily/summary/run',
   dailySummaryCommit: '/api/daily/summary/commit',
+  radioMessages: '/api/radio/messages',
+  radioAskApiMyri: '/api/radio/ask-api-myri',
+  lighthouseLetters: '/api/lighthouse/letters',
 });
 
 export class ApiError extends Error {

@@ -13,7 +13,7 @@ const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 const headers = await read(join(pages, '_headers'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-15"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-16"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 
@@ -84,8 +84,10 @@ assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(join(pages, 'service-worker.js'));
-assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-15';$/m);
+assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-16';$/m);
 assert.ok(worker.includes("url.pathname.startsWith('/api/')"));
+assert.ok(worker.includes("url.pathname.startsWith('/mcp')"));
+assert.ok(worker.includes("url.pathname.startsWith('/.well-known/')"));
 assert.equal(worker.includes("caches.match('/index.html')"), true);
 assert.equal(worker.includes('modules/legacy'), false);
 const coreBlock = worker.slice(worker.indexOf('const CORE'), worker.indexOf(']);', worker.indexOf('const CORE')) + 2);
@@ -189,6 +191,16 @@ const embeddingSource = await read(join(repo, 'functions/embedding.js'));
 const memoryRecallSource = await read(join(repo, 'functions/memory-recall.js'));
 const memoryRouterSource = await read(join(repo, 'functions/memory-router.js'));
 const toolsSource = await read(join(moduleRoot, 'features/tools.js'));
+const mcpOwnerSource = (await Promise.all([
+  'mcp-router.js',
+  'mcp-tools.js',
+  'mcp-auth.js',
+  'coast-api.js',
+  'radio-myri.js',
+  'official-soil-store.js',
+  'radio-store.js',
+  'lighthouse-store.js',
+].map((file) => read(join(repo, 'functions', file))))).join('\n');
 assert.equal(/_middleware\.full|legacyOnRequest|COAST_CHAT_STORE/.test(middleware + chatRouter + storeSource + schemaSource), false);
 assert.equal(/readLegacy|importLegacy|\bturns\s+WHERE|user_variants|assistant_variants/.test(storeSource), false);
 assert.ok(chatRouter.includes("source: 'd1-json-v4'"));
@@ -217,6 +229,18 @@ assert.ok(dailyStoreSource.includes('image_data_url_not_allowed'));
 assert.equal(/hidden[_ -]?marker|reply[_ -]?scanner|scanReply|MutationObserver/.test(
   `${dailySource}\n${dailyClientSource}\n${dailyToolsSource}\n${chatRouter}`,
 ), false, 'Daily tools cannot be implemented through reply markers or DOM scanning');
+assert.equal(
+  /hidden[_ -]?marker|reply[_ -]?scanner|scanReply|MutationObserver|createElement\(['"]script['"]\)|\b(?:compat|wrapper|bridge)\b/i.test(mcpOwnerSource),
+  false,
+  'MCP owners cannot use compatibility bridges, hidden markers, reply scanning, or dynamic scripts',
+);
+for (const deferredTool of [
+  'create_moment_from_mcp',
+  'save_album_reference_from_mcp',
+  'run_daily_summary_from_mcp',
+]) {
+  assert.equal(mcpOwnerSource.includes(`registerTool('${deferredTool}'`), false, `${deferredTool} must stay out of MCP v1`);
+}
 for (const table of ['conversation_soils', 'memory_pockets', 'pocket_recall_memberships', 'memory_entries']) {
   assert.ok(memoryStoreSource.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `missing memory table: ${table}`);
 }

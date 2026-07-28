@@ -3,14 +3,14 @@
 Status: canonical Pages application contract
 Rebuild origin: `main@e21505e7e58c90eb422cad29981e5ea5c59bfe6c`
 
-This contract covers the Cloudflare Pages document, browser runtime, service worker, and root `functions/` API. The standalone Node MCP service under `elementera-mcp/` is a separate runtime with its own routes, data files, and tests; it is not loaded by or deployed as part of this Pages application.
+This contract covers the Cloudflare Pages document, browser runtime, service worker, root `functions/` API, and the production Streamable HTTP MCP porch at `/mcp`. The old standalone Node service under `elementera-mcp/` remains a separate historical development runtime and is not loaded by or deployed as part of the Pages application.
 
 ## Non-negotiable construction rules
 
 1. `index.html` is the only app document and loads one module entry: `public/app.js`. `/app.html` and `/gptlike` are URL aliases declared in `_redirects`, not duplicate documents.
 2. Each feature has one controller and one state owner. A feature may call shared services, but it may not scan for or replace another feature's DOM.
 3. Runtime ownership must not depend on global guard flags, delayed reclaims, `MutationObserver`, dynamic script injection, selector sweeps, duplicate DOM normalization, or compatibility loaders.
-4. D1 is the only owner of main-chat conversations, histories, synced model profile, and committed Daily content. Local storage is reserved for explicitly local preferences, local-only rooms, Daily read cache, and unconfirmed legacy drafts.
+4. D1 is the only owner of main-chat conversations, histories, synced model profile, committed Daily content, authored MCP soil, radio messages, and lighthouse letters. Local storage is reserved for explicitly local preferences, preserved pre-server room archives, Daily read cache, and unconfirmed legacy drafts.
 5. Every visible icon is real inline SVG produced by the icon module. No empty pseudo-element, font glyph, base64 duplicate, or selector-dependent icon ownership is allowed.
 6. A failed request is shown as a failed request. The app must not silently switch data owners or resurrect deleted data.
 7. The rebuild contains one explicit local-storage migration and one versioned D1 schema migration. After the local migration succeeds, old keys are removed. There are no permanent fallback readers.
@@ -28,7 +28,7 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 | Main chat | `public/features/chat.js` | Conversation CRUD, branches, generation, actions, D1 sync |
 | Model box | `public/features/models.js` | Catalog, current model, synced model profile |
 | Wolf Den and Serpent Desk | `public/features/settings.js` | Appearance, profile, export/import, notes, diagnostics |
-| Radio and lighthouse rooms | `public/features/rooms.js` | Local room windows and local messages |
+| Radio and lighthouse rooms | `public/features/rooms.js` | Server-synced radio messages, API Myri participation, low-frequency lighthouse letters |
 | Coast Daily UI | `public/features/daily.js`, `public/features/daily-client.js` | Existing Daily views, server requests, summary confirmation, one-time legacy-draft migration |
 | Island letter and lovebook | `public/features/letters.js` | Per-main-window/per-model letter state and editing |
 | Run control and API sandbox | `public/features/tools.js` | Request preferences, cleanup, fixed sandbox request |
@@ -37,6 +37,10 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 | Main-chat API | `functions/chat-router.js`, `functions/chat-store.js`, `functions/chat-schema.js` | Conversations, histories, profile, title, versioned D1 migration |
 | Daily persistence and API | `functions/daily-schema.js`, `functions/daily-store.js`, `functions/daily-api.js` | Non-destructive D1 schema, Daily records, authenticated REST routes, atomic summary commit |
 | Daily summary and model tools | `functions/daily-summary.js`, `functions/daily-model-tools.js`, `functions/models.js` | Summary range/source assembly, strict JSON draft, real server-side tool calls for Moments and Album references |
+| MCP identity and OAuth | `functions/coast-identity.js`, `functions/mcp-auth.js` | Non-forgeable surface signatures, Auth0 issuer/audience/expiry/subject/email/scope verification |
+| MCP Streamable HTTP owner | `functions/mcp-router.js`, `functions/mcp-tools.js` | Public discovery, stateless Streamable HTTP, eight approved private tools |
+| Authored soil and room persistence | `functions/coast-schema.js`, `functions/official-soil-store.js`, `functions/radio-store.js`, `functions/lighthouse-store.js` | Append-only official soil, three-party radio, low-frequency lighthouse letters, provenance and idempotency |
+| Server room API | `functions/coast-api.js`, `functions/radio-myri.js`, `functions/authorized-memory.js` | Same-origin web room routes, API Myri radio response, curated memory reads without raw chat |
 
 ## UI and behavior acceptance contract
 
@@ -80,9 +84,13 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 - Serpent Desk keeps Myri portrait, bubble preference placeholder, notes, construction status, local diagnostics, system-prompt draft, run control, and API sandbox.
 - Settings use one panel router and deterministic back destinations.
 
-### Local rooms
+### Radio and lighthouse
 
-- Radio and lighthouse each keep a default window, window creation, switching, and local message sending.
+- Radio is one D1-backed room shared by Xiaohan (`web_manual`), Coast API Myri (`coast_api`, `✦`), and official MCP Myri (`official_mcp`, `≋`).
+- Radio messages render body plus structured author/model/usage/time metadata. Official MCP usage remains `null`; it is never fabricated.
+- Xiaohan can send a web message and explicitly ask the homepage-selected API Myri to respond as `✦Myrisol`.
+- Lighthouse is a D1-backed low-frequency letter shelf with subject, body, source metadata, and read state. It is not an instant model chat.
+- Pre-server local room content remains present in the local export state but is not a canonical fallback reader.
 - Memory remains an honest non-connected placeholder and performs no reads or writes.
 
 ### Coast Daily
@@ -128,14 +136,19 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 - `/api/daily/summary/range`: preview the server-resolved boundaries for `since_last_summary` and `today`.
 - `/api/daily/summary/run`: generate a strict, editable summary draft without writing records; `range_mode` is either `since_last_summary` or `today`, the server resolves the click-time endpoint, and a first run starts at the earliest still-readable chat or Daily record.
 - `/api/daily/summary/commit`: atomically commit the confirmed summary and selected candidates.
+- `/api/radio/messages`: list or send messages in the shared radio room.
+- `/api/radio/ask-api-myri`: ask the homepage-selected Coast API Myri to respond in radio.
+- `/api/lighthouse/letters[/:id/read]`: list, write, and explicitly mark lighthouse letters read.
+- `/mcp`: public Streamable HTTP protocol and tool discovery; every tool call requires its declared Auth0 OAuth scope.
+- `/mcp/health`, `/mcp/manifest`, `/.well-known/oauth-protected-resource`: public discovery only; none returns private Coast content.
 
-All mutating API methods require a same-origin `Origin` or `Referer`. All app routes and assets require a valid session.
+All mutating web API methods require a same-origin `Origin` or `Referer`. MCP private reads and writes require a verified Auth0 access token and per-tool scope. All app routes and assets require a valid web session.
 
 ## Local storage registry
 
 Canonical keys after migration:
 
-- `elementera.local.v1`: local preferences, room data, run-control settings, letter data, latest Daily read cache, and unconfirmed legacy Daily drafts.
+- `elementera.local.v1`: local preferences, preserved pre-server room archives, run-control settings, island-letter data, latest Daily read cache, and unconfirmed legacy Daily drafts.
 - `elementera.currentConversation`: currently selected D1 conversation ID only.
 
 The migration imports supported values from the existing keys, then deletes those old keys. Main-chat content is not imported from browser storage because D1 already owns it at this baseline. Existing Daily content moves once into an explicit legacy-draft area; it is never silently deleted or continuously read as live data.
@@ -156,8 +169,9 @@ The migration imports supported values from the existing keys, then deletes thos
 
 1. Static architecture test: one document and one script entry; no duplicate app document, legacy path, guard flag, observer, ownership timer, dynamic script injection, or missing SVG symbol.
 2. State unit tests: user/assistant branch edit/delete/regenerate/reaction behavior.
-3. D1 tests: chat isolation and profile rules; Daily schema, provenance, conflict handling, image-reference boundary, atomic summary commit, and tool-call idempotency.
-4. DOM interaction tests: sidebar uniqueness, menus, SVG presence, local rooms, panels, Daily server reads and summary confirmation, letter actions, model selection.
-5. Service-worker test: every cached URL exists; API/login are never cached; cache version changes exactly once.
-6. Mobile render checks at 360×800 and 412×915 in light/dark/gold themes.
-7. Connector readback of every changed file and final branch diff before any main deployment.
+3. D1 tests: chat isolation and profile rules; Daily schema; MCP/radio/lighthouse schema and provenance; conflict handling; image-reference boundary; atomic summary commit; tool-call idempotency.
+4. MCP tests: unauthenticated discovery, OAuth identity allowlists, issuer/audience/expiry/signature verification, per-tool scopes, official signatures, and Streamable HTTP calls.
+5. DOM interaction tests: sidebar uniqueness, menus, SVG presence, server radio/lighthouse rooms, panels, Daily server reads and summary confirmation, letter actions, model selection.
+6. Service-worker test: every cached URL exists; API/MCP/OAuth discovery/login are never cached; cache version changes exactly once.
+7. Mobile render checks at 360×800 and 412×915 in light/dark/gold themes.
+8. Connector readback of every changed file and final branch diff before any main deployment.

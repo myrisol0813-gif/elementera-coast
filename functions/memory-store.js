@@ -1,4 +1,5 @@
 import { ensureChatSchema, getConversation, sanitizeId } from './chat-store.js';
+import { apiMyriIdentity, xiaohanIdentity } from './coast-identity.js';
 import { MEMORY_CONFIG } from './memory-config.js';
 
 export const MEMORY_OWNER_ID = MEMORY_CONFIG.owner;
@@ -106,6 +107,17 @@ async function initializeMemorySchema(db) {
     FOREIGN KEY (conversation_id) REFERENCES conversations(id)
   )`);
   await ensureColumn(db, 'conversation_soils', 'organized_through_turn_id', "TEXT NOT NULL DEFAULT ''");
+  for (const [column, declaration] of [
+    ['actor', "TEXT NOT NULL DEFAULT 'xiaohan'"],
+    ['surface', "TEXT NOT NULL DEFAULT 'web_manual'"],
+    ['model_label', 'TEXT DEFAULT NULL'],
+    ['model_nickname', 'TEXT DEFAULT NULL'],
+    ['symbol', "TEXT NOT NULL DEFAULT ''"],
+    ['display_author', "TEXT NOT NULL DEFAULT '小寒'"],
+    ['source_conversation_id', 'TEXT DEFAULT NULL'],
+    ['source_turn_id', 'TEXT DEFAULT NULL'],
+    ['tool_call_id', 'TEXT DEFAULT NULL'],
+  ]) await ensureColumn(db, 'conversation_soils', column, declaration);
   await run(db, `CREATE TABLE IF NOT EXISTS memory_pockets (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL DEFAULT 'owner',
@@ -329,6 +341,15 @@ function soilFromRow(row) {
     manual_locked: Number(row.manual_locked || 0) === 1,
     auto_refresh_enabled: Number(row.auto_refresh_enabled ?? 1) === 1,
     organized_through_turn_id: row.organized_through_turn_id || '',
+    actor: row.actor || 'xiaohan',
+    surface: row.surface || 'web_manual',
+    model_label: row.model_label || null,
+    model_nickname: row.model_nickname || null,
+    symbol: row.symbol || '',
+    display_author: row.display_author || '小寒',
+    source_conversation_id: row.source_conversation_id || row.conversation_id,
+    source_turn_id: row.source_turn_id || null,
+    tool_call_id: row.tool_call_id || null,
     revision: Math.max(1, Number(row.revision || 1)),
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
@@ -351,7 +372,7 @@ export async function readSoil(db, id) {
   return soilFromRow(await first(db, 'SELECT * FROM conversation_soils WHERE conversation_id = ?', [conversationId]));
 }
 
-export async function writeSoil(db, id, value = {}, { automatic = false } = {}) {
+export async function writeSoil(db, id, value = {}, { automatic = false, provenance = {} } = {}) {
   await ensureMemorySchema(db);
   const conversationId = sanitizeId(id, 'conversation');
   const current = await readSoil(db, conversationId);
@@ -368,10 +389,19 @@ export async function writeSoil(db, id, value = {}, { automatic = false } = {}) 
     manual_locked: has('manual_locked') ? bool(value.manual_locked) : !automatic,
     auto_refresh_enabled: has('auto_refresh_enabled') ? bool(value.auto_refresh_enabled) : current.auto_refresh_enabled,
   };
+  const identity = automatic
+    ? apiMyriIdentity({
+      model_label: provenance.model_label || current.model_label || '未标注模型',
+      model_nickname: provenance.model_nickname,
+    })
+    : xiaohanIdentity();
   const timestamp = Date.now();
   await run(db, `UPDATE conversation_soils SET
     current_text = ?, hand_seeds_json = ?, do_not_repeat = ?, pocket_candidates_json = ?,
-    manual_locked = ?, auto_refresh_enabled = ?, organized_through_turn_id = ?, revision = revision + 1, updated_at = ?
+    manual_locked = ?, auto_refresh_enabled = ?, organized_through_turn_id = ?,
+    actor = ?, surface = ?, model_label = ?, model_nickname = ?, symbol = ?, display_author = ?,
+    source_conversation_id = ?, source_turn_id = ?, tool_call_id = ?,
+    revision = revision + 1, updated_at = ?
     WHERE conversation_id = ?`, [
     next.current_text,
     JSON.stringify(next.hand_seeds),
@@ -380,6 +410,15 @@ export async function writeSoil(db, id, value = {}, { automatic = false } = {}) 
     next.manual_locked ? 1 : 0,
     next.auto_refresh_enabled ? 1 : 0,
     next.organized_through_turn_id,
+    identity.actor,
+    identity.surface,
+    identity.model_label,
+    identity.model_nickname,
+    identity.symbol,
+    identity.display_author,
+    clip(provenance.source_conversation_id || conversationId, 200),
+    clip(provenance.source_turn_id, 200) || null,
+    clip(provenance.tool_call_id, 240) || null,
     timestamp,
     conversationId,
   ]);

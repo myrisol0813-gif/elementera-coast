@@ -2,6 +2,7 @@ import { handleLogin, handleLogout, unauthorized, verifySession } from './auth.j
 import { routeApi } from './api-router.js';
 import { isChatApiPath, routeChatApi } from './chat-router.js';
 import { protectedResponse } from './http.js';
+import { isMcpPublicPath, routeMcpRequest } from './mcp-router.js';
 
 const PUBLIC_PWA_ASSETS = new Set([
   '/manifest.json',
@@ -20,6 +21,7 @@ export async function onRequest(context) {
   if (url.pathname === '/login') return handleLogin(request, env);
   if (url.pathname === '/logout') return handleLogout();
   if (['GET', 'HEAD'].includes(request.method) && PUBLIC_PWA_ASSETS.has(url.pathname)) return next();
+  if (isMcpPublicPath(url.pathname)) return routeMcpRequest(request, env);
 
   const session = await verifySession(request, env);
   if (!session) return unauthorized(request);

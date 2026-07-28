@@ -34,7 +34,7 @@ const memory = createMemory({ chat, router, toast, storage });
 const models = createModels({ chat, router, toast });
 const tools = createTools({ storage, router, toast, memory });
 const settings = createSettings({ storage, shell, chat, router, toast });
-const rooms = createRooms({ storage, router, toast });
+const rooms = createRooms({ chat, router, toast });
 const daily = createDaily({ storage, router, toast, chat });
 const letters = createLetters({ storage, chat, models, router, toast });
 

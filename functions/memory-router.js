@@ -511,7 +511,14 @@ async function organizeSoil(request, env) {
   const previousPocketSync = degradedReason
     ? null
     : await upsertSoilPocketCandidates(env.COAST_CHAT_DB, conversationId, oldSoil.pocket_candidates);
-  let writtenSoil = await writeSoil(env.COAST_CHAT_DB, conversationId, soilValue, { automatic: true });
+  let writtenSoil = await writeSoil(env.COAST_CHAT_DB, conversationId, soilValue, {
+    automatic: true,
+    provenance: {
+      model_label: organizedBy?.model_id || '',
+      source_conversation_id: conversationId,
+      source_turn_id: soilValue.organized_through_turn_id || '',
+    },
+  });
   if (organizedBy) {
     await saveGenerationProvenance(env.COAST_CHAT_DB, 'soil', conversationId, organizedBy);
     writtenSoil = await decorateSoilProvenance(env.COAST_CHAT_DB, writtenSoil);

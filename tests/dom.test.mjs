@@ -58,6 +58,9 @@ const dailyMoments = [];
 const dailyDiaries = [];
 const dailyAlbums = [];
 const dailySummaries = [];
+const radioMessages = [];
+const lighthouseLetters = [];
+let roomSequence = 0;
 
 function mockMoment(value = {}, author = 'xiaohan', source = 'manual') {
   const createdAt = now();
@@ -293,6 +296,68 @@ globalThis.fetch = async (input, options = {}) => {
   }
   if (url.pathname === '/api/daily/summaries') {
     return response({ ok: true, summaries: dailySummaries });
+  }
+  if (url.pathname === '/api/radio/messages') {
+    if (method === 'GET') return response({ ok: true, room_id: 'radio', messages: radioMessages });
+    const message = {
+      id: `radio-${++roomSequence}`,
+      room_id: 'radio',
+      text: body.text,
+      actor: 'xiaohan',
+      surface: 'web_manual',
+      model_label: null,
+      model_nickname: null,
+      symbol: '',
+      display_author: '小寒',
+      usage: null,
+      created_at: now(),
+    };
+    radioMessages.push(message);
+    return response({ ok: true, message }, 201);
+  }
+  if (url.pathname === '/api/radio/ask-api-myri') {
+    const message = {
+      id: `radio-${++roomSequence}`,
+      room_id: 'radio',
+      text: '✦ API Myri 收到了这条电波。',
+      actor: 'myri',
+      surface: 'coast_api',
+      model_label: body.model,
+      model_nickname: null,
+      symbol: '✦',
+      display_author: '✦Myrisol',
+      usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 },
+      created_at: now(),
+    };
+    radioMessages.push(message);
+    return response({ ok: true, message, model: body.model, memory_records: 2 }, 201);
+  }
+  if (url.pathname === '/api/lighthouse/letters') {
+    if (method === 'GET') return response({ ok: true, letters: lighthouseLetters });
+    const letter = {
+      id: `letter-${++roomSequence}`,
+      subject: body.subject || '',
+      body: body.body,
+      actor: 'xiaohan',
+      surface: 'web_manual',
+      model_label: null,
+      model_nickname: null,
+      symbol: '',
+      display_author: '小寒',
+      usage: null,
+      read_at: null,
+      created_at: now(),
+      updated_at: now(),
+    };
+    lighthouseLetters.unshift(letter);
+    return response({ ok: true, letter }, 201);
+  }
+  const lighthouseReadMatch = url.pathname.match(/^\/api\/lighthouse\/letters\/([^/]+)\/read$/);
+  if (lighthouseReadMatch) {
+    const letter = lighthouseLetters.find((item) => item.id === decodeURIComponent(lighthouseReadMatch[1]));
+    letter.read_at = body.read === false ? null : now();
+    letter.updated_at = now();
+    return response({ ok: true, letter });
   }
   if (url.pathname === '/api/daily/summary/range') {
     return response({
@@ -1016,9 +1081,29 @@ assert.equal(document.querySelectorAll('.message.user').length, visibleUsersBefo
 assert.equal(histories.get(landingConversationId).turns.length, 3, 'soil failure must not discard a saved landing reply');
 
 document.querySelector('[data-action="rooms:open"][data-kind="radio"]').click();
-await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'local-room', 'room route');
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'server-room', 'server radio route');
+await waitFor(() => document.querySelector('.local-message-list')?.textContent.includes('暂时还没有消息'), 'server radio loaded');
 document.querySelector('#localRoomInput').value = 'radio test';
 document.querySelector('.local-room-composer').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-await waitFor(() => document.querySelector('.local-message-list')?.textContent.includes('radio test'), 'local room send');
+await waitFor(() => document.querySelector('.local-message-list')?.textContent.includes('radio test'), 'server radio send');
+assert.ok(document.querySelector('.local-message-list').textContent.includes('小寒'));
+document.querySelector('[data-action="rooms:ask-api"]').click();
+await waitFor(() => document.querySelector('.local-message-list')?.textContent.includes('API Myri 收到了这条电波'), 'api Myri radio reply');
+assert.ok(document.querySelector('.local-message-list').textContent.includes('✦Myrisol'));
+assert.ok(document.querySelector('.local-message.is-api small').textContent.toLocaleLowerCase('en-US')
+  .includes(profile.current_chat_model.split('/').at(-1).split('-')[0].toLocaleLowerCase('en-US')));
+assert.ok(document.querySelector('.local-message.is-api small').textContent.includes('30 tokens'));
+
+document.querySelector('[data-action="router:back"]').click();
+await waitFor(() => document.querySelector('#overlayRoot').hidden, 'close server radio');
+document.querySelector('[data-action="rooms:open"][data-kind="lighthouse"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'server-room', 'server lighthouse route');
+await waitFor(() => document.querySelector('.lighthouse-letter-list')?.textContent.includes('暂时还没有来信'), 'server lighthouse loaded');
+document.querySelector('#lighthouseSubject').value = 'DOM 灯塔';
+document.querySelector('#localRoomInput').value = '这是一封低频长信。';
+document.querySelector('.lighthouse-composer').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+await waitFor(() => document.querySelector('.lighthouse-letter-list')?.textContent.includes('这是一封低频长信。'), 'server lighthouse send');
+document.querySelector('[data-action="rooms:mark-read"]').click();
+await waitFor(() => document.querySelector('.lighthouse-letter-list')?.textContent.includes('已读'), 'mark lighthouse letter read');
 
 console.log('dom: ok');
