@@ -1,6 +1,11 @@
 import { ensureChatSchema, getConversation, sanitizeId } from './chat-store.js';
 import { apiMyriIdentity, xiaohanIdentity } from './coast-identity.js';
 import { MEMORY_CONFIG } from './memory-config.js';
+import {
+  buildSafeSearchQuery,
+  rankSearchRecords,
+  searchMetadata,
+} from './search-query.js';
 
 export const MEMORY_OWNER_ID = MEMORY_CONFIG.owner;
 
@@ -19,6 +24,7 @@ const ENTRY_TYPES = new Set(['seed', 'memory']);
 const ENTRY_SCOPES = new Set(['conversation', 'global']);
 const ENTRY_STATUSES = new Set(['active', 'dormant', 'archived', 'stone', 'discarded']);
 const MEMORY_LEVELS = new Set(['ordinary', 'core']);
+const ENTRY_SEARCH_SCAN_LIMIT = 500;
 const schemaPromises = new WeakMap();
 
 export class MemoryStoreError extends Error {
@@ -992,14 +998,31 @@ export async function listEntries(db, options = {}) {
     conditions.push('status = ?');
     params.push(normalizeStatus(options.status));
   }
-  const query = clip(options.q, 240);
-  if (query) {
-    conditions.push('(title LIKE ? OR life_core LIKE ? OR content LIKE ? OR usage_hint LIKE ?)');
-    const pattern = `%${query}%`;
-    params.push(pattern, pattern, pattern, pattern);
-  }
+  const search = buildSafeSearchQuery(options.q);
   const limit = Math.min(100, Math.max(1, Number(options.limit) || 40));
   const offset = Math.max(0, Number(options.cursor) || 0);
+  if (search.terms.length) {
+    const rows = await all(db, `SELECT * FROM memory_entries
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY updated_at DESC, created_at DESC
+      LIMIT ?`, [...params, ENTRY_SEARCH_SCAN_LIMIT]);
+    const ranked = rankSearchRecords(
+      rows.map(entryFromRow),
+      search,
+      (entry) => [
+        entry.title,
+        entry.life_core,
+        entry.content,
+        entry.usage_hint,
+        entry.avoid_hint,
+      ].filter(Boolean).join(' '),
+    );
+    return {
+      entries: ranked.slice(offset, offset + limit),
+      next_cursor: ranked.length > offset + limit ? String(offset + limit) : null,
+      search: searchMetadata(search),
+    };
+  }
   const rows = await all(db, `SELECT * FROM memory_entries
     WHERE ${conditions.join(' AND ')}
     ORDER BY updated_at DESC, created_at DESC
@@ -1008,6 +1031,7 @@ export async function listEntries(db, options = {}) {
   return {
     entries: rows.slice(0, limit).map(entryFromRow),
     next_cursor: more ? String(offset + limit) : null,
+    search: searchMetadata(search),
   };
 }
 

@@ -547,6 +547,14 @@ assert.equal(writtenSoil.result.structuredContent.soil.symbol, '≋');
 assert.equal(writtenSoil.result.structuredContent.soil.display_author, 'ChatGPT-5.6 Thinking 回潮≋');
 await mcp({ ...soilCall, id: 5 }, fullToken);
 assert.equal((await listOfficialSoils(db)).length, 1, 'tool_call_id must make official soil retries idempotent');
+const officialSoilApiResponse = await routeApi(new Request('https://coast.test/api/memory/official-soils?q=%E5%AE%98%E7%AB%AF%E5%9B%9E%E6%BD%AE'), env, { exp: 1 });
+const officialSoilApi = await officialSoilApiResponse.json();
+assert.equal(officialSoilApiResponse.status, 200);
+assert.equal(officialSoilApi.soils[0].id, writtenSoil.result.structuredContent.soil.id);
+assert.equal(officialSoilApi.soils[0].surface, 'official_mcp');
+assert.equal(officialSoilApi.soils[0].symbol, '≋');
+assert.equal(officialSoilApi.soils[0].display_author, 'ChatGPT-5.6 Thinking 回潮≋');
+assert.equal(officialSoilApi.soils[0].model_nickname, '回潮');
 
 const radioWrite = await mcp({
   jsonrpc: '2.0',
@@ -878,6 +886,15 @@ const memory = await searchAuthorizedMemory(db, { query: '思维壤', limit: 20 
 assert.ok(memory.records.some((record) => record.surface === 'official_mcp'));
 assert.ok(memory.records.some((record) => record.surface === 'coast_api'));
 assert.equal(memory.records.some((record) => record.type === 'chat_message'), false);
+const compactOfficialSearch = await searchAuthorizedMemory(db, { query: '官端回潮', limit: 20 });
+assert.ok(compactOfficialSearch.records.some((record) => record.surface === 'official_mcp' && record.model_nickname === '回潮'));
+const complexOfficialSearch = await searchAuthorizedMemory(db, {
+  query: '今天 海岸 官端 MCP 三端 电波房 灯塔 思维壤 小寒 Myri',
+  limit: 20,
+});
+assert.ok(complexOfficialSearch.records.some((record) => record.surface === 'official_mcp'));
+assert.equal(complexOfficialSearch.search.mode, 'bounded_keyword');
+assert.ok(complexOfficialSearch.search.effective_terms.length <= 10);
 
 const manifest = await routeMcpRequest(new Request('https://coast.test/mcp/manifest'), env);
 assert.equal(manifest.status, 200);

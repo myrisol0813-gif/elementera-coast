@@ -1,16 +1,16 @@
 import { listSummaries } from './daily-store.js';
 import { organizedMemoryRecordsInRange } from './memory-store.js';
 import { searchAuthoredSoils } from './official-soil-store.js';
+import {
+  buildSafeSearchQuery,
+  rankSearchRecords,
+  searchMetadata,
+} from './search-query.js';
 
 const FIRST_REASONABLE_TIMESTAMP = Date.UTC(2020, 0, 1);
 
 function clip(value, max = 1200) {
   return String(value ?? '').trim().slice(0, max);
-}
-
-function includesQuery(record, query) {
-  if (!query) return true;
-  return JSON.stringify(record).toLocaleLowerCase('zh-CN').includes(query.toLocaleLowerCase('zh-CN'));
 }
 
 function currentSoilRecord(soil) {
@@ -92,27 +92,42 @@ function officialSoilRecord(soil) {
   };
 }
 
+export async function searchOfficialSoilMemory(db, value = {}) {
+  const search = buildSafeSearchQuery(value.query);
+  const limit = Math.min(80, Math.max(1, Math.trunc(Number(value.limit || 30))));
+  const records = (await searchAuthoredSoils(db, search.query, limit)).map(officialSoilRecord);
+  return {
+    query: search.query,
+    records,
+    search: searchMetadata(search),
+  };
+}
+
 export async function searchAuthorizedMemory(db, value = {}) {
-  const query = clip(value.query, 240);
+  const search = buildSafeSearchQuery(value.query);
   const limit = Math.min(80, Math.max(1, Math.trunc(Number(value.limit || 30))));
   const [official, organized] = await Promise.all([
-    searchAuthoredSoils(db, query, limit),
+    searchAuthoredSoils(db, search.query, limit),
     organizedMemoryRecordsInRange(db, {
       from: FIRST_REASONABLE_TIMESTAMP,
       to: Date.now() + 60_000,
     }),
   ]);
-  const records = [
+  const candidates = [
     ...official.map(officialSoilRecord),
     ...(organized.soils || []).map(currentSoilRecord),
     ...(organized.pockets || []).map(pocketRecord),
     ...(organized.entries || []).map(entryRecord),
-  ]
-    .filter((record) => includesQuery(record, query))
+  ];
+  const records = rankSearchRecords(candidates, search)
     .sort((left, right) => Date.parse(right.updated_at || right.created_at || 0)
       - Date.parse(left.updated_at || left.created_at || 0))
     .slice(0, limit);
-  return { query, records };
+  return {
+    query: search.query,
+    records,
+    search: searchMetadata(search),
+  };
 }
 
 export async function getRecentDailySummary(db) {

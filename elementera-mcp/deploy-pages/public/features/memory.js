@@ -94,6 +94,8 @@ export function createMemory({ chat, router, toast, storage }) {
     soils: new Map(),
     pockets: new Map(),
     entries: { conversation: [], global: [] },
+    officialSoils: [],
+    officialSoilsStatus: 'idle',
     libraryTab: 'conversation',
     filters: { entryType: '', status: '', query: '' },
     vectorStatus: null,
@@ -159,6 +161,23 @@ export function createMemory({ chat, router, toast, storage }) {
     }
     runtime.entries[scope] = Array.isArray(data.entries) ? data.entries : [];
     return runtime.entries[scope];
+  }
+
+  async function fetchOfficialSoils() {
+    runtime.officialSoilsStatus = 'loading';
+    const params = new URLSearchParams({ limit: '100' });
+    if (runtime.filters.query) params.set('q', runtime.filters.query);
+    try {
+      const data = await requestJson(`${API.memoryOfficialSoils}?${params}`);
+      runtime.officialSoils = Array.isArray(data.soils)
+        ? data.soils.filter((soil) => soil.type === 'soil' && soil.surface === 'official_mcp')
+        : [];
+      runtime.officialSoilsStatus = 'ready';
+    } catch (error) {
+      runtime.officialSoilsStatus = 'failed';
+      console.warn('[memory:official-soils]', error);
+    }
+    return runtime.officialSoils;
   }
 
   async function fetchVectorStatus() {
@@ -327,6 +346,51 @@ export function createMemory({ chat, router, toast, storage }) {
       : `<div class="feature-card"><p class="feature-empty">${escapeHtml(empty)}</p></div>`}</section>`;
   }
 
+  function memoryDate(value) {
+    const date = new Date(value || '');
+    if (!Number.isFinite(date.getTime())) return '';
+    return new Intl.DateTimeFormat('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date);
+  }
+
+  function officialSoilCard(soil) {
+    const symbol = soil.symbol || '≋';
+    const nickname = String(soil.model_nickname || '').trim();
+    const sourceTitle = `${soil.title || '官端思维壤'} · ${nickname ? `${nickname}${symbol}` : symbol}`;
+    const author = soil.display_author
+      || [soil.model_label, nickname, symbol].filter(Boolean).join(' ')
+      || `ChatGPT${symbol}`;
+    const createdAt = memoryDate(soil.created_at);
+    return `<article class="feature-card feature-prose memory-entry-card" data-official-soil-id="${escapeAttribute(soil.id)}">
+      <div class="memory-entry-meta"><span>官端 MCP</span><span>${escapeHtml(soil.surface)}</span>${createdAt ? `<span>${escapeHtml(createdAt)}</span>` : ''}</div>
+      <h2>${escapeHtml(sourceTitle)}</h2>
+      <p><strong>${escapeHtml(author)}</strong></p>
+      ${textBlock(soil.content)}
+      ${soil.model_label ? `<p class="feature-note">模型：${escapeHtml(soil.model_label)}${nickname ? ` · 绰号：${escapeHtml(nickname)}` : ''} · 来源：official_mcp</p>` : '<p class="feature-note">来源：official_mcp</p>'}
+    </article>`;
+  }
+
+  function officialSoilGroup() {
+    if (runtime.filters.entryType) return '';
+    let empty = runtime.filters.query
+      ? '没有找到匹配的官端思维壤。'
+      : '官端暂时还没有留下思维壤。';
+    if (runtime.officialSoilsStatus === 'failed' && !runtime.officialSoils.length) {
+      empty = '官端思维壤暂时没能同步，请稍后重新打开。';
+    }
+    const note = runtime.officialSoilsStatus === 'failed' && runtime.officialSoils.length
+      ? '<p class="feature-note">本次同步失败，下面保留上一次读到的内容。</p>'
+      : '';
+    return `<section class="feature-group"><h2>官端思维壤</h2>${note}${runtime.officialSoils.length
+      ? `<div class="memory-entry-list">${runtime.officialSoils.map(officialSoilCard).join('')}</div>`
+      : `<div class="feature-card"><p class="feature-empty">${escapeHtml(empty)}</p></div>`}</section>`;
+  }
+
   function libraryControls() {
     const { entryType, status, query } = runtime.filters;
     return `<div class="memory-tabs" role="tablist" aria-label="记忆范围">
@@ -334,7 +398,7 @@ export function createMemory({ chat, router, toast, storage }) {
       <button class="${runtime.libraryTab === 'global' ? 'is-active' : ''}" type="button" data-action="memory:tab" data-scope="global">总库</button>
     </div>
     <form class="form-stack memory-search-form" data-submit="memory:search">
-      <label>搜索<input name="query" type="search" value="${escapeAttribute(query)}" placeholder="搜索标题、生命核或内容"></label>
+      <label>搜索<input name="query" type="search" value="${escapeAttribute(query)}" placeholder="搜索标题、生命核、内容或官端思维壤"></label>
       <div class="form-grid">
         <label>类型<select name="entry_type"><option value="" ${!entryType ? 'selected' : ''}>种子与记忆</option><option value="seed" ${entryType === 'seed' ? 'selected' : ''}>种子</option><option value="memory" ${entryType === 'memory' ? 'selected' : ''}>记忆</option></select></label>
         <label>状态<select name="status"><option value="" ${!status ? 'selected' : ''}>全部状态</option><option value="active" ${status === 'active' ? 'selected' : ''}>active</option><option value="dormant" ${status === 'dormant' ? 'selected' : ''}>dormant</option><option value="archived" ${status === 'archived' ? 'selected' : ''}>archived</option><option value="stone" ${status === 'stone' ? 'selected' : ''}>stone</option></select></label>
@@ -361,6 +425,7 @@ export function createMemory({ chat, router, toast, storage }) {
       className: 'memory-library',
       headerAction: '<button class="feature-head-action" type="button" data-action="memory:entry-new">新增</button>',
       body: `${libraryControls()}${local}
+        ${officialSoilGroup()}
         ${entryGroup(current ? '当前窗口种子' : '总种子库', seeds, '这里还没有种子。')}
         ${entryGroup(current ? '当前窗口记忆' : '总记忆库', memories, '这里还没有记忆。')}`,
     };
@@ -434,8 +499,8 @@ export function createMemory({ chat, router, toast, storage }) {
   async function openLibrary(scope = runtime.libraryTab) {
     runtime.libraryTab = scope === 'global' ? 'global' : 'conversation';
     if (runtime.libraryTab === 'conversation') {
-      await Promise.all([fetchSoil(currentId()), fetchPockets(currentId()), fetchEntries('conversation'), fetchVectorStatus()]);
-    } else await Promise.all([fetchEntries('global'), fetchVectorStatus()]);
+      await Promise.all([fetchSoil(currentId()), fetchPockets(currentId()), fetchEntries('conversation'), fetchOfficialSoils(), fetchVectorStatus()]);
+    } else await Promise.all([fetchEntries('global'), fetchOfficialSoils(), fetchVectorStatus()]);
     return router.open('memory');
   }
 
@@ -570,7 +635,7 @@ export function createMemory({ chat, router, toast, storage }) {
     }
     if (name === 'tab') {
       runtime.libraryTab = target.dataset.scope === 'global' ? 'global' : 'conversation';
-      await fetchEntries(runtime.libraryTab);
+      await Promise.all([fetchEntries(runtime.libraryTab), fetchOfficialSoils()]);
       return router.refresh({ preserveScroll: false });
     }
     if (name === 'entry-new') return router.open('memory-entry-edit', { scope: runtime.libraryTab });
@@ -583,7 +648,7 @@ export function createMemory({ chat, router, toast, storage }) {
     const entry = findEntry(target.dataset.id);
     if (name === 'entry-search' && entry) {
       runtime.filters.query = entry.title || entry.life_core;
-      await fetchEntries(runtime.libraryTab);
+      await Promise.all([fetchEntries(runtime.libraryTab), fetchOfficialSoils()]);
       return router.refresh({ preserveScroll: false });
     }
     if (name === 'entry-archive') {
@@ -623,7 +688,7 @@ export function createMemory({ chat, router, toast, storage }) {
         entryType: field('entry_type'),
         status: field('status'),
       };
-      await fetchEntries(runtime.libraryTab);
+      await Promise.all([fetchEntries(runtime.libraryTab), fetchOfficialSoils()]);
       return router.refresh({ preserveScroll: false });
     }
     if (name === 'entry-save') {

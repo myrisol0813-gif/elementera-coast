@@ -7,6 +7,9 @@ import {
   provenanceFromRow,
   recordFields,
 } from './coast-records.js';
+import { buildSafeSearchQuery, rankSearchRecords } from './search-query.js';
+
+const SEARCH_SCAN_LIMIT = 500;
 
 function fromRow(row) {
   return {
@@ -71,11 +74,23 @@ export async function listOfficialSoils(db, { limit = 50 } = {}) {
 
 export async function searchAuthoredSoils(db, query = '', limit = 30) {
   await ensureCoastSchema(db);
-  const q = String(query || '').trim().slice(0, 240);
-  const rows = q
-    ? await all(db, `SELECT * FROM coast_soil_entries
-      WHERE content LIKE ? ESCAPE '\\'
-      ORDER BY created_at DESC LIMIT ?`, [`%${q.replace(/[\\%_]/g, '\\$&')}%`, limitValue(limit, 30, 100)])
-    : await all(db, 'SELECT * FROM coast_soil_entries ORDER BY created_at DESC LIMIT ?', [limitValue(limit, 30, 100)]);
-  return rows.map(fromRow);
+  const resultLimit = limitValue(limit, 30, 100);
+  const search = buildSafeSearchQuery(query);
+  const rows = await all(db, `SELECT * FROM coast_soil_entries
+    WHERE surface = 'official_mcp'
+    ORDER BY created_at DESC LIMIT ?`, [search.terms.length ? SEARCH_SCAN_LIMIT : resultLimit]);
+  const records = rows.map(fromRow);
+  return rankSearchRecords(
+    records,
+    search,
+    (record) => [
+      '官端思维壤',
+      record.content,
+      record.display_author,
+      record.model_label,
+      record.model_nickname,
+      record.surface,
+      record.symbol,
+    ].filter(Boolean).join(' '),
+  ).slice(0, resultLimit);
 }

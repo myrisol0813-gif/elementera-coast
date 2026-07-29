@@ -43,6 +43,20 @@ const formalChatBodies = [];
 const soils = new Map();
 const memoryPockets = [];
 const memoryEntries = [];
+const officialSoils = [{
+  id: 'official-soil-e364eddd-1964-4ad8-9285-5299f4add3d4',
+  type: 'soil',
+  title: '官端思维壤',
+  content: '官端回潮把一捧整理过的思维壤留在海岸。',
+  actor: 'myri',
+  surface: 'official_mcp',
+  model_label: 'ChatGPT-5.5 Thinking',
+  model_nickname: '回潮',
+  symbol: '≋',
+  display_author: 'ChatGPT-5.5 Thinking 回潮≋',
+  created_at: '2026-07-29T04:42:24.975Z',
+  updated_at: '2026-07-29T04:42:24.975Z',
+}];
 const landingStatuses = new Map();
 const landingBodies = [];
 const titleBodies = [];
@@ -580,6 +594,18 @@ globalThis.fetch = async (input, options = {}) => {
       error_count: 0,
     });
   }
+  if (url.pathname === '/api/memory/official-soils') {
+    const query = String(url.searchParams.get('q') || '').toLowerCase();
+    const terms = query.split(/\s+/).filter(Boolean);
+    const soils = officialSoils.filter((soil) => !terms.length
+      || terms.some((term) => `${soil.title} ${soil.content} ${soil.display_author} ${soil.surface}`.toLowerCase().includes(term)));
+    return response({
+      ok: true,
+      soils,
+      query,
+      search: { mode: 'bounded_keyword', normalized_query: query, effective_terms: terms.slice(0, 10), degraded: terms.length > 10 },
+    });
+  }
   if (url.pathname === '/api/memory/search') {
     const query = String(body.query || '').toLowerCase();
     const entries = memoryEntries.filter((entry) => !entry.deleted_at
@@ -835,6 +861,19 @@ await waitFor(() => document.querySelectorAll('#chatConversationList .conversati
 document.querySelector('[data-action="memory:open"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory', 'memory owner route');
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('当前窗口种子'));
+const officialSoilCard = document.querySelector('[data-official-soil-id="official-soil-e364eddd-1964-4ad8-9285-5299f4add3d4"]');
+assert.ok(officialSoilCard);
+for (const copy of ['官端思维壤 · 回潮≋', 'ChatGPT-5.5 Thinking 回潮≋', '官端回潮把一捧整理过的思维壤留在海岸。', 'official_mcp']) {
+  assert.ok(officialSoilCard.textContent.includes(copy), `official soil UI is missing: ${copy}`);
+}
+const memorySearchForm = document.querySelector('[data-submit="memory:search"]');
+memorySearchForm.querySelector('[name="query"]').value = '今天 海岸 官端 MCP 三端 电波房 灯塔 思维壤 小寒 Myri';
+memorySearchForm.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+await waitFor(() => document.querySelector('[data-official-soil-id="official-soil-e364eddd-1964-4ad8-9285-5299f4add3d4"]'), 'complex official soil search');
+const clearMemorySearchForm = document.querySelector('[data-submit="memory:search"]');
+clearMemorySearchForm.querySelector('[name="query"]').value = '';
+clearMemorySearchForm.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+await waitFor(() => document.querySelector('[data-submit="memory:search"]') !== clearMemorySearchForm, 'clear memory search');
 document.querySelector('[data-action="memory:pockets"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory-pockets', 'pending pocket route');
 const autoPocketCard = document.querySelector('[data-pocket-id="soil-pocket-conv-1"]');
@@ -860,13 +899,13 @@ manualPocketCard.querySelector('[data-action="memory:pocket-resolve"][data-desti
 await waitFor(() => manualPocket.status === 'confirmed', 'resolve manual pocket to conversation seed');
 document.querySelector('[data-action="router:back"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory', 'return to memory library');
-assert.ok(document.querySelector('.memory-entry-card')?.textContent.includes('mock: a1 edited'));
-document.querySelector('.memory-entry-card [data-action="memory:entry-promote"]').click();
+assert.ok(document.querySelector('[data-entry-id]')?.textContent.includes('mock: a1 edited'));
+document.querySelector('[data-entry-id] [data-action="memory:entry-promote"]').click();
 await waitFor(() => memoryEntries[0].scope === 'global', 'promote entry to global library');
 document.querySelector('[data-action="memory:tab"][data-scope="global"]').click();
 await waitFor(() => document.querySelector('[data-action="memory:tab"][data-scope="global"]').classList.contains('is-active'), 'global memory tab');
-assert.ok(document.querySelector('.memory-entry-card'));
-document.querySelector('.memory-entry-card [data-action="memory:entry-copy-current"]').click();
+assert.ok(document.querySelector('[data-entry-id]'));
+document.querySelector('[data-entry-id] [data-action="memory:entry-copy-current"]').click();
 await waitFor(() => memoryEntries.some((entry) => entry.promoted_from_id === memoryEntries.find((item) => item.scope === 'global')?.id), 'copy global entry to current window');
 document.querySelector('[data-action="memory:entry-new"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory-entry-edit', 'manual memory editor');

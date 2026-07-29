@@ -13,6 +13,7 @@ export const API = Object.freeze({
   memorySoilOrganize: '/api/memory/soil/organize',
   memoryPockets: '/api/memory/pockets',
   memoryEntries: '/api/memory/entries',
+  memoryOfficialSoils: '/api/memory/official-soils',
   memorySearch: '/api/memory/search',
   memoryRecall: '/api/memory/recall',
   memoryVectorStatus: '/api/memory/vector-status',

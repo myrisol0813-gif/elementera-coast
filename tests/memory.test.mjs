@@ -302,6 +302,14 @@ assert.equal(copied.copied, true);
 assert.equal(copied.entry.conversation_id, conversationB.id);
 assert.equal(copied.entry.promoted_from_id, promoted.entry.id);
 assert.equal((await listEntries(db, { conversation_id: conversationA.id, scope: 'global', q: '手动家具' })).entries.length, 1);
+const complexEntrySearch = await listEntries(db, {
+  conversation_id: conversationA.id,
+  scope: 'global',
+  q: '今天 %%%% 海岸 ____ 手动家具 MCP 三端 电波房 灯塔 思维壤 小寒 Myri',
+});
+assert.ok(complexEntrySearch.entries.some((entry) => entry.id === promoted.entry.id));
+assert.equal(complexEntrySearch.search.mode, 'bounded_keyword');
+assert.ok(complexEntrySearch.search.effective_terms.length <= 10);
 await deleteEntry(db, copied.entry.id);
 assert.equal((await listEntries(db, { conversation_id: conversationB.id, scope: 'conversation', q: '手动家具' })).entries.length, 0, 'entry deletion must be soft but hidden');
 

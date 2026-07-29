@@ -1,4 +1,5 @@
 import { ChatStoreError, readConversationState, readProfile, sanitizeId } from './chat-store.js';
+import { searchOfficialSoilMemory } from './authorized-memory.js';
 import {
   deleteEntryVector,
   deletePocketVectors,
@@ -631,6 +632,20 @@ async function search(request, env) {
   return json({ ok: true, ...await searchMemory(env, MEMORY_OWNER_ID, await body(request)) });
 }
 
+async function officialSoils(request, env, url) {
+  if (request.method !== 'GET') return methodNotAllowed('GET');
+  const result = await searchOfficialSoilMemory(env.COAST_CHAT_DB, {
+    query: url.searchParams.get('q') || '',
+    limit: url.searchParams.get('limit') || 50,
+  });
+  return json({
+    ok: true,
+    soils: result.records,
+    query: result.query,
+    search: result.search,
+  });
+}
+
 async function recall(request, env) {
   if (request.method !== 'POST') return methodNotAllowed('POST');
   const value = await body(request);
@@ -660,6 +675,7 @@ export function isMemoryApiPath(pathname) {
     || pathname.startsWith(`${MEMORY_PATH}/pockets/`)
     || pathname === `${MEMORY_PATH}/entries`
     || pathname.startsWith(`${MEMORY_PATH}/entries/`)
+    || pathname === `${MEMORY_PATH}/official-soils`
     || pathname === `${MEMORY_PATH}/search`
     || pathname === `${MEMORY_PATH}/recall`
     || pathname === `${MEMORY_PATH}/vector-status`;
@@ -671,6 +687,7 @@ export async function routeMemoryApi(request, env) {
   try {
     if (url.pathname === `${MEMORY_PATH}/soil`) return await soil(request, env, url);
     if (url.pathname === `${MEMORY_PATH}/soil/organize`) return await organizeSoil(request, env);
+    if (url.pathname === `${MEMORY_PATH}/official-soils`) return await officialSoils(request, env, url);
     if (url.pathname === `${MEMORY_PATH}/search`) return await search(request, env);
     if (url.pathname === `${MEMORY_PATH}/recall`) return await recall(request, env);
     if (url.pathname === `${MEMORY_PATH}/vector-status`) {
