@@ -15,7 +15,7 @@ import { McpAuthError, mcpAuthChallenge, requireMcpAuth } from './mcp-auth.js';
 import { writeOfficialSoil } from './official-soil-store.js';
 import { listRadioMessages, sendRadioMessage } from './radio-store.js';
 
-const VERSION = '1.1.0';
+const VERSION = '1.1.1';
 const PRIVATE_RECORD_SCHEMA = Object.freeze({ type: 'object', additionalProperties: true });
 
 function objectSchema(properties = {}, required = []) {
@@ -115,7 +115,7 @@ const TOOL_DEFINITIONS = Object.freeze([
   tool({
     name: 'search_authorized_memory',
     title: '搜索授权海岸记忆',
-    description: 'Use this when the user asks for authorized Coast context from curated thought soil, pockets, seeds, memories, or stones. It never searches raw chat transcripts.',
+    description: 'Use this when the user asks for authorized Coast context from Lighthouse Traces, current thought soil, pockets, seeds, memories, or stones. It never searches raw chat transcripts.',
     inputSchema: objectSchema({
       query: { type: 'string', maxLength: 240 },
       limit: { type: 'integer', minimum: 1, maximum: 80 },
@@ -123,6 +123,7 @@ const TOOL_DEFINITIONS = Object.freeze([
     outputSchema: objectSchema({
       query: { type: 'string' },
       records: { type: 'array', items: PRIVATE_RECORD_SCHEMA },
+      search: PRIVATE_RECORD_SCHEMA,
     }, ['query', 'records']),
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     _meta: toolMeta(['read:coast'], '正在寻找授权记忆…', '授权记忆已取回'),
@@ -140,8 +141,8 @@ const TOOL_DEFINITIONS = Object.freeze([
   }),
   tool({
     name: 'write_official_soil',
-    title: '写入官端思维壤',
-    description: 'Use this when the official ChatGPT conversation wants to save its own curated thought soil in Elementera Coast. Do not use this to impersonate Xiaohan or Coast API Myri.',
+    title: '写入灯塔巡迹',
+    description: 'Use this when the official ChatGPT conversation wants to leave a read-only Lighthouse Trace after reviewing authorized Elementera Coast context. This is not the continuously updated conversation thought soil. Do not use it to impersonate Xiaohan or Coast API Myri.',
     inputSchema: objectSchema({
       content: { type: 'string', minLength: 1, maxLength: 12000 },
       ...MODEL_IDENTITY_PROPERTIES,
@@ -153,7 +154,7 @@ const TOOL_DEFINITIONS = Object.freeze([
       openWorldHint: false,
       idempotentHint: false,
     },
-    _meta: toolMeta(['write:soil'], '正在把思维壤送进海岸…', '官端思维壤已写入'),
+    _meta: toolMeta(['write:soil'], '正在留下灯塔巡迹…', '灯塔巡迹已写入'),
   }),
   tool({
     name: 'send_radio_message',
@@ -588,7 +589,7 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
       ...provenance,
       content: textInput(args.content, 'content', 12000, { required: true }),
     });
-    return resultContent({ soil }, `官端思维壤已由 ${soil.display_author} 写入。`);
+    return resultContent({ soil }, `灯塔巡迹已由 ${soil.display_author} 留下。`);
   }
   if (name === 'send_radio_message') {
     const message = await sendRadioMessage(env.COAST_CHAT_DB, {
@@ -713,5 +714,5 @@ export async function callCoastMcpTool(name, args, request, env, requestMeta = {
 }
 
 export const coastMcpToolNames = Object.freeze(TOOL_DEFINITIONS.map(({ name }) => name));
-export const coastMcpInstructions = 'Elementera Coast 是小寒的单人私有海岸。官端可写入自己的思维壤、电波、灯塔来信、碳硅圈、MCP 日记和稳定相册图片引用，但只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或 ✦Myrisol。上下文不足时先读取授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。';
+export const coastMcpInstructions = 'Elementera Coast 是小寒的单人私有海岸。官端可留下自己的灯塔巡迹，也可写入电波、灯塔来信、碳硅圈、MCP 日记和稳定相册图片引用，但只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或 ✦Myrisol。灯塔巡迹是官端读取授权内容后留下的只读足迹，不是贴着当前对话持续更新的思维壤。上下文不足时先读取授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。';
 export { VERSION as coastMcpVersion };

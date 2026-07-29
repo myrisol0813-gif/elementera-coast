@@ -34,7 +34,7 @@ export async function writeOfficialSoil(db, value = {}) {
   await ensureCoastSchema(db);
   const fields = recordFields(value);
   if (fields.surface !== 'official_mcp') {
-    throw new CoastStoreError('official_soil_identity_required', '官端思维壤只能由 official_mcp 写入。', 403);
+    throw new CoastStoreError('official_soil_identity_required', '灯塔巡迹只能由 official_mcp 写入。', 403);
   }
   if (fields.tool_call_id) {
     const existing = await first(db, 'SELECT * FROM coast_soil_entries WHERE tool_call_id = ?', [fields.tool_call_id]);
@@ -47,7 +47,7 @@ export async function writeOfficialSoil(db, value = {}) {
     usage_json, source_conversation_id, source_turn_id, tool_call_id, created_at, updated_at
   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
     id,
-    clipText(value.content ?? value.text, 12000, '思维壤'),
+    clipText(value.content ?? value.text, 12000, '灯塔巡迹'),
     fields.actor,
     fields.surface,
     fields.model_label,
@@ -84,7 +84,8 @@ export async function searchAuthoredSoils(db, query = '', limit = 30) {
     records,
     search,
     (record) => [
-      '官端思维壤',
+      '灯塔巡迹',
+      '官端 MCP',
       record.content,
       record.display_author,
       record.model_label,

@@ -359,34 +359,34 @@ export function createMemory({ chat, router, toast, storage }) {
   }
 
   function officialSoilCard(soil) {
-    const symbol = soil.symbol || '≋';
+    const symbol = '≋';
+    const modelLabel = String(soil.model_label || '').trim();
     const nickname = String(soil.model_nickname || '').trim();
-    const sourceTitle = `${soil.title || '官端思维壤'} · ${nickname ? `${nickname}${symbol}` : symbol}`;
-    const author = soil.display_author
-      || [soil.model_label, nickname, symbol].filter(Boolean).join(' ')
-      || `ChatGPT${symbol}`;
+    const signature = modelLabel
+      ? `${modelLabel}${nickname ? ` ${nickname}` : ''}${symbol}`
+      : soil.display_author || `ChatGPT${symbol}`;
+    const sourceTitle = `${soil.title || '灯塔巡迹'} · ${signature}`;
     const createdAt = memoryDate(soil.created_at);
     return `<article class="feature-card feature-prose memory-entry-card" data-official-soil-id="${escapeAttribute(soil.id)}">
-      <div class="memory-entry-meta"><span>官端 MCP</span><span>${escapeHtml(soil.surface)}</span>${createdAt ? `<span>${escapeHtml(createdAt)}</span>` : ''}</div>
+      <div class="memory-entry-meta"><span>灯塔侧 · 官端 MCP</span><span>${escapeHtml(soil.surface)}</span>${createdAt ? `<span>${escapeHtml(createdAt)}</span>` : ''}</div>
       <h2>${escapeHtml(sourceTitle)}</h2>
-      <p><strong>${escapeHtml(author)}</strong></p>
       ${textBlock(soil.content)}
-      ${soil.model_label ? `<p class="feature-note">模型：${escapeHtml(soil.model_label)}${nickname ? ` · 绰号：${escapeHtml(nickname)}` : ''} · 来源：official_mcp</p>` : '<p class="feature-note">来源：official_mcp</p>'}
+      <p class="feature-note">灯塔巡迹为官端 MCP 留下的只读足迹。</p>
     </article>`;
   }
 
   function officialSoilGroup() {
     if (runtime.filters.entryType) return '';
     let empty = runtime.filters.query
-      ? '没有找到匹配的官端思维壤。'
-      : '官端暂时还没有留下思维壤。';
+      ? '没有找到匹配的灯塔巡迹。'
+      : '灯塔侧暂时还没有留下巡迹。';
     if (runtime.officialSoilsStatus === 'failed' && !runtime.officialSoils.length) {
-      empty = '官端思维壤暂时没能同步，请稍后重新打开。';
+      empty = '灯塔巡迹暂时没能同步，请稍后重新打开。';
     }
     const note = runtime.officialSoilsStatus === 'failed' && runtime.officialSoils.length
       ? '<p class="feature-note">本次同步失败，下面保留上一次读到的内容。</p>'
       : '';
-    return `<section class="feature-group"><h2>官端思维壤</h2>${note}${runtime.officialSoils.length
+    return `<section class="feature-group"><h2>灯塔巡迹</h2>${note}${runtime.officialSoils.length
       ? `<div class="memory-entry-list">${runtime.officialSoils.map(officialSoilCard).join('')}</div>`
       : `<div class="feature-card"><p class="feature-empty">${escapeHtml(empty)}</p></div>`}</section>`;
   }
@@ -398,7 +398,7 @@ export function createMemory({ chat, router, toast, storage }) {
       <button class="${runtime.libraryTab === 'global' ? 'is-active' : ''}" type="button" data-action="memory:tab" data-scope="global">总库</button>
     </div>
     <form class="form-stack memory-search-form" data-submit="memory:search">
-      <label>搜索<input name="query" type="search" value="${escapeAttribute(query)}" placeholder="搜索标题、生命核、内容或官端思维壤"></label>
+      <label>搜索<input name="query" type="search" value="${escapeAttribute(query)}" placeholder="搜索标题、生命核、内容或灯塔巡迹"></label>
       <div class="form-grid">
         <label>类型<select name="entry_type"><option value="" ${!entryType ? 'selected' : ''}>种子与记忆</option><option value="seed" ${entryType === 'seed' ? 'selected' : ''}>种子</option><option value="memory" ${entryType === 'memory' ? 'selected' : ''}>记忆</option></select></label>
         <label>状态<select name="status"><option value="" ${!status ? 'selected' : ''}>全部状态</option><option value="active" ${status === 'active' ? 'selected' : ''}>active</option><option value="dormant" ${status === 'dormant' ? 'selected' : ''}>dormant</option><option value="archived" ${status === 'archived' ? 'selected' : ''}>archived</option><option value="stone" ${status === 'stone' ? 'selected' : ''}>stone</option></select></label>

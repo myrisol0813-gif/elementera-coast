@@ -488,6 +488,10 @@ for (const tool of toolList.result.tools) {
   assert.ok(tool._meta.securitySchemes[0].scopes.length >= 1);
   assert.deepEqual(tool.securitySchemes, tool._meta.securitySchemes);
 }
+const lighthouseTraceTool = toolList.result.tools.find((tool) => tool.name === 'write_official_soil');
+assert.equal(lighthouseTraceTool.title, '写入灯塔巡迹');
+assert.match(lighthouseTraceTool.description, /Lighthouse Trace/);
+assert.equal(lighthouseTraceTool._meta['openai/toolInvocation/invoked'], '灯塔巡迹已写入');
 
 const initializedNotification = await routeMcpRequest(new Request('https://coast.test/mcp', {
   method: 'POST',
@@ -555,6 +559,7 @@ assert.equal(officialSoilApi.soils[0].surface, 'official_mcp');
 assert.equal(officialSoilApi.soils[0].symbol, '≋');
 assert.equal(officialSoilApi.soils[0].display_author, 'ChatGPT-5.6 Thinking 回潮≋');
 assert.equal(officialSoilApi.soils[0].model_nickname, '回潮');
+assert.equal(officialSoilApi.soils[0].title, '灯塔巡迹');
 
 const radioWrite = await mcp({
   jsonrpc: '2.0',
@@ -888,6 +893,9 @@ assert.ok(memory.records.some((record) => record.surface === 'coast_api'));
 assert.equal(memory.records.some((record) => record.type === 'chat_message'), false);
 const compactOfficialSearch = await searchAuthorizedMemory(db, { query: '官端回潮', limit: 20 });
 assert.ok(compactOfficialSearch.records.some((record) => record.surface === 'official_mcp' && record.model_nickname === '回潮'));
+assert.ok(compactOfficialSearch.records
+  .filter((record) => record.surface === 'official_mcp')
+  .every((record) => record.title === '灯塔巡迹'));
 const complexOfficialSearch = await searchAuthorizedMemory(db, {
   query: '今天 海岸 官端 MCP 三端 电波房 灯塔 思维壤 小寒 Myri',
   limit: 20,

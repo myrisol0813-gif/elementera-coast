@@ -46,7 +46,7 @@ const memoryEntries = [];
 const officialSoils = [{
   id: 'official-soil-e364eddd-1964-4ad8-9285-5299f4add3d4',
   type: 'soil',
-  title: '官端思维壤',
+  title: '灯塔巡迹',
   content: '官端回潮把一捧整理过的思维壤留在海岸。',
   actor: 'myri',
   surface: 'official_mcp',
@@ -56,6 +56,19 @@ const officialSoils = [{
   display_author: 'ChatGPT-5.5 Thinking 回潮≋',
   created_at: '2026-07-29T04:42:24.975Z',
   updated_at: '2026-07-29T04:42:24.975Z',
+}, {
+  id: 'official-soil-without-nickname',
+  type: 'soil',
+  title: '灯塔巡迹',
+  content: '另一枚没有绰号的官端水纹。',
+  actor: 'myri',
+  surface: 'official_mcp',
+  model_label: 'o3',
+  model_nickname: null,
+  symbol: '≋',
+  display_author: 'ChatGPT-o3≋',
+  created_at: '2026-07-29T05:00:00.000Z',
+  updated_at: '2026-07-29T05:00:00.000Z',
 }];
 const landingStatuses = new Map();
 const landingBodies = [];
@@ -863,9 +876,14 @@ await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'm
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('当前窗口种子'));
 const officialSoilCard = document.querySelector('[data-official-soil-id="official-soil-e364eddd-1964-4ad8-9285-5299f4add3d4"]');
 assert.ok(officialSoilCard);
-for (const copy of ['官端思维壤 · 回潮≋', 'ChatGPT-5.5 Thinking 回潮≋', '官端回潮把一捧整理过的思维壤留在海岸。', 'official_mcp']) {
+for (const copy of ['灯塔巡迹 · ChatGPT-5.5 Thinking 回潮≋', '灯塔侧 · 官端 MCP', '官端回潮把一捧整理过的思维壤留在海岸。', 'official_mcp', '只读足迹']) {
   assert.ok(officialSoilCard.textContent.includes(copy), `official soil UI is missing: ${copy}`);
 }
+assert.equal(officialSoilCard.textContent.includes('官端思维壤'), false);
+assert.equal(officialSoilCard.querySelector('[data-action*="edit"], [data-action*="delete"]'), null);
+const unnamedOfficialSoilCard = document.querySelector('[data-official-soil-id="official-soil-without-nickname"]');
+assert.ok(unnamedOfficialSoilCard.textContent.includes('灯塔巡迹 · o3≋'));
+assert.equal(unnamedOfficialSoilCard.textContent.includes('ChatGPT-o3≋'), false, 'the visible trace signature must use the actual model_label');
 const memorySearchForm = document.querySelector('[data-submit="memory:search"]');
 memorySearchForm.querySelector('[name="query"]').value = '今天 海岸 官端 MCP 三端 电波房 灯塔 思维壤 小寒 Myri';
 memorySearchForm.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
