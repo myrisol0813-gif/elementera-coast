@@ -1,7 +1,8 @@
 import {
   DailyStoreError,
   createAlbumItem,
-  createMoment,
+  createDiaryDraft,
+  createMomentDraft,
   sanitizeImageRefs,
 } from './daily-store.js';
 import { apiMyriIdentity } from './coast-identity.js';
@@ -10,7 +11,7 @@ const CREATE_MOMENT = {
   type: 'function',
   function: {
     name: 'create_moment',
-    description: '把一条动态真实写入 Elementera Coast 内部碳硅圈。只写海岸内部服务器，不会外发到任何社交平台。',
+    description: '创建一条 Elementera Coast 内部碳硅圈候选，送到小寒确认页。不会直接发布，也不会外发到任何社交平台。',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -26,8 +27,8 @@ const CREATE_MOMENT = {
         },
         visible_status: {
           type: 'string',
-          enum: ['draft', 'candidate', 'published'],
-          description: '海岸内部可见状态。',
+          enum: ['candidate'],
+          description: '模型只能创建 candidate；发布由小寒在确认页完成。',
         },
         has_image_refs: {
           type: 'boolean',
@@ -82,7 +83,59 @@ const SAVE_ALBUM_REFERENCE = {
   },
 };
 
-export const DAILY_MODEL_TOOLS = Object.freeze([CREATE_MOMENT, SAVE_ALBUM_REFERENCE]);
+const CREATE_DIARY_DRAFT = {
+  type: 'function',
+  function: {
+    name: 'create_diary_draft',
+    description: '创建一份 Elementera Coast 日记草稿，送到小寒的日记确认页。不会直接发布，也不会把草稿塞进电波房或灯塔巡迹。',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        text: {
+          type: 'string',
+          description: '较长的当天自观、关系变化、生活或创作沉淀。',
+        },
+        weather: {
+          type: 'string',
+          description: '可选天气；不确定时填写“未标注”。',
+        },
+        mood: {
+          type: 'string',
+          description: '可选心情；不确定时填写“未标注”。',
+        },
+        source_window: {
+          type: 'string',
+          enum: ['current'],
+          description: '来源窗口。服务器会绑定当前真实 conversation_id。',
+        },
+        has_image_refs: {
+          type: 'boolean',
+          description: '草稿是否带有稳定图片引用。',
+        },
+        image_refs: {
+          type: 'array',
+          maxItems: 6,
+          items: { type: 'string' },
+          description: '仅允许稳定 URL、站内路径或 coast:// 引用；不要传 base64。',
+        },
+        tags: {
+          type: 'array',
+          maxItems: 20,
+          items: { type: 'string' },
+          description: '可选的轻量标签。',
+        },
+      },
+      required: ['text', 'weather', 'mood', 'source_window', 'has_image_refs', 'image_refs', 'tags'],
+    },
+  },
+};
+
+export const DAILY_MODEL_TOOLS = Object.freeze([
+  CREATE_MOMENT,
+  CREATE_DIARY_DRAFT,
+  SAVE_ALBUM_REFERENCE,
+]);
 
 export function isDailyModelTool(name) {
   return DAILY_MODEL_TOOLS.some((tool) => tool.function.name === name);
@@ -132,19 +185,45 @@ export async function executeDailyModelTool(db, toolCall, context = {}) {
     if (Boolean(args.has_image_refs) !== Boolean(imageRefs.length)) {
       throw new DailyStoreError('tool_image_refs_mismatch', '动态的图片引用标记与实际引用不一致。', 400);
     }
-    const moment = await createMoment(db, {
+    if (args.visible_status !== 'candidate') {
+      throw new DailyStoreError('owner_confirmation_required', '模型只能创建碳硅圈候选，不能直接发布。', 403);
+    }
+    const draft = await createMomentDraft(db, {
       date: context.local_date,
       text: args.text,
-      status: args.visible_status,
       image_refs: imageRefs,
       reason: args.reason,
     }, trusted);
     return {
       ok: true,
-      kind: 'moment',
-      id: moment.id,
-      status: moment.status,
-      published_at: moment.published_at,
+      kind: 'moment_draft',
+      id: draft.id,
+      status: draft.status,
+      published_at: null,
+      duplicate_safe: true,
+    };
+  }
+
+  if (call.name === 'create_diary_draft') {
+    const imageRefs = sanitizeImageRefs(args.image_refs);
+    if (Boolean(args.has_image_refs) !== Boolean(imageRefs.length)) {
+      throw new DailyStoreError('tool_image_refs_mismatch', '日记草稿的图片引用标记与实际引用不一致。', 400);
+    }
+    const draft = await createDiaryDraft(db, {
+      date: context.local_date,
+      weather: args.weather || '未标注',
+      mood: args.mood || '未标注',
+      text: args.text,
+      image_refs: imageRefs,
+      tags: args.tags,
+      related_message_ids: context.source_turn_id ? [context.source_turn_id] : [],
+    }, { ...trusted, author: 'api' });
+    return {
+      ok: true,
+      kind: 'diary_draft',
+      id: draft.id,
+      status: draft.status,
+      published_at: null,
       duplicate_safe: true,
     };
   }

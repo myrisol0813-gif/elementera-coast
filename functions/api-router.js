@@ -15,8 +15,8 @@ export async function routeApi(request, env, session) {
   if (url.pathname === '/api/session' && request.method === 'GET') {
     return json({ ok: true, authenticated: true, expires_at: session.exp });
   }
-  if (isDailyApiPath(url.pathname)) return routeDailyApi(request, env);
-  if (isMemoryApiPath(url.pathname)) return routeMemoryApi(request, env);
+  if (isDailyApiPath(url.pathname)) return routeDailyApi(request, env, session);
+  if (isMemoryApiPath(url.pathname)) return routeMemoryApi(request, env, session);
   if (isCoastRoomApiPath(url.pathname)) return routeCoastRoomApi(request, env, session);
   if (url.pathname === '/api/models') return handleModels(request, env);
   if (url.pathname === '/api/chat-sandbox') return handleSandbox(request, env);

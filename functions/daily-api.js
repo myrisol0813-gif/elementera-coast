@@ -6,13 +6,16 @@ import {
   createAlbumItem,
   createDiary,
   createMoment,
+  discardContentDraftByOwner,
   hasDailyDatabase,
   listAlbumItems,
+  listContentDrafts,
   listDiaries,
   listMoments,
   listSummaries,
   patchDiary,
   patchMoment,
+  publishContentDraftByOwner,
   setMomentLike,
 } from './daily-store.js';
 import { dailySummaryRangeOptions, runDailySummary } from './daily-summary.js';
@@ -21,6 +24,7 @@ import { apiMyriIdentity, xiaohanIdentity } from './coast-identity.js';
 import { apiError, json, readJson } from './http.js';
 import { MemoryStoreError } from './memory-store.js';
 import { ModelRequestError } from './models.js';
+import { OwnerAccessError, requireOwnerSession } from './owner-access.js';
 
 const DAILY_PATH = '/api/daily';
 const BODY_LIMIT = 256 * 1024;
@@ -195,6 +199,39 @@ async function summaries(request, env, url) {
   return apiError('not_found', 'Not found.', 404);
 }
 
+async function drafts(request, env, url, session) {
+  requireOwnerSession(session);
+  const base = `${DAILY_PATH}/drafts`;
+  const rest = suffix(url.pathname, base);
+  if (!rest) {
+    if (request.method !== 'GET') return methodNotAllowed('GET');
+    return json({
+      ok: true,
+      drafts: await listContentDrafts(env.COAST_CHAT_DB, {
+        content_type: url.searchParams.get('content_type') || '',
+        status: url.searchParams.get('status') || 'pending',
+      }),
+    });
+  }
+  const parts = rest.split('/');
+  if (parts.length === 2 && parts[1] === 'publish') {
+    if (request.method !== 'POST') return methodNotAllowed('POST');
+    const result = await publishContentDraftByOwner(
+      env.COAST_CHAT_DB,
+      parts[0],
+      await body(request),
+    );
+    return json({ ok: true, ...result });
+  }
+  if (parts.length === 1 && request.method === 'DELETE') {
+    return json({
+      ok: true,
+      draft: await discardContentDraftByOwner(env.COAST_CHAT_DB, parts[0]),
+    });
+  }
+  return methodNotAllowed('POST, DELETE');
+}
+
 export function isDailyApiPath(pathname) {
   return pathname === `${DAILY_PATH}/moments`
     || pathname.startsWith(`${DAILY_PATH}/moments/`)
@@ -204,10 +241,12 @@ export function isDailyApiPath(pathname) {
     || pathname === `${DAILY_PATH}/summaries`
     || pathname === `${DAILY_PATH}/summary/range`
     || pathname === `${DAILY_PATH}/summary/run`
-    || pathname === `${DAILY_PATH}/summary/commit`;
+    || pathname === `${DAILY_PATH}/summary/commit`
+    || pathname === `${DAILY_PATH}/drafts`
+    || pathname.startsWith(`${DAILY_PATH}/drafts/`);
 }
 
-export async function routeDailyApi(request, env) {
+export async function routeDailyApi(request, env, session = null) {
   if (!hasDailyDatabase(env)) return apiError('daily_db_not_configured', '海岸日报 D1 存储未配置。', 503);
   const url = new URL(request.url);
   try {
@@ -218,12 +257,17 @@ export async function routeDailyApi(request, env) {
       return await diaries(request, env, url);
     }
     if (url.pathname === `${DAILY_PATH}/albums`) return await albums(request, env, url);
+    if (url.pathname === `${DAILY_PATH}/drafts`
+      || url.pathname.startsWith(`${DAILY_PATH}/drafts/`)) {
+      return await drafts(request, env, url, session);
+    }
     return await summaries(request, env, url);
   } catch (error) {
     if (error instanceof DailyStoreError
       || error instanceof ChatStoreError
       || error instanceof MemoryStoreError
-      || error instanceof ModelRequestError) {
+      || error instanceof ModelRequestError
+      || error instanceof OwnerAccessError) {
       return apiError(error.type, error.message, error.status, error.details || {});
     }
     const reference = crypto.randomUUID().slice(0, 8);

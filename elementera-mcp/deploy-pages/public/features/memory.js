@@ -372,6 +372,9 @@ export function createMemory({ chat, router, toast, storage }) {
       <h2>${escapeHtml(sourceTitle)}</h2>
       ${textBlock(soil.content)}
       <p class="feature-note">灯塔巡迹为官端 MCP 留下的只读足迹。</p>
+      <div class="button-row">
+        <button type="button" data-action="memory:official-soil-delete" data-id="${escapeAttribute(soil.id)}">删除</button>
+      </div>
     </article>`;
   }
 
@@ -645,6 +648,14 @@ export function createMemory({ chat, router, toast, storage }) {
       return router.refresh();
     }
     if (name === 'entry-edit') return router.open('memory-entry-edit', { id: target.dataset.id, scope: runtime.libraryTab });
+    if (name === 'official-soil-delete') {
+      await requestJson(`${API.memoryOfficialSoils}/${encodeURIComponent(target.dataset.id)}`, {
+        method: 'DELETE',
+      });
+      await fetchOfficialSoils();
+      toast('这条灯塔巡迹已经从海岸隐藏。');
+      return router.refresh({ preserveScroll: true });
+    }
     const entry = findEntry(target.dataset.id);
     if (name === 'entry-search' && entry) {
       runtime.filters.query = entry.title || entry.life_core;

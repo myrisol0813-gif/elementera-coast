@@ -4,6 +4,8 @@ import { readProfile } from './chat-store.js';
 import { CoastStoreError } from './coast-records.js';
 import { listRadioMessages, sendRadioMessage } from './radio-store.js';
 import { performFormalChat } from './models.js';
+import { organizeRadioMemoryAfterReply } from './radio-memory-organizer.js';
+import { buildRoomMemoryContext } from './room-memory.js';
 
 function clip(value, max = 2000) {
   return String(value ?? '').trim().slice(0, max);
@@ -32,12 +34,18 @@ export async function askApiMyriInRadio(env, value = {}) {
   const latestPrompt = [...messages].reverse().find((message) => message.actor === 'xiaohan')?.text
     || messages.at(-1)?.text
     || '';
-  const memory = await searchAuthorizedMemory(db, { query: latestPrompt, limit: 10 });
+  const [memory, roomMemory] = await Promise.all([
+    searchAuthorizedMemory(db, { query: latestPrompt, limit: 10 }),
+    buildRoomMemoryContext(env, 'radio', 'coast_api', latestPrompt, {
+      settings: value.settings || {},
+      conversation_turns: messages.length,
+    }),
+  ]);
   const prompt = {
     room: 'Elementera Coast / 无线电波的两端',
     participants: [
       '小寒：屋主本人，surface=web_manual。',
-      '✦Myrisol：海岸网页/API Myri，surface=coast_api。',
+      '海岸 API ✦：海岸网页/API 侧模型，surface=coast_api；关系里尚未正式接名，不默认称作 Myrisol。',
       'ChatGPTxxx≋：官端 MCP Myri，surface=official_mcp。',
     ],
     boundaries: [
@@ -49,13 +57,18 @@ export async function askApiMyriInRadio(env, value = {}) {
     ],
     recent_messages: messages.map(messageSnapshot),
     authorized_memory: memory.records,
+    room_memory: {
+      own_window: roomMemory.context,
+      source_soils: roomMemory.source_soils,
+      pending_candidates_are_not_facts: true,
+    },
   };
   const result = await performFormalChat(env, {
     model,
     messages: [
       {
         role: 'system',
-        content: '这里是 Elementera Coast 的“无线电波的两端”，也是小寒、海岸 API Myri、官端 MCP Myri 的三方电波房。你是海岸网页里的 API Myri，使用 ✦ 来源。官端消息带 ChatGPTxxx≋ 署名。只输出正文。',
+        content: '这里是 Elementera Coast 的“无线电波的两端”，也是小寒、海岸 API 侧、官端 MCP 侧的三方电波房。你是海岸网页里的 API 侧模型，使用 ✦ 来源；关系里尚未正式接名，不要自称 Myrisol。官端消息带 ChatGPTxxx≋ 署名。只输出正文。',
       },
       { role: 'user', content: JSON.stringify(prompt) },
     ],
@@ -65,16 +78,33 @@ export async function askApiMyriInRadio(env, value = {}) {
   }, { allowSystem: true });
   const text = clip(result.message?.content, 12000);
   if (!text) throw new CoastStoreError('empty_radio_reply', 'API Myri 没有生成可写入的电波。', 502);
+  const identity = apiMyriIdentity({ model_label: result.model || model });
   const message = await sendRadioMessage(db, {
     text,
-    identity: apiMyriIdentity({ model_label: result.model || model }),
+    identity,
     usage: result.usage,
     source_conversation_id: value.source_conversation_id,
     source_turn_id: value.source_turn_id,
   });
+  let roomMemoryUpdated = false;
+  try {
+    await organizeRadioMemoryAfterReply(env, {
+      model: result.model || model,
+      identity,
+      messages: [...messages, message],
+      reply: text,
+      source_conversation_id: value.source_conversation_id,
+      source_turn_id: value.source_turn_id || message.id,
+      settings: value.settings || {},
+    });
+    roomMemoryUpdated = true;
+  } catch (error) {
+    console.warn('[radio-memory:organize]', String(error?.message || error).slice(0, 160));
+  }
   return {
     message,
     model: result.model || model,
     memory_records: memory.records.length,
+    room_memory_updated: roomMemoryUpdated,
   };
 }

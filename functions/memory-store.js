@@ -1,5 +1,5 @@
 import { ensureChatSchema, getConversation, sanitizeId } from './chat-store.js';
-import { apiMyriIdentity, xiaohanIdentity } from './coast-identity.js';
+import { apiMyriIdentity, validateCoastIdentity, xiaohanIdentity } from './coast-identity.js';
 import { MEMORY_CONFIG } from './memory-config.js';
 import {
   buildSafeSearchQuery,
@@ -395,8 +395,9 @@ export async function writeSoil(db, id, value = {}, { automatic = false, provena
     manual_locked: has('manual_locked') ? bool(value.manual_locked) : !automatic,
     auto_refresh_enabled: has('auto_refresh_enabled') ? bool(value.auto_refresh_enabled) : current.auto_refresh_enabled,
   };
-  const identity = automatic
-    ? apiMyriIdentity({
+  const identity = provenance.identity
+    ? validateCoastIdentity(provenance.identity)
+    : automatic ? apiMyriIdentity({
       model_label: provenance.model_label || current.model_label || '未标注模型',
       model_nickname: provenance.model_nickname,
     })

@@ -1,5 +1,6 @@
 const MIGRATION_ID = 'daily-server-v1';
 const MCP_DAILY_MIGRATION_ID = 'daily-mcp-interfaces-v1';
+const CONTENT_DRAFT_MIGRATION_ID = 'daily-content-drafts-v1';
 const schemaPromises = new WeakMap();
 
 async function run(db, sql, params = []) {
@@ -127,6 +128,28 @@ async function initialize(db) {
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`);
+  await run(db, `CREATE TABLE IF NOT EXISTS daily_content_drafts (
+    id TEXT PRIMARY KEY,
+    content_type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    payload_json TEXT NOT NULL,
+    author TEXT NOT NULL,
+    source TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    surface TEXT NOT NULL,
+    model_label TEXT,
+    model_nickname TEXT,
+    symbol TEXT NOT NULL,
+    display_author TEXT NOT NULL,
+    conversation_id TEXT,
+    source_turn_id TEXT,
+    tool_call_id TEXT UNIQUE,
+    published_record_id TEXT,
+    resolved_at INTEGER,
+    resolved_by TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`);
   for (const table of ['daily_moments', 'daily_diaries', 'daily_album_items', 'daily_summaries']) {
     await ensureColumn(db, table, 'actor', 'TEXT DEFAULT NULL');
     await ensureColumn(db, table, 'surface', 'TEXT DEFAULT NULL');
@@ -162,12 +185,18 @@ async function initialize(db) {
     ON daily_album_items(conversation_id, source_turn_id, created_at DESC)`);
   await run(db, `CREATE INDEX IF NOT EXISTS idx_daily_summaries_range
     ON daily_summaries(range_end DESC, created_at DESC)`);
+  await run(db, `CREATE INDEX IF NOT EXISTS idx_daily_content_drafts_status
+    ON daily_content_drafts(status, content_type, created_at DESC)`);
   await run(db, 'INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)', [
     MIGRATION_ID,
     Date.now(),
   ]);
   await run(db, 'INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)', [
     MCP_DAILY_MIGRATION_ID,
+    Date.now(),
+  ]);
+  await run(db, 'INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)', [
+    CONTENT_DRAFT_MIGRATION_ID,
     Date.now(),
   ]);
 }
@@ -186,4 +215,8 @@ export async function ensureDailySchema(db) {
   }
 }
 
-export const dailyMigrationIds = Object.freeze([MIGRATION_ID, MCP_DAILY_MIGRATION_ID]);
+export const dailyMigrationIds = Object.freeze([
+  MIGRATION_ID,
+  MCP_DAILY_MIGRATION_ID,
+  CONTENT_DRAFT_MIGRATION_ID,
+]);

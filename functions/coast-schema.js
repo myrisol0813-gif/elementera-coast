@@ -1,5 +1,6 @@
 const MIGRATION_ID = 'mcp-porch-v1';
 const RADIO_WITHDRAW_MIGRATION_ID = 'radio-withdraw-v1';
+const OWNER_CLEANUP_MIGRATION_ID = 'owner-cleanup-v1';
 const schemaPromises = new WeakMap();
 
 async function run(db, sql, params = []) {
@@ -36,9 +37,13 @@ async function initialize(db) {
     source_conversation_id TEXT,
     source_turn_id TEXT,
     tool_call_id TEXT UNIQUE,
+    deleted_at INTEGER,
+    deleted_by TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`);
+  await ensureColumn(db, 'coast_soil_entries', 'deleted_at', 'INTEGER DEFAULT NULL');
+  await ensureColumn(db, 'coast_soil_entries', 'deleted_by', 'TEXT DEFAULT NULL');
   await run(db, `CREATE TABLE IF NOT EXISTS coast_radio_messages (
     id TEXT PRIMARY KEY,
     room_id TEXT NOT NULL DEFAULT 'radio',
@@ -91,6 +96,10 @@ async function initialize(db) {
     RADIO_WITHDRAW_MIGRATION_ID,
     Date.now(),
   ]);
+  await run(db, 'INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)', [
+    OWNER_CLEANUP_MIGRATION_ID,
+    Date.now(),
+  ]);
 }
 
 export async function ensureCoastSchema(db) {
@@ -107,4 +116,8 @@ export async function ensureCoastSchema(db) {
   }
 }
 
-export const coastMigrationIds = Object.freeze([MIGRATION_ID, RADIO_WITHDRAW_MIGRATION_ID]);
+export const coastMigrationIds = Object.freeze([
+  MIGRATION_ID,
+  RADIO_WITHDRAW_MIGRATION_ID,
+  OWNER_CLEANUP_MIGRATION_ID,
+]);

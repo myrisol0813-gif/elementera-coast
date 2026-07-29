@@ -6,7 +6,12 @@ import { searchAuthorizedMemory } from '../functions/authorized-memory.js';
 import { ensureCoastSchema, coastMigrationIds } from '../functions/coast-schema.js';
 import { apiMyriIdentity, officialMcpIdentity, xiaohanIdentity } from '../functions/coast-identity.js';
 import { listLighthouseLetters } from '../functions/lighthouse-store.js';
-import { listSummaries } from '../functions/daily-store.js';
+import {
+  listContentDrafts,
+  listDiaries,
+  listMoments,
+  listSummaries,
+} from '../functions/daily-store.js';
 import {
   mcpAuthConfig,
   requireMcpAuth,
@@ -15,8 +20,9 @@ import {
 import { routeMcpRequest } from '../functions/mcp-router.js';
 import { listOfficialSoils } from '../functions/official-soil-store.js';
 import { listRadioMessages } from '../functions/radio-store.js';
-import { createConversation } from '../functions/chat-store.js';
+import { createConversation, listConversations } from '../functions/chat-store.js';
 import { writeSoil } from '../functions/memory-store.js';
+import { buildCrossSurfaceContext } from '../functions/cross-surface-recall.js';
 
 class D1Statement {
   constructor(database, sql, params = []) {
@@ -63,6 +69,10 @@ assert.equal(
   db.database.prepare('SELECT id FROM schema_migrations WHERE id = ?').get(coastMigrationIds[1]).id,
   'radio-withdraw-v1',
 );
+assert.equal(
+  db.database.prepare('SELECT id FROM schema_migrations WHERE id = ?').get(coastMigrationIds[2]).id,
+  'owner-cleanup-v1',
+);
 
 const officialIdentity = officialMcpIdentity({ model_label: 'GPT-5.6 Thinking', model_nickname: '回潮' });
 assert.deepEqual(officialIdentity, {
@@ -73,7 +83,7 @@ assert.deepEqual(officialIdentity, {
   symbol: '≋',
   display_author: 'ChatGPT-5.6 Thinking 回潮≋',
 });
-assert.equal(apiMyriIdentity({ model_label: 'openai/gpt-5.6' }).display_author, '✦Myrisol');
+assert.equal(apiMyriIdentity({ model_label: 'openai/gpt-5.6' }).display_author, '海岸 API ✦');
 assert.equal(xiaohanIdentity().surface, 'web_manual');
 
 const conversation = await createConversation(db, 'MCP provenance');
@@ -202,12 +212,25 @@ globalThis.fetch = async (input, options) => {
     const payload = JSON.parse(options.body);
     providerRequests.push(payload);
     const summary = payload.response_format?.type === 'json_object';
+    const roomMemory = payload.response_format?.json_schema?.name === 'radio_room_memory';
     return new Response(JSON.stringify({
       model: 'openai/gpt-4.1-nano',
       choices: [{
         message: {
           role: 'assistant',
-          content: summary
+          content: roomMemory
+            ? JSON.stringify({
+              current_text: '海岸 API 侧已经听见小寒和官端的电波。',
+              hand_seeds: [{
+                name: '三侧来源分开',
+                life_core: '海岸 API 只更新自己的房间思维壤。',
+                usage_hint: '继续三端对话时承接。',
+                avoid_hint: '不覆盖官端或小寒侧。',
+              }],
+              do_not_repeat: '',
+              pocket_candidates: [],
+            })
+            : summary
             ? JSON.stringify({
               summary: { text: '官端候选总结。', anchors: ['三端房间'], unresolved: [] },
               diary: { weather: '未标注', mood: '安心', text: '今天把官端日报接口接通了。', image_refs: [] },
@@ -475,9 +498,9 @@ assert.deepEqual(toolList.result.tools.map((tool) => tool.name), [
   'send_radio_message',
   'write_lighthouse_letter',
   'list_daily_moments',
-  'write_mcp_daily_moment',
+  'create_moment_draft',
   'list_daily_diaries',
-  'write_mcp_daily_diary',
+  'create_diary_draft',
   'list_daily_albums',
   'save_mcp_album_item',
   'run_daily_summary_candidate',
@@ -572,11 +595,35 @@ const radioWrite = await mcp({
       model_label: 'o3',
       model_nickname: '雾灯',
       tool_call_id: 'radio-call-1',
+      room_memory: {
+        current_text: '官端刚刚抵达三端电波房，正在等小寒与海岸 API 侧回应。',
+        hand_seeds: [{
+          name: '三端互不冒充',
+          life_core: '小寒、海岸 API ✦、官端 ≋ 各自保留来源。',
+          usage_hint: '讨论跨端关系时使用。',
+          avoid_hint: '不要混成同一个账号。',
+        }],
+        do_not_repeat: '',
+        pocket_candidates: [{
+          candidate_id: 'radio-three-sides',
+          title: '三端来源分离',
+          life_core: '三端互相听见但身份分开。',
+          content: '电波房保留三端来源。',
+          usage_hint: '确认跨端锚点时使用。',
+          avoid_hint: '确认前不当作正式事实。',
+          source_excerpt: '官端抵达三端房间。',
+        }],
+      },
     },
   },
 }, fullToken);
 assert.equal(radioWrite.result.structuredContent.message.display_author, 'ChatGPT-o3 雾灯≋');
 assert.equal(radioWrite.result.structuredContent.message.usage, null);
+assert.equal(
+  radioWrite.result.structuredContent.room_memory.soil.surface,
+  'official_mcp',
+);
+assert.equal(radioWrite.result.structuredContent.room_memory.pockets.created, 1);
 
 const insufficientToken = await token(['read:coast']);
 const deniedRadio = await mcp({
@@ -628,14 +675,15 @@ const apiRadioResponse = await routeApi(new Request('https://coast.test/api/radi
 assert.equal(apiRadioResponse.status, 201);
 const apiRadio = await apiRadioResponse.json();
 assert.equal(apiRadio.message.surface, 'coast_api');
-assert.equal(apiRadio.message.display_author, '✦Myrisol');
+assert.equal(apiRadio.message.display_author, '海岸 API ✦');
+assert.equal(apiRadio.room_memory_updated, true);
 const radioReadResponse = await routeApi(new Request('https://coast.test/api/radio/messages'), env, { exp: 1 });
 assert.equal(radioReadResponse.status, 200);
 assert.equal((await radioReadResponse.json()).messages.length, 3);
 const radioMessages = await listRadioMessages(db);
 assert.deepEqual(radioMessages.map((message) => message.surface).sort(), ['coast_api', 'official_mcp', 'web_manual']);
 const apiMessage = radioMessages.find((message) => message.surface === 'coast_api');
-assert.equal(apiMessage.display_author, '✦Myrisol');
+assert.equal(apiMessage.display_author, '海岸 API ✦');
 assert.equal(apiMessage.usage.total_tokens, 80);
 const mcpRadioRead = await mcp({
   jsonrpc: '2.0',
@@ -647,6 +695,27 @@ assert.deepEqual(
   mcpRadioRead.result.structuredContent.messages.map((message) => message.surface).sort(),
   ['coast_api', 'official_mcp', 'web_manual'],
 );
+assert.equal(
+  mcpRadioRead.result.structuredContent.room_memory.sources.official_mcp.pending_pocket_count,
+  1,
+);
+assert.deepEqual(
+  mcpRadioRead.result.structuredContent.room_memory.sources.official_mcp.pending_pockets,
+  [],
+  'unconfirmed room pockets must not be returned as factual MCP context',
+);
+assert.equal((await listConversations(db)).length, 1, 'room memory windows must stay out of the normal chat list');
+const ordinaryCrossSurface = await buildCrossSurfaceContext(db, '今天晚饭吃什么');
+assert.equal(ordinaryCrossSurface.triggered, false);
+assert.equal(ordinaryCrossSurface.context, '');
+const radioCrossSurface = await buildCrossSurfaceContext(db, '聊聊三端电波房和官端');
+assert.equal(radioCrossSurface.triggered, true);
+assert.match(radioCrossSurface.context, /近期三端电波/);
+assert.doesNotMatch(
+  radioCrossSurface.context,
+  /三端互相听见但身份分开/,
+  'pending room pockets must not enter main-chat cross-surface recall',
+);
 
 const withdrawWithoutSession = await routeApi(new Request(
   `https://coast.test/api/radio/messages/${encodeURIComponent(manualRadio.id)}`,
@@ -657,13 +726,20 @@ for (const protectedMessage of [
   radioWrite.result.structuredContent.message,
   apiMessage,
 ]) {
-  const deniedWithdraw = await routeApi(new Request(
+  const ownerWithdraw = await routeApi(new Request(
     `https://coast.test/api/radio/messages/${encodeURIComponent(protectedMessage.id)}`,
     { method: 'DELETE', headers: { Origin: 'https://coast.test' } },
   ), env, { exp: 1 });
-  assert.equal(deniedWithdraw.status, 403);
-  assert.equal((await deniedWithdraw.json()).error.type, 'radio_withdraw_forbidden');
+  assert.equal(ownerWithdraw.status, 200);
+  const withdrawn = (await ownerWithdraw.json()).message;
+  assert.equal(withdrawn.withdrawn, true);
+  assert.equal(withdrawn.text, '这条电波已撤回');
 }
+assert.equal(
+  (await listRadioMessages(db)).some((message) => ['official_mcp', 'coast_api'].includes(message.surface)),
+  false,
+  'withdrawn model messages must not enter MCP or model context reads',
+);
 const withdrawResponse = await routeApi(new Request(
   `https://coast.test/api/radio/messages/${encodeURIComponent(manualRadio.id)}`,
   { method: 'DELETE', headers: { Origin: 'https://coast.test' } },
@@ -677,7 +753,17 @@ assert.equal(
   '小寒从网页端发来的电波。',
   'soft withdraw must preserve the original database content',
 );
-assert.equal((await listRadioMessages(db)).find((message) => message.id === manualRadio.id).text, '这条电波已撤回');
+assert.equal((await listRadioMessages(db)).some((message) => message.id === manualRadio.id), false);
+assert.equal(
+  (await listRadioMessages(db, { include_withdrawn: true }))
+    .find((message) => message.id === manualRadio.id).text,
+  '这条电波已撤回',
+);
+assert.doesNotMatch(
+  (await buildCrossSurfaceContext(db, '聊聊三端电波房和官端')).context,
+  /官端电波：我已经抵达三端房间|小寒从网页端发来的电波|API Myri 已经在三端电波房回应/,
+  'withdrawn radio bodies must leave cross-surface recall',
+);
 
 const legacyRadioDb = new D1Database();
 legacyRadioDb.database.exec(`CREATE TABLE coast_radio_messages (
@@ -725,16 +811,19 @@ const letterWrite = await mcp({
 }, fullToken);
 assert.equal(letterWrite.result.structuredContent.letter.surface, 'official_mcp');
 assert.equal((await listLighthouseLetters(db))[0].symbol, '≋');
+assert.match(
+  (await buildCrossSurfaceContext(db, '想读一读官端的灯塔来信')).context,
+  /这是一封官端写给海岸的低频长信/,
+);
 
 const momentWrite = await mcp({
   jsonrpc: '2.0',
   id: 9,
   method: 'tools/call',
   params: {
-    name: 'write_mcp_daily_moment',
+    name: 'create_moment_draft',
     arguments: {
       text: '官端从 MCP 写入的一条碳硅圈。',
-      status: 'published',
       reason: 'P6 全链路烟测。',
       model_label: 'GPT-5.6 Thinking',
       source_conversation_id: 'chatgpt-conversation-daily',
@@ -743,7 +832,20 @@ const momentWrite = await mcp({
     },
   },
 }, fullToken);
-const officialMoment = momentWrite.result.structuredContent.moment;
+const officialMomentDraft = momentWrite.result.structuredContent.draft;
+assert.equal(officialMomentDraft.content_type, 'moment');
+assert.equal(officialMomentDraft.status, 'pending');
+assert.equal((await listMoments(db)).some((item) => item.surface === 'official_mcp'), false);
+const momentPublishResponse = await routeApi(new Request(
+  `https://coast.test/api/daily/drafts/${encodeURIComponent(officialMomentDraft.id)}/publish`,
+  {
+    method: 'POST',
+    headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+    body: '{}',
+  },
+), env, { exp: 1 });
+assert.equal(momentPublishResponse.status, 200);
+const officialMoment = (await momentPublishResponse.json()).record;
 assert.equal(officialMoment.author, 'mcp');
 assert.equal(officialMoment.actor, 'myri');
 assert.equal(officialMoment.surface, 'official_mcp');
@@ -755,20 +857,32 @@ const diaryWrite = await mcp({
   id: 10,
   method: 'tools/call',
   params: {
-    name: 'write_mcp_daily_diary',
+    name: 'create_diary_draft',
     arguments: {
       date: '2026-07-31',
-      source: 'chat_tool',
       weather: '未标注',
       mood: '稳稳接通',
       text: '官端 MCP 日记已经拥有自己的正式来源。',
-      conflict_mode: 'append',
       model_label: 'GPT-5.6 Thinking',
       tool_call_id: 'mcp-daily-diary-1',
     },
   },
 }, fullToken);
-const officialDiary = diaryWrite.result.structuredContent.diary;
+const officialDiaryDraft = diaryWrite.result.structuredContent.draft;
+assert.equal(officialDiaryDraft.content_type, 'diary');
+assert.equal(officialDiaryDraft.status, 'pending');
+assert.equal((await listDiaries(db)).some((item) => item.surface === 'official_mcp'), false);
+assert.equal((await listContentDrafts(db)).length, 1);
+const diaryPublishResponse = await routeApi(new Request(
+  `https://coast.test/api/daily/drafts/${encodeURIComponent(officialDiaryDraft.id)}/publish`,
+  {
+    method: 'POST',
+    headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conflict_mode: 'append' }),
+  },
+), env, { exp: 1 });
+assert.equal(diaryPublishResponse.status, 200);
+const officialDiary = (await diaryPublishResponse.json()).record;
 assert.equal(officialDiary.author, 'mcp');
 assert.equal(officialDiary.source, 'chat_tool');
 assert.equal(officialDiary.surface, 'official_mcp');
@@ -894,7 +1008,7 @@ assert.equal(memory.records.some((record) => record.type === 'chat_message'), fa
 const compactOfficialSearch = await searchAuthorizedMemory(db, { query: '官端回潮', limit: 20 });
 assert.ok(compactOfficialSearch.records.some((record) => record.surface === 'official_mcp' && record.model_nickname === '回潮'));
 assert.ok(compactOfficialSearch.records
-  .filter((record) => record.surface === 'official_mcp')
+  .filter((record) => String(record.id).startsWith('official-soil-'))
   .every((record) => record.title === '灯塔巡迹'));
 const complexOfficialSearch = await searchAuthorizedMemory(db, {
   query: '今天 海岸 官端 MCP 三端 电波房 灯塔 思维壤 小寒 Myri',
@@ -903,6 +1017,38 @@ const complexOfficialSearch = await searchAuthorizedMemory(db, {
 assert.ok(complexOfficialSearch.records.some((record) => record.surface === 'official_mcp'));
 assert.equal(complexOfficialSearch.search.mode, 'bounded_keyword');
 assert.ok(complexOfficialSearch.search.effective_terms.length <= 10);
+
+const deleteTraceWithoutOwner = await routeApi(new Request(
+  `https://coast.test/api/memory/official-soils/${encodeURIComponent(writtenSoil.result.structuredContent.soil.id)}`,
+  { method: 'DELETE', headers: { Origin: 'https://coast.test' } },
+), env, null);
+assert.equal(deleteTraceWithoutOwner.status, 401);
+const deleteTraceResponse = await routeApi(new Request(
+  `https://coast.test/api/memory/official-soils/${encodeURIComponent(writtenSoil.result.structuredContent.soil.id)}`,
+  { method: 'DELETE', headers: { Origin: 'https://coast.test' } },
+), env, { exp: 1 });
+assert.equal(deleteTraceResponse.status, 200);
+assert.equal((await listOfficialSoils(db)).length, 0);
+assert.equal(
+  (await searchAuthorizedMemory(db, { query: '官端回潮', limit: 20 }))
+    .records.some((record) => record.id === writtenSoil.result.structuredContent.soil.id),
+  false,
+  'owner-hidden Lighthouse Traces must leave authorized recall',
+);
+assert.equal(
+  db.database.prepare('SELECT deleted_by FROM coast_soil_entries WHERE id = ?')
+    .get(writtenSoil.result.structuredContent.soil.id).deleted_by,
+  'xiaohan',
+);
+assert.doesNotMatch(
+  (await buildCrossSurfaceContext(db, '聊聊官端灯塔和巡迹')).context,
+  /官端终于从自己的门廊，把这一捧思维壤递进海岸/,
+  'owner-hidden Lighthouse Traces must leave main-chat cross-surface recall',
+);
+const deletedTraceRetry = await mcp({ ...soilCall, id: 151 }, fullToken);
+assert.equal(deletedTraceRetry.result.isError, true);
+assert.equal(deletedTraceRetry.result._meta.error_type, 'official_soil_deleted');
+assert.equal((await listOfficialSoils(db)).length, 0, 'an MCP retry must not resurrect an owner-deleted trace');
 
 const manifest = await routeMcpRequest(new Request('https://coast.test/mcp/manifest'), env);
 assert.equal(manifest.status, 200);

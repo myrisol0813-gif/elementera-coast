@@ -289,7 +289,7 @@ export async function listConversations(db) {
   await ensureChatSchema(db);
   const rows = await all(db, `SELECT id, title, created_at, updated_at, deleted_at, title_manual, title_generated_at, title_model_id
     FROM conversations
-    WHERE user_id = ? AND deleted_at IS NULL
+    WHERE user_id = ? AND deleted_at IS NULL AND conversation_kind = 'chat'
     ORDER BY updated_at DESC, created_at DESC`, [USER_ID]);
   return rows.map(conversationFromRow);
 }
@@ -300,8 +300,9 @@ export async function createConversation(db, title = '新聊天') {
   const id = sanitizeId(crypto.randomUUID(), 'conversation');
   const cleanTitle = sanitizeTitle(title);
   await run(db, `INSERT INTO conversations (
-    id, user_id, title, created_at, updated_at, deleted_at, title_manual, title_generated_at, title_model_id
-  ) VALUES (?, ?, ?, ?, ?, NULL, 0, NULL, NULL)`, [id, USER_ID, cleanTitle, timestamp, timestamp]);
+    id, user_id, title, created_at, updated_at, deleted_at, title_manual,
+    title_generated_at, title_model_id, conversation_kind
+  ) VALUES (?, ?, ?, ?, ?, NULL, 0, NULL, NULL, 'chat')`, [id, USER_ID, cleanTitle, timestamp, timestamp]);
   await writeStateRow(db, id, normalizeState(), timestamp);
   return conversationFromRow({
     id,
@@ -396,7 +397,7 @@ async function listActiveMessages(db) {
   const rows = await all(db, `SELECT c.id AS conversation_id, c.title, s.state_json
     FROM conversations c
     JOIN conversation_states s ON s.conversation_id = c.id
-    WHERE c.user_id = ? AND c.deleted_at IS NULL
+    WHERE c.user_id = ? AND c.deleted_at IS NULL AND c.conversation_kind = 'chat'
     ORDER BY c.updated_at ASC`, [USER_ID]);
   const messages = [];
 

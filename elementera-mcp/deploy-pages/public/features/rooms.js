@@ -5,7 +5,7 @@ const ROOM_COPY = Object.freeze({
   radio: {
     title: '无线电波的两端',
     sidebar: '【同步·】无线电波',
-    subtitle: '小寒 · ✦Myrisol · 官端 ChatGPT≋',
+    subtitle: '小寒 · 海岸 API ✦ · 官端 ChatGPT≋',
     empty: '电波房已经接通，暂时还没有消息。',
   },
   lighthouse: {
@@ -48,8 +48,8 @@ function authorMeta(record) {
 
 export function createRooms({ chat, router, toast }) {
   const state = {
-    radio: { status: 'idle', items: [], error: '' },
-    lighthouse: { status: 'idle', items: [], error: '' },
+    radio: { status: 'idle', items: [], error: '', memory: null },
+    lighthouse: { status: 'idle', items: [], error: '', memory: null },
     asking: false,
   };
 
@@ -66,10 +66,18 @@ export function createRooms({ chat, router, toast }) {
     room.status = 'loading';
     room.error = '';
     try {
-      const data = kind === 'radio'
-        ? await requestJson(`${API.radioMessages}?limit=120`)
-        : await requestJson(`${API.lighthouseLetters}?limit=80`);
+      const [data, memoryData] = await Promise.all([
+        kind === 'radio'
+          ? requestJson(`${API.radioMessages}?limit=120`)
+          : requestJson(`${API.lighthouseLetters}?limit=80`),
+        requestJson(kind === 'radio' ? API.radioMemory : API.lighthouseMemory)
+          .catch((error) => {
+            console.warn('[room-memory:load]', error);
+            return { memory: null };
+          }),
+      ]);
       room.items = kind === 'radio' ? data.messages || [] : data.letters || [];
+      room.memory = memoryData.memory || null;
       room.status = 'ready';
     } catch (error) {
       room.status = 'failed';
@@ -90,9 +98,7 @@ export function createRooms({ chat, router, toast }) {
         : message.surface === 'coast_api'
           ? 'is-api'
           : '';
-      const canWithdraw = message.actor === 'xiaohan'
-        && message.surface === 'web_manual'
-        && !message.withdrawn;
+      const canWithdraw = !message.withdrawn;
       return `<article class="local-message ${message.actor === 'xiaohan' ? 'is-user' : 'is-other'} ${sourceClass} ${message.withdrawn ? 'is-withdrawn' : ''}">
         <div>${escapeHtml(message.text)}</div>
         <small>${escapeHtml(authorMeta(message))}</small>
@@ -119,6 +125,46 @@ export function createRooms({ chat, router, toast }) {
     </article>`).join('');
   }
 
+  function roomMemoryBody(kind) {
+    const memory = state[kind].memory;
+    if (!memory?.sources) {
+      return '<section class="feature-card feature-prose room-memory-summary"><p class="feature-note">房间记忆暂时没有同步；消息本身仍可正常读取。</p></section>';
+    }
+    const sources = [
+      ['web_manual', '小寒侧'],
+      ['coast_api', '海岸 API ✦'],
+      ['official_mcp', '官端灯塔侧 ≋'],
+    ];
+    const soils = sources.map(([source, label]) => {
+      const soil = memory.sources[source]?.soil || {};
+      const text = String(soil.current_text || '').trim();
+      return `<div class="feature-row static"><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(text || '这一侧还没有滚动思维壤。')}</small></span></div>`;
+    }).join('');
+    const pockets = sources.flatMap(([source, label]) => (
+      (memory.sources[source]?.pending_pockets || []).map((pocket) => ({ pocket, label }))
+    ));
+    const pending = pockets.length
+      ? `<div class="room-memory-pockets"><h3>待确认袋 · ${pockets.length}</h3>${pockets.map(({ pocket, label }) => `<article class="summary-candidate">
+          <small>${escapeHtml(label)}</small>
+          <strong>${escapeHtml(pocket.title || pocket.suggested_title || '待确认内容')}</strong>
+          <p>${escapeHtml(pocket.life_core || pocket.suggested_life_core || pocket.source_text || '')}</p>
+          <div class="button-row">
+            <button type="button" data-action="rooms:resolve-pocket" data-kind="${kind}" data-id="${escapeAttribute(pocket.id)}" data-destination="discard">丢弃</button>
+            <button type="button" data-action="rooms:resolve-pocket" data-kind="${kind}" data-id="${escapeAttribute(pocket.id)}" data-destination="conversation_seed">房间种子</button>
+            <button type="button" data-action="rooms:resolve-pocket" data-kind="${kind}" data-id="${escapeAttribute(pocket.id)}" data-destination="conversation_memory">房间记忆</button>
+            <button type="button" data-action="rooms:resolve-pocket" data-kind="${kind}" data-id="${escapeAttribute(pocket.id)}" data-destination="confirm_pocket">确认落袋</button>
+          </div>
+        </article>`).join('')}</div>`
+      : '<p class="feature-note">房间待确认袋现在是空的；候选不会在确认前参与事实召回。</p>';
+    return `<details class="feature-card feature-prose room-memory-summary">
+      <summary>房间记忆 · 三侧分开</summary>
+      <p class="feature-note">${kind === 'radio'
+        ? '这里是与官端通信的聊天室 / 灯塔侧入口。底层与普通窗口一样拥有思维壤、待确认袋、种子和记忆，但三侧不会互相覆盖。'
+        : '灯塔来信是低频长信窗口；它有自己的灯塔侧记忆分区，不会混成即时电波或巡迹。'}</p>
+      ${soils}${pending}
+    </details>`;
+  }
+
   function roomView({ kind }) {
     const copy = ROOM_COPY[kind] || ROOM_COPY.radio;
     const radio = kind === 'radio';
@@ -127,9 +173,9 @@ export function createRooms({ chat, router, toast }) {
       subtitle: copy.subtitle,
       className: `local-room server-room ${radio ? 'radio-room' : 'lighthouse-room'}`,
       headerAction: radio
-        ? `<button class="feature-head-action" type="button" data-action="rooms:ask-api" ${state.asking ? 'disabled' : ''}>${state.asking ? '✦回应中…' : '让 ✦Myri 回应'}</button>`
+        ? `<button class="feature-head-action" type="button" data-action="rooms:ask-api" ${state.asking ? 'disabled' : ''}>${state.asking ? '✦回应中…' : '让海岸 API ✦ 回应'}</button>`
         : '',
-      body: `<div class="${radio ? 'local-message-list' : 'lighthouse-letter-list'}">${radio ? radioBody() : lighthouseBody()}</div>`,
+      body: `${roomMemoryBody(kind)}<div class="${radio ? 'local-message-list' : 'lighthouse-letter-list'}">${radio ? radioBody() : lighthouseBody()}</div>`,
       footer: radio
         ? '<form class="local-room-composer" data-submit="rooms:send-radio"><textarea id="localRoomInput" rows="1" placeholder="向三端房间发送一条电波"></textarea><button type="submit">发送</button></form>'
         : '<form class="local-room-composer lighthouse-composer" data-submit="rooms:send-letter"><input id="lighthouseSubject" maxlength="180" placeholder="来信标题（可选）"><textarea id="localRoomInput" rows="3" placeholder="写一封低频长信"></textarea><button type="submit">寄出</button></form>',
@@ -207,7 +253,6 @@ export function createRooms({ chat, router, toast }) {
   }
 
   async function withdrawRadio(messageId) {
-    if (!globalThis.confirm('撤回这条电波吗？撤回后房间里将不再显示正文。')) return;
     await requestJson(`${API.radioMessages}/${encodeURIComponent(messageId)}`, {
       method: 'DELETE',
     });
@@ -216,12 +261,26 @@ export function createRooms({ chat, router, toast }) {
     toast('这条电波已撤回。');
   }
 
+  async function resolvePocket(kind, pocketId, action) {
+    const base = kind === 'lighthouse' ? API.lighthouseMemory : API.radioMemory;
+    await requestJson(`${base}/pockets/${encodeURIComponent(pocketId)}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    });
+    await load(kind);
+    await router.refresh({ preserveScroll: true });
+    toast(action === 'discard' ? '候选已经丢弃。' : '已经放进对应的房间记忆分区。');
+  }
+
   function handleAction(name, target) {
     if (name === 'open') return open(target.dataset.kind);
     if (name === 'retry') return retry(target.dataset.kind);
     if (name === 'ask-api') return askApiMyri();
     if (name === 'mark-read') return markRead(target.dataset.id);
     if (name === 'withdraw-radio') return withdrawRadio(target.dataset.id);
+    if (name === 'resolve-pocket') {
+      return resolvePocket(target.dataset.kind, target.dataset.id, target.dataset.destination);
+    }
   }
 
   function handleSubmit(name, form) {

@@ -21,6 +21,12 @@ const expected = {
   'memory:pocket-stone': ['把它转为石头？', '它会沉入石头状态，不再像普通内容一样参与召回。', '转为石头'],
   'memory:entry-delete': ['删除这条记忆内容？', '删除后它会从对应库中移除，并不再参与召回。', '删除'],
   'memory:entry-stone': ['把它转为石头？', '它会沉入石头状态，不再像普通内容一样参与召回。', '转为石头'],
+  'memory:official-soil-delete': ['删除这条灯塔巡迹？', '删除后不会再出现在海岸中，也不会参与搜索或召回。', '删除'],
+  'rooms:withdraw-radio': ['撤回这条电波吗？', '撤回后房间里将不再显示正文，也不会进入上下文召回。', '撤回'],
+  'rooms:resolve-pocket': ['处理这条房间候选？', '请确认它要进入所选分区，或从待确认袋中丢弃。', '确认处理'],
+  'daily:publish-content-draft': ['确认发布这份草稿？', '发布后它会进入正式日记或碳硅圈，并保留原始来源署名。', '确认发布'],
+  'daily:discard-content-draft': ['丢弃这份草稿？', '丢弃后它不会发布，也不会进入正式海岸内容。', '丢弃'],
+  'daily:discard-summary': ['丢弃本次总结结果？', '这份尚未提交的总结、日记与候选内容会被放下，不会写入服务器。', '丢弃'],
 };
 
 for (const [action, [title, message, confirmText]] of Object.entries(expected)) {
@@ -39,7 +45,9 @@ for (const action of [
 
 const sourceFiles = [
   'public/features/chat.js',
+  'public/features/daily.js',
   'public/features/memory.js',
+  'public/features/rooms.js',
   'public/features/tools.js',
 ];
 const destructivePattern = /(?:delete|clear|discard|trash|remove|stone|archive)/i;

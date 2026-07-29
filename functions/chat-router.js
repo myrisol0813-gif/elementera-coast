@@ -1,5 +1,6 @@
 import { apiError, json, readJson, sameOrigin } from './http.js';
 import { DAILY_MODEL_TOOLS, executeDailyModelTool } from './daily-model-tools.js';
+import { buildCrossSurfaceContext } from './cross-surface-recall.js';
 import { buildMemoryContext, formatMemoryContext } from './memory-recall.js';
 import { MEMORY_OWNER_ID } from './memory-store.js';
 import {
@@ -213,14 +214,21 @@ async function formalChat(request, env) {
 
   let memory = null;
   let softContext = '';
+  let crossSurface = { context: '', selected: [], triggered: false };
   try {
-    memory = await buildMemoryContext(env, MEMORY_OWNER_ID, conversationId, lastUser.content, {
-      recent_entry_ids: value.recent_entry_ids,
-      mode: 'chat',
-      settings: requestSettings,
-      conversation_turns: messages.filter((message) => message?.role === 'user').length,
-    });
-    softContext = formatMemoryContext(memory, requestSettings);
+    [memory, crossSurface] = await Promise.all([
+      buildMemoryContext(env, MEMORY_OWNER_ID, conversationId, lastUser.content, {
+        recent_entry_ids: value.recent_entry_ids,
+        mode: 'chat',
+        settings: requestSettings,
+        conversation_turns: messages.filter((message) => message?.role === 'user').length,
+      }),
+      buildCrossSurfaceContext(env.COAST_CHAT_DB, lastUser.content),
+    ]);
+    softContext = [
+      formatMemoryContext(memory, requestSettings),
+      crossSurface.context,
+    ].filter(Boolean).join('\n\n');
   } catch (error) {
     console.error('[chat-memory:recall]', error);
   }
@@ -253,6 +261,8 @@ async function formalChat(request, env) {
     context: assembled.trace,
     memory: {
       selected_entry_ids: memory?.trace?.selected || [],
+      selected_cross_surface_ids: crossSurface.selected,
+      cross_surface_triggered: crossSurface.triggered,
       vector_enabled: Boolean(memory?.trace?.vector_enabled),
     },
   });

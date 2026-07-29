@@ -32,6 +32,8 @@ import {
   writeSoil,
 } from './memory-store.js';
 import { ModelRequestError, performFormalChat } from './models.js';
+import { deleteOfficialSoilByOwner } from './official-soil-store.js';
+import { OwnerAccessError, requireOwnerSession } from './owner-access.js';
 import {
   decoratePocketProvenance,
   decoratePocketsProvenance,
@@ -632,17 +634,28 @@ async function search(request, env) {
   return json({ ok: true, ...await searchMemory(env, MEMORY_OWNER_ID, await body(request)) });
 }
 
-async function officialSoils(request, env, url) {
-  if (request.method !== 'GET') return methodNotAllowed('GET');
-  const result = await searchOfficialSoilMemory(env.COAST_CHAT_DB, {
-    query: url.searchParams.get('q') || '',
-    limit: url.searchParams.get('limit') || 50,
-  });
+async function officialSoils(request, env, url, session) {
+  const suffix = decodeURIComponent(url.pathname
+    .slice(`${MEMORY_PATH}/official-soils`.length)
+    .replace(/^\//, ''));
+  if (!suffix) {
+    if (request.method !== 'GET') return methodNotAllowed('GET');
+    const result = await searchOfficialSoilMemory(env.COAST_CHAT_DB, {
+      query: url.searchParams.get('q') || '',
+      limit: url.searchParams.get('limit') || 50,
+    });
+    return json({
+      ok: true,
+      soils: result.records,
+      query: result.query,
+      search: result.search,
+    });
+  }
+  if (request.method !== 'DELETE') return methodNotAllowed('DELETE');
+  requireOwnerSession(session);
   return json({
     ok: true,
-    soils: result.records,
-    query: result.query,
-    search: result.search,
+    record: await deleteOfficialSoilByOwner(env.COAST_CHAT_DB, suffix),
   });
 }
 
@@ -676,18 +689,22 @@ export function isMemoryApiPath(pathname) {
     || pathname === `${MEMORY_PATH}/entries`
     || pathname.startsWith(`${MEMORY_PATH}/entries/`)
     || pathname === `${MEMORY_PATH}/official-soils`
+    || pathname.startsWith(`${MEMORY_PATH}/official-soils/`)
     || pathname === `${MEMORY_PATH}/search`
     || pathname === `${MEMORY_PATH}/recall`
     || pathname === `${MEMORY_PATH}/vector-status`;
 }
 
-export async function routeMemoryApi(request, env) {
+export async function routeMemoryApi(request, env, session = null) {
   if (!hasMemoryDatabase(env)) return apiError('memory_db_not_configured', '记忆 D1 存储未配置。', 503);
   const url = new URL(request.url);
   try {
     if (url.pathname === `${MEMORY_PATH}/soil`) return await soil(request, env, url);
     if (url.pathname === `${MEMORY_PATH}/soil/organize`) return await organizeSoil(request, env);
-    if (url.pathname === `${MEMORY_PATH}/official-soils`) return await officialSoils(request, env, url);
+    if (url.pathname === `${MEMORY_PATH}/official-soils`
+      || url.pathname.startsWith(`${MEMORY_PATH}/official-soils/`)) {
+      return await officialSoils(request, env, url, session);
+    }
     if (url.pathname === `${MEMORY_PATH}/search`) return await search(request, env);
     if (url.pathname === `${MEMORY_PATH}/recall`) return await recall(request, env);
     if (url.pathname === `${MEMORY_PATH}/vector-status`) {
@@ -699,7 +716,10 @@ export async function routeMemoryApi(request, env) {
     }
     return await entries(request, env, url);
   } catch (error) {
-    if (error instanceof MemoryStoreError || error instanceof ChatStoreError || error instanceof ModelRequestError) {
+    if (error instanceof MemoryStoreError
+      || error instanceof ChatStoreError
+      || error instanceof ModelRequestError
+      || error instanceof OwnerAccessError) {
       return apiError(error.type, error.message, error.status, error.details || {});
     }
     const reference = crypto.randomUUID().slice(0, 8);

@@ -11,10 +11,12 @@ import {
   createAlbumItem,
   createDiary,
   createMoment,
+  listContentDrafts,
   listAlbumItems,
   listDiaries,
   listMoments,
   listSummaries,
+  publishContentDraftByOwner,
   setMomentLike,
 } from '../functions/daily-store.js';
 import {
@@ -70,6 +72,7 @@ for (const table of [
   'daily_diaries',
   'daily_album_items',
   'daily_summaries',
+  'daily_content_drafts',
 ]) {
   assert.ok(db.database.prepare('SELECT name FROM sqlite_master WHERE type = ? AND name = ?').get('table', table));
 }
@@ -80,6 +83,10 @@ assert.equal(
 assert.equal(
   db.database.prepare('SELECT id FROM schema_migrations WHERE id = ?').get(dailyMigrationIds[1]).id,
   'daily-mcp-interfaces-v1',
+);
+assert.equal(
+  db.database.prepare('SELECT id FROM schema_migrations WHERE id = ?').get(dailyMigrationIds[2]).id,
+  'daily-content-drafts-v1',
 );
 assert.ok(db.database.prepare('PRAGMA table_info(daily_moments)').all().some((column) => column.name === 'tool_call_id'));
 assert.ok(db.database.prepare('PRAGMA table_info(daily_album_items)').all().some((column) => column.name === 'tool_call_id'));
@@ -119,7 +126,7 @@ const toolCall = {
     arguments: JSON.stringify({
       text: '模型真实写入的一条碳硅圈。',
       source_window: 'current',
-      visible_status: 'published',
+      visible_status: 'candidate',
       has_image_refs: false,
       image_refs: [],
       reason: '这是今天值得留下的锚点。',
@@ -140,10 +147,16 @@ const repeatedTool = await executeDailyModelTool(db, toolCall, {
 });
 assert.equal(firstTool.id, repeatedTool.id, 'tool retries must be idempotent');
 assert.equal(
-  db.database.prepare('SELECT COUNT(*) AS count FROM daily_moments WHERE tool_call_id = ?').get('call-moment-1').count,
+  db.database.prepare('SELECT COUNT(*) AS count FROM daily_content_drafts WHERE tool_call_id = ?').get('call-moment-1').count,
   1,
 );
-const modelMoment = (await listMoments(db)).find((entry) => entry.tool_call_id === 'call-moment-1');
+assert.equal(firstTool.kind, 'moment_draft');
+assert.equal((await listMoments(db)).some((entry) => entry.tool_call_id === 'call-moment-1'), false);
+const modelDraft = (await listContentDrafts(db)).find((entry) => entry.tool_call_id === 'call-moment-1');
+assert.equal(modelDraft.content_type, 'moment');
+assert.equal(modelDraft.status, 'pending');
+assert.equal(modelDraft.surface, 'coast_api');
+const modelMoment = (await publishContentDraftByOwner(db, modelDraft.id)).record;
 assert.equal(modelMoment.author, 'myri');
 assert.equal(modelMoment.source, 'chat_tool');
 assert.equal(modelMoment.date, '2026-07-28');
@@ -152,6 +165,39 @@ assert.equal(modelMoment.source_turn_id, 'turn-1');
 assert.equal(modelMoment.surface, 'coast_api');
 assert.equal(modelMoment.symbol, '✦');
 assert.equal(modelMoment.model_label, 'openai/gpt-4.1-nano');
+const diaryDraftToolCall = {
+  id: 'call-diary-draft-1',
+  function: {
+    name: 'create_diary_draft',
+    arguments: JSON.stringify({
+      text: '海岸 API 侧把今天的关系变化写成一份待确认日记。',
+      weather: '未标注',
+      mood: '靠近',
+      source_window: 'current',
+      has_image_refs: false,
+      image_refs: [],
+      tags: ['三端'],
+    }),
+  },
+};
+const diaryDraftResult = await executeDailyModelTool(db, diaryDraftToolCall, {
+  conversation_id: 'conversation-1',
+  source_turn_id: 'turn-diary-1',
+  local_date: '2026-07-28',
+  model_label: 'openai/gpt-4.1-nano',
+});
+assert.equal(diaryDraftResult.kind, 'diary_draft');
+assert.equal((await listDiaries(db)).some((entry) => entry.tool_call_id === 'call-diary-draft-1'), false);
+const apiDiaryDraft = (await listContentDrafts(db))
+  .find((entry) => entry.tool_call_id === 'call-diary-draft-1');
+assert.equal(apiDiaryDraft.content_type, 'diary');
+assert.equal(apiDiaryDraft.surface, 'coast_api');
+assert.deepEqual(apiDiaryDraft.payload.related_message_ids, ['turn-diary-1']);
+const publishedApiDiary = (await publishContentDraftByOwner(db, apiDiaryDraft.id, {
+  conflict_mode: 'append',
+})).record;
+assert.equal(publishedApiDiary.surface, 'coast_api');
+assert.equal(publishedApiDiary.display_author, '海岸 API ✦');
 await assert.rejects(
   () => executeDailyModelTool(db, {
     ...toolCall,

@@ -95,6 +95,7 @@ async function createLatestSchema(db) {
   await ensureColumn(db, 'conversations', 'title_generated_at', 'INTEGER DEFAULT NULL');
   await ensureColumn(db, 'conversations', 'title_model_id', 'TEXT DEFAULT NULL');
   await ensureColumn(db, 'conversations', 'archived_at', 'INTEGER DEFAULT NULL');
+  await ensureColumn(db, 'conversations', 'conversation_kind', "TEXT NOT NULL DEFAULT 'chat'");
 }
 
 async function readNormalizedTurns(db, conversationId) {

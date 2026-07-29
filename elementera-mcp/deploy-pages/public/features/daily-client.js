@@ -18,6 +18,11 @@ function moment(value = {}) {
     imageRefs: refs,
     conversationId: value.conversation_id || null,
     sourceTurnId: value.source_turn_id || null,
+    surface: value.surface || '',
+    modelLabel: value.model_label || null,
+    modelNickname: value.model_nickname || null,
+    symbol: value.symbol || '',
+    displayAuthor: value.display_author || '',
     reason: value.reason || '',
     publishedAt: value.published_at ? milliseconds(value.published_at) : null,
     createdAt: milliseconds(value.created_at),
@@ -50,6 +55,31 @@ function diary(value = {}) {
     summaryId: value.summary_id || null,
     rangeStart: value.range_start || null,
     rangeEnd: value.range_end || null,
+    surface: value.surface || '',
+    modelLabel: value.model_label || null,
+    modelNickname: value.model_nickname || null,
+    symbol: value.symbol || '',
+    displayAuthor: value.display_author || '',
+    createdAt: milliseconds(value.created_at),
+    updatedAt: milliseconds(value.updated_at),
+  };
+}
+
+function draft(value = {}) {
+  return {
+    id: value.id,
+    contentType: value.content_type,
+    status: value.status,
+    payload: value.payload && typeof value.payload === 'object' ? value.payload : {},
+    author: value.author,
+    source: value.source,
+    surface: value.surface || '',
+    modelLabel: value.model_label || null,
+    modelNickname: value.model_nickname || null,
+    symbol: value.symbol || '',
+    displayAuthor: value.display_author || '',
+    conversationId: value.conversation_id || null,
+    sourceTurnId: value.source_turn_id || null,
     createdAt: milliseconds(value.created_at),
     updatedAt: milliseconds(value.updated_at),
   };
@@ -90,12 +120,13 @@ function summary(value = {}) {
 
 export function createDailyClient() {
   async function load({ timezone_offset_minutes = 0 } = {}) {
-    const [momentsData, diariesData, albumsData, summariesData, rangesData] = await Promise.all([
+    const [momentsData, diariesData, albumsData, summariesData, rangesData, draftsData] = await Promise.all([
       requestJson(API.dailyMoments),
       requestJson(API.dailyDiaries),
       requestJson(API.dailyAlbums),
       requestJson(API.dailySummaries),
       requestJson(`${API.dailySummaryRange}?timezone_offset_minutes=${encodeURIComponent(timezone_offset_minutes)}`),
+      requestJson(`${API.dailyDrafts}?status=pending`),
     ]);
     return {
       moments: (momentsData.moments || []).map(moment),
@@ -103,6 +134,7 @@ export function createDailyClient() {
       albumItems: (albumsData.albums || []).map(album),
       summaries: (summariesData.summaries || []).map(summary),
       summaryRanges: rangesData.ranges || null,
+      drafts: (draftsData.drafts || []).map(draft),
     };
   }
 
@@ -186,6 +218,26 @@ export function createDailyClient() {
     };
   }
 
+  async function publishDraft(id, value = {}) {
+    const data = await requestJson(`${API.dailyDrafts}/${encodeURIComponent(id)}/publish`, {
+      method: 'POST',
+      body: JSON.stringify(value),
+    });
+    return {
+      draft: draft(data.draft),
+      record: data.draft?.content_type === 'moment'
+        ? moment(data.record)
+        : diary(data.record),
+    };
+  }
+
+  async function discardDraft(id) {
+    const data = await requestJson(`${API.dailyDrafts}/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    return draft(data.draft);
+  }
+
   return Object.freeze({
     load,
     createMoment,
@@ -197,5 +249,7 @@ export function createDailyClient() {
     createAlbum,
     runSummary,
     commitSummary,
+    publishDraft,
+    discardDraft,
   });
 }

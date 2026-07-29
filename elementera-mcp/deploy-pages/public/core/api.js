@@ -20,13 +20,16 @@ export const API = Object.freeze({
   dailyMoments: '/api/daily/moments',
   dailyDiaries: '/api/daily/diaries',
   dailyAlbums: '/api/daily/albums',
+  dailyDrafts: '/api/daily/drafts',
   dailySummaries: '/api/daily/summaries',
   dailySummaryRange: '/api/daily/summary/range',
   dailySummaryRun: '/api/daily/summary/run',
   dailySummaryCommit: '/api/daily/summary/commit',
   radioMessages: '/api/radio/messages',
   radioAskApiMyri: '/api/radio/ask-api-myri',
+  radioMemory: '/api/radio/memory',
   lighthouseLetters: '/api/lighthouse/letters',
+  lighthouseMemory: '/api/lighthouse/memory',
 });
 
 export class ApiError extends Error {

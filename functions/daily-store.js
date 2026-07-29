@@ -7,6 +7,8 @@ const SOURCES = new Set(['manual', 'chat_tool', 'daily_summary']);
 const DIARY_SOURCES = new Set(['manual', 'chat_tool', 'daily_summary']);
 const DIRECT_DIARY_SOURCES = new Set(['manual', 'daily_summary']);
 const MOMENT_STATUSES = new Set(['draft', 'candidate', 'published']);
+const CONTENT_DRAFT_TYPES = new Set(['diary', 'moment']);
+const CONTENT_DRAFT_STATUSES = new Set(['pending', 'published', 'discarded']);
 const ALBUM_CATEGORIES = new Set(['xiaohan', 'myri', 'together']);
 const COMMENT_AUTHORS = new Set(['xiaohan', 'myri', 'api', 'mcp']);
 const MAX_TEXT = 24000;
@@ -130,7 +132,7 @@ function provenanceFromDailyRow(row, defaultSurface = '') {
     model_nickname: row.model_nickname || null,
     symbol: row.symbol ?? (surface === 'official_mcp' ? '≋' : surface === 'coast_api' ? '✦' : ''),
     display_author: row.display_author
-      || (surface === 'official_mcp' ? 'ChatGPT≋' : surface === 'coast_api' ? '✦Myrisol' : '小寒'),
+      || (surface === 'official_mcp' ? 'ChatGPT≋' : surface === 'coast_api' ? '海岸 API ✦' : '小寒'),
   };
 }
 
@@ -566,6 +568,206 @@ export async function patchDiary(db, id, value = {}) {
   params.push(Date.now(), diaryId);
   await run(db, `UPDATE daily_diaries SET ${updates.join(', ')} WHERE id = ?`, params);
   return diaryFromRow(await first(db, 'SELECT * FROM daily_diaries WHERE id = ?', [diaryId]));
+}
+
+function draftFromRow(row) {
+  const payload = parseListPayload(row.payload_json);
+  return {
+    id: row.id,
+    content_type: row.content_type,
+    status: row.status,
+    payload,
+    author: row.author,
+    source: row.source,
+    actor: row.actor,
+    surface: row.surface,
+    model_label: row.model_label || null,
+    model_nickname: row.model_nickname || null,
+    symbol: row.symbol || '',
+    display_author: row.display_author,
+    conversation_id: row.conversation_id || null,
+    source_turn_id: row.source_turn_id || null,
+    tool_call_id: row.tool_call_id || null,
+    published_record_id: row.published_record_id || null,
+    resolved_at: optionalIso(row.resolved_at),
+    resolved_by: row.resolved_by || null,
+    created_at: iso(row.created_at),
+    updated_at: iso(row.updated_at),
+  };
+}
+
+function parseListPayload(value) {
+  try {
+    const parsed = JSON.parse(value || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function requireContentDraftRow(db, id) {
+  const draftId = cleanId(id, 'daily_draft');
+  const row = await first(db, 'SELECT * FROM daily_content_drafts WHERE id = ?', [draftId]);
+  if (!row) throw new DailyStoreError('daily_draft_not_found', '这份日报草稿不存在。', 404);
+  return row;
+}
+
+function draftIdentity(row) {
+  return {
+    actor: row.actor,
+    surface: row.surface,
+    model_label: row.model_label,
+    model_nickname: row.model_nickname,
+    symbol: row.symbol,
+    display_author: row.display_author,
+  };
+}
+
+async function createContentDraft(db, contentType, payload, defaults = {}) {
+  await ensureDailySchema(db);
+  if (!CONTENT_DRAFT_TYPES.has(contentType)) {
+    throw new DailyStoreError('invalid_daily_draft_type', '日报草稿类型无效。');
+  }
+  const identity = normalizedIdentity(defaults);
+  if (!identity.surface || identity.surface === 'web_manual') {
+    throw new DailyStoreError('model_draft_identity_required', '模型草稿必须保留真实来源身份。', 400);
+  }
+  const toolCallId = optionalId(defaults.tool_call_id);
+  if (toolCallId) {
+    const existing = await first(db, 'SELECT * FROM daily_content_drafts WHERE tool_call_id = ?', [toolCallId]);
+    if (existing) return draftFromRow(existing);
+  }
+  const timestamp = Date.now();
+  const id = cleanId('', `${contentType}_draft`);
+  await run(db, `INSERT INTO daily_content_drafts (
+    id, content_type, status, payload_json, author, source, actor, surface,
+    model_label, model_nickname, symbol, display_author, conversation_id,
+    source_turn_id, tool_call_id, published_record_id, resolved_at, resolved_by,
+    created_at, updated_at
+  ) VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)`, [
+    id,
+    contentType,
+    JSON.stringify(payload),
+    defaults.author,
+    defaults.source || 'chat_tool',
+    identity.actor,
+    identity.surface,
+    identity.model_label,
+    identity.model_nickname,
+    identity.symbol,
+    identity.display_author,
+    optionalId(defaults.conversation_id),
+    optionalId(defaults.source_turn_id),
+    toolCallId,
+    timestamp,
+    timestamp,
+  ]);
+  return draftFromRow(await requireContentDraftRow(db, id));
+}
+
+export async function createMomentDraft(db, value = {}, defaults = {}) {
+  const item = normalizeMoment({ ...value, status: 'candidate' }, {
+    ...defaults,
+    status: 'candidate',
+  });
+  return createContentDraft(db, 'moment', {
+    date: item.date,
+    text: item.text,
+    image_refs: parseList(item.image_refs_json),
+    reason: item.reason || '',
+  }, defaults);
+}
+
+export async function createDiaryDraft(db, value = {}, defaults = {}) {
+  const item = normalizeDiary(value, defaults);
+  return createContentDraft(db, 'diary', {
+    date: item.date,
+    weather: item.weather,
+    mood: item.mood,
+    text: item.text,
+    image_refs: parseList(item.image_refs_json),
+    tags: stringList(value.tags, 20, 80),
+    related_message_ids: stringList(value.related_message_ids, 40, 180),
+  }, defaults);
+}
+
+export async function listContentDrafts(db, filters = {}) {
+  await ensureDailySchema(db);
+  const clauses = [];
+  const params = [];
+  if (filters.content_type) {
+    const contentType = String(filters.content_type);
+    if (!CONTENT_DRAFT_TYPES.has(contentType)) {
+      throw new DailyStoreError('invalid_daily_draft_type', '日报草稿类型无效。');
+    }
+    clauses.push('content_type = ?');
+    params.push(contentType);
+  }
+  const status = String(filters.status || 'pending');
+  if (!CONTENT_DRAFT_STATUSES.has(status)) {
+    throw new DailyStoreError('invalid_daily_draft_status', '日报草稿状态无效。');
+  }
+  clauses.push('status = ?');
+  params.push(status);
+  const rows = await all(db, `SELECT * FROM daily_content_drafts
+    WHERE ${clauses.join(' AND ')}
+    ORDER BY created_at DESC LIMIT 200`, params);
+  return rows.map(draftFromRow);
+}
+
+export async function publishContentDraftByOwner(db, id, value = {}) {
+  await ensureDailySchema(db);
+  const row = await requireContentDraftRow(db, id);
+  if (row.status === 'published' && row.published_record_id) {
+    return {
+      draft: draftFromRow(row),
+      record: row.content_type === 'moment'
+        ? await getMoment(db, row.published_record_id)
+        : (await listDiaries(db)).find((item) => item.id === row.published_record_id) || null,
+    };
+  }
+  if (row.status !== 'pending') {
+    throw new DailyStoreError('daily_draft_resolved', '这份草稿已经处理过了。', 409);
+  }
+  const payload = parseListPayload(row.payload_json);
+  const defaults = {
+    author: row.author,
+    source: row.source,
+    conversation_id: row.conversation_id,
+    source_turn_id: row.source_turn_id,
+    tool_call_id: null,
+    identity: draftIdentity(row),
+  };
+  const record = row.content_type === 'moment'
+    ? await createMoment(db, { ...payload, status: 'published' }, defaults)
+    : await createDiary(db, {
+      ...payload,
+      conflict_mode: value.conflict_mode || 'append',
+      replace_id: value.replace_id,
+    }, defaults);
+  const timestamp = Date.now();
+  await run(db, `UPDATE daily_content_drafts
+    SET status = 'published', published_record_id = ?, resolved_at = ?,
+      resolved_by = 'xiaohan', updated_at = ?
+    WHERE id = ? AND status = 'pending'`, [record.id, timestamp, timestamp, row.id]);
+  return {
+    draft: draftFromRow(await requireContentDraftRow(db, row.id)),
+    record,
+  };
+}
+
+export async function discardContentDraftByOwner(db, id) {
+  await ensureDailySchema(db);
+  const row = await requireContentDraftRow(db, id);
+  if (row.status === 'discarded') return draftFromRow(row);
+  if (row.status !== 'pending') {
+    throw new DailyStoreError('daily_draft_resolved', '这份草稿已经处理过了。', 409);
+  }
+  const timestamp = Date.now();
+  await run(db, `UPDATE daily_content_drafts
+    SET status = 'discarded', resolved_at = ?, resolved_by = 'xiaohan', updated_at = ?
+    WHERE id = ? AND status = 'pending'`, [timestamp, timestamp, row.id]);
+  return draftFromRow(await requireContentDraftRow(db, row.id));
 }
 
 function albumFromRow(row) {

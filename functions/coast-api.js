@@ -7,12 +7,17 @@ import {
   writeLighthouseLetter,
 } from './lighthouse-store.js';
 import { ModelRequestError } from './models.js';
+import { MemoryStoreError } from './memory-store.js';
 import { askApiMyriInRadio } from './radio-myri.js';
-import { listRadioMessages, sendRadioMessage, withdrawRadioMessage } from './radio-store.js';
+import { requireOwnerSession, OwnerAccessError } from './owner-access.js';
+import { listRadioMessages, sendRadioMessage, withdrawRadioMessageByOwner } from './radio-store.js';
+import { listRoomMemory, resolveRoomPocketByOwner } from './room-memory.js';
 
 const RADIO_MESSAGES = '/api/radio/messages';
 const RADIO_ASK = '/api/radio/ask-api-myri';
 const LIGHTHOUSE = '/api/lighthouse/letters';
+const RADIO_MEMORY = '/api/radio/memory';
+const LIGHTHOUSE_MEMORY = '/api/lighthouse/memory';
 
 function methodNotAllowed(allow) {
   return apiError('method_not_allowed', 'Method not allowed.', 405, { allow });
@@ -22,7 +27,11 @@ export function isCoastRoomApiPath(pathname) {
   return pathname === RADIO_MESSAGES
     || pathname.startsWith(`${RADIO_MESSAGES}/`)
     || pathname === RADIO_ASK
+    || pathname === RADIO_MEMORY
+    || pathname.startsWith(`${RADIO_MEMORY}/`)
     || pathname === LIGHTHOUSE
+    || pathname === LIGHTHOUSE_MEMORY
+    || pathname.startsWith(`${LIGHTHOUSE_MEMORY}/`)
     || pathname.startsWith(`${LIGHTHOUSE}/`);
 }
 
@@ -35,6 +44,7 @@ export async function routeCoastRoomApi(request, env, session = null) {
         const messages = await listRadioMessages(env.COAST_CHAT_DB, {
           limit: url.searchParams.get('limit'),
           before: url.searchParams.get('before'),
+          include_withdrawn: true,
         });
         return json({ ok: true, room_id: 'radio', messages });
       }
@@ -54,8 +64,8 @@ export async function routeCoastRoomApi(request, env, session = null) {
     const radioMessageMatch = url.pathname.match(/^\/api\/radio\/messages\/([^/]+)$/);
     if (radioMessageMatch) {
       if (request.method !== 'DELETE') return methodNotAllowed('DELETE');
-      if (!session) return apiError('unauthorized', '请先从海岸网页登录。', 401);
-      const message = await withdrawRadioMessage(
+      requireOwnerSession(session);
+      const message = await withdrawRadioMessageByOwner(
         env.COAST_CHAT_DB,
         decodeURIComponent(radioMessageMatch[1]),
       );
@@ -64,6 +74,32 @@ export async function routeCoastRoomApi(request, env, session = null) {
     if (url.pathname === RADIO_ASK) {
       if (request.method !== 'POST') return methodNotAllowed('POST');
       return json({ ok: true, ...await askApiMyriInRadio(env, await readJson(request)) }, 201);
+    }
+    if (url.pathname === RADIO_MEMORY || url.pathname === LIGHTHOUSE_MEMORY) {
+      if (request.method !== 'GET') return methodNotAllowed('GET');
+      requireOwnerSession(session);
+      return json({
+        ok: true,
+        memory: await listRoomMemory(
+          env.COAST_CHAT_DB,
+          url.pathname === RADIO_MEMORY ? 'radio' : 'lighthouse',
+        ),
+      });
+    }
+    const roomPocketMatch = url.pathname.match(/^\/api\/(radio|lighthouse)\/memory\/pockets\/([^/]+)\/resolve$/);
+    if (roomPocketMatch) {
+      if (request.method !== 'POST') return methodNotAllowed('POST');
+      requireOwnerSession(session);
+      const value = await readJson(request);
+      return json({
+        ok: true,
+        ...(await resolveRoomPocketByOwner(
+          env.COAST_CHAT_DB,
+          roomPocketMatch[1],
+          decodeURIComponent(roomPocketMatch[2]),
+          value,
+        )),
+      });
     }
     if (url.pathname === LIGHTHOUSE) {
       if (request.method === 'GET') {
@@ -101,7 +137,10 @@ export async function routeCoastRoomApi(request, env, session = null) {
     }
     return apiError('not_found', 'Not found.', 404);
   } catch (error) {
-    if (error instanceof CoastStoreError || error instanceof ModelRequestError) {
+    if (error instanceof CoastStoreError
+      || error instanceof ModelRequestError
+      || error instanceof MemoryStoreError
+      || error instanceof OwnerAccessError) {
       return apiError(error.type, error.message, error.status, error.details || {});
     }
     if (error?.message === 'invalid_json' || error?.message === 'body_too_large') {

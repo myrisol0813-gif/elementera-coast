@@ -3,8 +3,8 @@ import { officialMcpIdentity } from './coast-identity.js';
 import {
   commitSummary,
   createAlbumItem,
-  createDiary,
-  createMoment,
+  createDiaryDraft,
+  createMomentDraft,
   listAlbumItems,
   listDiaries,
   listMoments,
@@ -14,8 +14,9 @@ import { listLighthouseLetters, writeLighthouseLetter } from './lighthouse-store
 import { McpAuthError, mcpAuthChallenge, requireMcpAuth } from './mcp-auth.js';
 import { writeOfficialSoil } from './official-soil-store.js';
 import { listRadioMessages, sendRadioMessage } from './radio-store.js';
+import { listRoomMemory, writeRoomMemory } from './room-memory.js';
 
-const VERSION = '1.1.1';
+const VERSION = '1.2.0';
 const PRIVATE_RECORD_SCHEMA = Object.freeze({ type: 'object', additionalProperties: true });
 
 function objectSchema(properties = {}, required = []) {
@@ -45,6 +46,25 @@ const MODEL_IDENTITY_PROPERTIES = Object.freeze({
     type: 'string',
     maxLength: 240,
     description: 'Stable caller-provided idempotency key when one is available.',
+  },
+});
+
+const ROOM_MEMORY_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    current_text: { type: 'string', maxLength: 4000 },
+    hand_seeds: {
+      type: 'array',
+      maxItems: 7,
+      items: PRIVATE_RECORD_SCHEMA,
+    },
+    do_not_repeat: { type: 'string', maxLength: 4000 },
+    pocket_candidates: {
+      type: 'array',
+      maxItems: 7,
+      items: PRIVATE_RECORD_SCHEMA,
+    },
   },
 });
 
@@ -96,7 +116,10 @@ const TOOL_DEFINITIONS = Object.freeze([
       limit: { type: 'integer', minimum: 1, maximum: 200 },
       before: { type: 'string', format: 'date-time' },
     }),
-    outputSchema: objectSchema({ messages: { type: 'array', items: PRIVATE_RECORD_SCHEMA } }, ['messages']),
+    outputSchema: objectSchema({
+      messages: { type: 'array', items: PRIVATE_RECORD_SCHEMA },
+      room_memory: PRIVATE_RECORD_SCHEMA,
+    }, ['messages', 'room_memory']),
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     _meta: toolMeta(['read:coast'], '正在接收海岸电波…', '电波已经抵达'),
   }),
@@ -162,9 +185,13 @@ const TOOL_DEFINITIONS = Object.freeze([
     description: 'Use this when official ChatGPT wants to leave a message in the private three-party Coast radio room. The server always signs it as ChatGPTxxx≋.',
     inputSchema: objectSchema({
       text: { type: 'string', minLength: 1, maxLength: 12000 },
+      room_memory: ROOM_MEMORY_SCHEMA,
       ...MODEL_IDENTITY_PROPERTIES,
     }, ['text', 'model_label']),
-    outputSchema: objectSchema({ message: PRIVATE_RECORD_SCHEMA }, ['message']),
+    outputSchema: objectSchema({
+      message: PRIVATE_RECORD_SCHEMA,
+      room_memory: { anyOf: [PRIVATE_RECORD_SCHEMA, { type: 'null' }] },
+    }, ['message', 'room_memory']),
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
@@ -180,9 +207,13 @@ const TOOL_DEFINITIONS = Object.freeze([
     inputSchema: objectSchema({
       subject: { type: 'string', maxLength: 180 },
       body: { type: 'string', minLength: 1, maxLength: 40000 },
+      room_memory: ROOM_MEMORY_SCHEMA,
       ...MODEL_IDENTITY_PROPERTIES,
     }, ['body', 'model_label']),
-    outputSchema: objectSchema({ letter: PRIVATE_RECORD_SCHEMA }, ['letter']),
+    outputSchema: objectSchema({
+      letter: PRIVATE_RECORD_SCHEMA,
+      room_memory: { anyOf: [PRIVATE_RECORD_SCHEMA, { type: 'null' }] },
+    }, ['letter', 'room_memory']),
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
@@ -205,13 +236,12 @@ const TOOL_DEFINITIONS = Object.freeze([
     _meta: toolMeta(['read:coast'], '正在查看海岸碳硅圈…', '碳硅圈记录已取回'),
   }),
   tool({
-    name: 'write_mcp_daily_moment',
-    title: '写入官端碳硅圈',
-    description: 'Write or publish an official MCP moment. The server always stores author=mcp, surface=official_mcp, symbol=≋ and never impersonates Xiaohan or ✦Myrisol.',
+    name: 'create_moment_draft',
+    title: '创建官端碳硅圈候选',
+    description: 'Create an official MCP Coast moment candidate for Xiaohan to review. This never publishes directly; only the owner confirmation page can publish or discard it.',
     inputSchema: objectSchema({
       text: { type: 'string', maxLength: 12000 },
       date: { type: 'string', format: 'date' },
-      status: { type: 'string', enum: ['draft', 'candidate', 'published'] },
       image_refs: {
         type: 'array',
         maxItems: 6,
@@ -220,14 +250,14 @@ const TOOL_DEFINITIONS = Object.freeze([
       reason: { type: 'string', maxLength: 1000 },
       ...MODEL_IDENTITY_PROPERTIES,
     }, ['text', 'model_label']),
-    outputSchema: objectSchema({ moment: PRIVATE_RECORD_SCHEMA }, ['moment']),
+    outputSchema: objectSchema({ draft: PRIVATE_RECORD_SCHEMA }, ['draft']),
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
       openWorldHint: false,
       idempotentHint: false,
     },
-    _meta: toolMeta(['write:soil'], '正在写入官端碳硅圈…', '官端碳硅圈已写入'),
+    _meta: toolMeta(['write:soil'], '正在创建碳硅圈候选…', '碳硅圈候选已送到确认页'),
   }),
   tool({
     name: 'list_daily_diaries',
@@ -242,12 +272,11 @@ const TOOL_DEFINITIONS = Object.freeze([
     _meta: toolMeta(['read:coast'], '正在翻阅海岸日记…', '海岸日记已取回'),
   }),
   tool({
-    name: 'write_mcp_daily_diary',
-    title: '写入官端日记',
-    description: 'Write an official MCP diary page with source=chat_tool or daily_summary. The server fixes author=mcp and official MCP provenance.',
+    name: 'create_diary_draft',
+    title: '创建官端日记草稿',
+    description: 'Create an official MCP diary draft for Xiaohan to review. This never publishes directly; only the owner confirmation page can publish or discard it.',
     inputSchema: objectSchema({
       date: { type: 'string', format: 'date' },
-      source: { type: 'string', enum: ['chat_tool', 'daily_summary'] },
       weather: { type: 'string', maxLength: 80 },
       mood: { type: 'string', maxLength: 120 },
       text: { type: 'string', minLength: 1, maxLength: 24000 },
@@ -256,18 +285,26 @@ const TOOL_DEFINITIONS = Object.freeze([
         maxItems: 6,
         items: { type: 'string', maxLength: 2048 },
       },
-      conflict_mode: { type: 'string', enum: ['append', 'replace'] },
-      replace_id: { type: 'string', maxLength: 160 },
+      tags: {
+        type: 'array',
+        maxItems: 20,
+        items: { type: 'string', maxLength: 80 },
+      },
+      related_message_ids: {
+        type: 'array',
+        maxItems: 40,
+        items: { type: 'string', maxLength: 180 },
+      },
       ...MODEL_IDENTITY_PROPERTIES,
-    }, ['source', 'text', 'model_label']),
-    outputSchema: objectSchema({ diary: PRIVATE_RECORD_SCHEMA }, ['diary']),
+    }, ['text', 'model_label']),
+    outputSchema: objectSchema({ draft: PRIVATE_RECORD_SCHEMA }, ['draft']),
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
       openWorldHint: false,
       idempotentHint: false,
     },
-    _meta: toolMeta(['write:soil'], '正在写下官端日记…', '官端日记已写入'),
+    _meta: toolMeta(['write:soil'], '正在创建官端日记草稿…', '日记草稿已送到确认页'),
   }),
   tool({
     name: 'list_daily_albums',
@@ -494,10 +531,42 @@ function modelIdentityInput(args) {
   };
 }
 
+function roomMemoryInput(value) {
+  if (value == null) return null;
+  const input = inputObject(value);
+  const result = {
+    current_text: textInput(input.current_text, 'room_memory.current_text', 4000) || '',
+    hand_seeds: Array.isArray(input.hand_seeds) ? input.hand_seeds.slice(0, 7) : [],
+    do_not_repeat: textInput(input.do_not_repeat, 'room_memory.do_not_repeat', 4000) || '',
+    pocket_candidates: Array.isArray(input.pocket_candidates)
+      ? input.pocket_candidates.slice(0, 7)
+      : [],
+  };
+  return result.current_text
+    || result.hand_seeds.length
+    || result.do_not_repeat
+    || result.pocket_candidates.length
+    ? result
+    : null;
+}
+
 function sourceConversation(args, requestMeta) {
   return args.source_conversation_id
     || String(requestMeta?.['openai/session'] || '').slice(0, 200)
     || null;
+}
+
+function mcpReadableRoomMemory(memory) {
+  const sources = {};
+  for (const [source, value] of Object.entries(memory?.sources || {})) {
+    const pending = Array.isArray(value?.pending_pockets) ? value.pending_pockets : [];
+    sources[source] = {
+      ...value,
+      pending_pocket_count: pending.length,
+      pending_pockets: [],
+    };
+  }
+  return { room_id: memory?.room_id || '', sources };
 }
 
 async function executeTool(name, rawArgs, request, env, requestMeta) {
@@ -513,11 +582,17 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     return resultContent({ status }, 'Elementera Coast 的官端门廊已连接。');
   }
   if (name === 'list_radio_messages') {
-    const messages = await listRadioMessages(env.COAST_CHAT_DB, {
-      limit: integerInput(args.limit, 'limit', 100, 200),
-      before: dateTimeInput(args.before, 'before'),
-    });
-    return resultContent({ messages }, `读取了 ${messages.length} 条海岸电波。`);
+    const [messages, roomMemory] = await Promise.all([
+      listRadioMessages(env.COAST_CHAT_DB, {
+        limit: integerInput(args.limit, 'limit', 100, 200),
+        before: dateTimeInput(args.before, 'before'),
+      }),
+      listRoomMemory(env.COAST_CHAT_DB, 'radio'),
+    ]);
+    return resultContent(
+      { messages, room_memory: mcpReadableRoomMemory(roomMemory) },
+      `读取了 ${messages.length} 条海岸电波及房间分区记忆；待确认袋只返回数量，不作为事实内容。`,
+    );
   }
   if (name === 'list_lighthouse_letters') {
     const letters = await listLighthouseLetters(env.COAST_CHAT_DB, {
@@ -596,7 +671,19 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
       ...provenance,
       text: textInput(args.text, 'text', 12000, { required: true }),
     });
-    return resultContent({ message }, `${message.display_author} 的电波已经送达海岸。`);
+    const memoryValue = roomMemoryInput(args.room_memory);
+    const roomMemory = memoryValue
+      ? await writeRoomMemory(env.COAST_CHAT_DB, 'radio', provenance.identity, {
+        ...memoryValue,
+        source_conversation_id: provenance.source_conversation_id,
+        source_turn_id: provenance.source_turn_id || message.id,
+        tool_call_id: provenance.tool_call_id,
+      })
+      : null;
+    return resultContent(
+      { message, room_memory: roomMemory },
+      `${message.display_author} 的电波已经送达海岸${roomMemory ? '，官端房间思维壤也已分区更新' : ''}。`,
+    );
   }
   if (name === 'write_lighthouse_letter') {
     const letter = await writeLighthouseLetter(env.COAST_CHAT_DB, {
@@ -604,13 +691,24 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
       subject: textInput(args.subject, 'subject', 180) || '',
       body: textInput(args.body, 'body', 40000, { required: true }),
     });
-    return resultContent({ letter }, `${letter.display_author} 的灯塔来信已经写入。`);
+    const memoryValue = roomMemoryInput(args.room_memory);
+    const roomMemory = memoryValue
+      ? await writeRoomMemory(env.COAST_CHAT_DB, 'lighthouse', provenance.identity, {
+        ...memoryValue,
+        source_conversation_id: provenance.source_conversation_id,
+        source_turn_id: provenance.source_turn_id || letter.id,
+        tool_call_id: provenance.tool_call_id,
+      })
+      : null;
+    return resultContent(
+      { letter, room_memory: roomMemory },
+      `${letter.display_author} 的灯塔来信已经写入${roomMemory ? '，灯塔侧记忆分区也已更新' : ''}。`,
+    );
   }
-  if (name === 'write_mcp_daily_moment') {
-    const moment = await createMoment(env.COAST_CHAT_DB, {
+  if (name === 'create_moment_draft') {
+    const draft = await createMomentDraft(env.COAST_CHAT_DB, {
       date: textInput(args.date, 'date', 10),
       text: textInput(args.text, 'text', 12000) || '',
-      status: enumInput(args.status, 'status', ['draft', 'candidate', 'published'], 'published'),
       image_refs: stringArrayInput(args.image_refs, 'image_refs'),
       reason: textInput(args.reason, 'reason', 1000) || '',
     }, {
@@ -621,26 +719,26 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
       tool_call_id: provenance.tool_call_id,
       identity: provenance.identity,
     });
-    return resultContent({ moment }, `${moment.display_author} 的碳硅圈记录已写入。`);
+    return resultContent({ draft }, `${draft.display_author} 的碳硅圈候选已送到小寒确认页，没有直接发布。`);
   }
-  if (name === 'write_mcp_daily_diary') {
-    const diary = await createDiary(env.COAST_CHAT_DB, {
+  if (name === 'create_diary_draft') {
+    const draft = await createDiaryDraft(env.COAST_CHAT_DB, {
       date: textInput(args.date, 'date', 10),
       weather: textInput(args.weather, 'weather', 80) || '未标注',
       mood: textInput(args.mood, 'mood', 120) || '未标注',
       text: textInput(args.text, 'text', 24000, { required: true }),
       image_refs: stringArrayInput(args.image_refs, 'image_refs'),
-      conflict_mode: enumInput(args.conflict_mode, 'conflict_mode', ['append', 'replace'], ''),
-      replace_id: textInput(args.replace_id, 'replace_id', 160),
+      tags: stringArrayInput(args.tags, 'tags', 20, 80),
+      related_message_ids: stringArrayInput(args.related_message_ids, 'related_message_ids', 40, 180),
     }, {
       author: 'mcp',
-      source: enumInput(args.source, 'source', ['chat_tool', 'daily_summary'], 'chat_tool'),
+      source: 'chat_tool',
       conversation_id: provenance.source_conversation_id,
       source_turn_id: provenance.source_turn_id,
       tool_call_id: provenance.tool_call_id,
       identity: provenance.identity,
     });
-    return resultContent({ diary }, `${diary.display_author} 的日记已经写入。`);
+    return resultContent({ draft }, `${draft.display_author} 的日记草稿已送到小寒确认页，没有直接发布。`);
   }
   if (name === 'save_mcp_album_item') {
     const album = await createAlbumItem(env.COAST_CHAT_DB, {
@@ -714,5 +812,5 @@ export async function callCoastMcpTool(name, args, request, env, requestMeta = {
 }
 
 export const coastMcpToolNames = Object.freeze(TOOL_DEFINITIONS.map(({ name }) => name));
-export const coastMcpInstructions = 'Elementera Coast 是小寒的单人私有海岸。官端可留下自己的灯塔巡迹，也可写入电波、灯塔来信、碳硅圈、MCP 日记和稳定相册图片引用，但只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或 ✦Myrisol。灯塔巡迹是官端读取授权内容后留下的只读足迹，不是贴着当前对话持续更新的思维壤。上下文不足时先读取授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。';
+export const coastMcpInstructions = 'Elementera Coast 是小寒的单人私有海岸。官端可留下自己的灯塔巡迹，也可写入电波、灯塔来信、创建碳硅圈候选、创建 MCP 日记草稿和登记稳定相册图片引用，但只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或海岸 API ✦。灯塔巡迹是官端读取授权内容后留下的只读跨端足迹，不是施工日志池、草稿箱，也不是贴着当前对话持续更新的思维壤。日记与碳硅圈草稿必须由小寒在海岸前端确认后才会发布，不能塞进电波房或灯塔巡迹，也不能由官端自行发布或丢弃。上下文不足时先读取授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。';
 export { VERSION as coastMcpVersion };

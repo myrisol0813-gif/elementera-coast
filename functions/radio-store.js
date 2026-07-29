@@ -56,11 +56,16 @@ export async function sendRadioMessage(db, value = {}) {
   return fromRow(await first(db, 'SELECT * FROM coast_radio_messages WHERE id = ?', [id]));
 }
 
-export async function listRadioMessages(db, { limit = 100, before = '' } = {}) {
+export async function listRadioMessages(db, {
+  limit = 100,
+  before = '',
+  include_withdrawn: includeWithdrawn = false,
+} = {}) {
   await ensureCoastSchema(db);
   const beforeTime = before ? Date.parse(String(before)) : NaN;
   const params = ['radio'];
   let where = 'room_id = ?';
+  if (!includeWithdrawn) where += ' AND withdrawn_at IS NULL';
   if (Number.isFinite(beforeTime)) {
     where += ' AND created_at < ?';
     params.push(beforeTime);
@@ -71,16 +76,13 @@ export async function listRadioMessages(db, { limit = 100, before = '' } = {}) {
   return (result?.results || []).reverse().map(fromRow);
 }
 
-export async function withdrawRadioMessage(db, id) {
+export async function withdrawRadioMessageByOwner(db, id) {
   await ensureCoastSchema(db);
   const messageId = String(id || '').trim().slice(0, 180);
   const row = messageId
     ? await first(db, 'SELECT * FROM coast_radio_messages WHERE id = ?', [messageId])
     : null;
   if (!row) throw new CoastStoreError('radio_message_not_found', '这条电波不存在。', 404);
-  if (row.actor !== 'xiaohan' || row.surface !== 'web_manual') {
-    throw new CoastStoreError('radio_withdraw_forbidden', '只能撤回小寒从网页手动发送的电波。', 403);
-  }
   if (!row.withdrawn_at) {
     await db.prepare(`UPDATE coast_radio_messages
       SET withdrawn_at = ?, withdrawn_by = ?

@@ -38,6 +38,9 @@ export async function writeOfficialSoil(db, value = {}) {
   }
   if (fields.tool_call_id) {
     const existing = await first(db, 'SELECT * FROM coast_soil_entries WHERE tool_call_id = ?', [fields.tool_call_id]);
+    if (existing?.deleted_at) {
+      throw new CoastStoreError('official_soil_deleted', '这次工具调用对应的灯塔巡迹已由屋主删除，不会在重试时恢复。', 410);
+    }
     if (existing) return fromRow(existing);
   }
   const timestamp = Date.now();
@@ -61,13 +64,13 @@ export async function writeOfficialSoil(db, value = {}) {
     timestamp,
     timestamp,
   ).run();
-  return fromRow(await first(db, 'SELECT * FROM coast_soil_entries WHERE id = ?', [id]));
+  return fromRow(await first(db, 'SELECT * FROM coast_soil_entries WHERE id = ? AND deleted_at IS NULL', [id]));
 }
 
 export async function listOfficialSoils(db, { limit = 50 } = {}) {
   await ensureCoastSchema(db);
   const rows = await all(db, `SELECT * FROM coast_soil_entries
-    WHERE surface = 'official_mcp'
+    WHERE surface = 'official_mcp' AND deleted_at IS NULL
     ORDER BY created_at DESC LIMIT ?`, [limitValue(limit)]);
   return rows.map(fromRow);
 }
@@ -77,7 +80,7 @@ export async function searchAuthoredSoils(db, query = '', limit = 30) {
   const resultLimit = limitValue(limit, 30, 100);
   const search = buildSafeSearchQuery(query);
   const rows = await all(db, `SELECT * FROM coast_soil_entries
-    WHERE surface = 'official_mcp'
+    WHERE surface = 'official_mcp' AND deleted_at IS NULL
     ORDER BY created_at DESC LIMIT ?`, [search.terms.length ? SEARCH_SCAN_LIMIT : resultLimit]);
   const records = rows.map(fromRow);
   return rankSearchRecords(
@@ -94,4 +97,25 @@ export async function searchAuthoredSoils(db, query = '', limit = 30) {
       record.symbol,
     ].filter(Boolean).join(' '),
   ).slice(0, resultLimit);
+}
+
+export async function deleteOfficialSoilByOwner(db, id) {
+  await ensureCoastSchema(db);
+  const soilId = String(id || '').trim().slice(0, 180);
+  const row = soilId
+    ? await first(db, `SELECT * FROM coast_soil_entries
+      WHERE id = ? AND surface = 'official_mcp' AND deleted_at IS NULL`, [soilId])
+    : null;
+  if (!row) throw new CoastStoreError('official_soil_not_found', '这条灯塔巡迹不存在。', 404);
+  const deletedAt = Date.now();
+  await db.prepare(`UPDATE coast_soil_entries
+    SET deleted_at = ?, deleted_by = ?, updated_at = ?
+    WHERE id = ? AND surface = 'official_mcp' AND deleted_at IS NULL`)
+    .bind(deletedAt, 'xiaohan', deletedAt, soilId).run();
+  return {
+    id: soilId,
+    deleted: true,
+    deleted_at: iso(deletedAt),
+    deleted_by: 'xiaohan',
+  };
 }

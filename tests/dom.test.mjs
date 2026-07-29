@@ -85,6 +85,48 @@ const dailyMoments = [];
 const dailyDiaries = [];
 const dailyAlbums = [];
 const dailySummaries = [];
+const dailyDrafts = [{
+  id: 'moment-draft-official-1',
+  content_type: 'moment',
+  status: 'pending',
+  payload: {
+    date: '2026-07-28',
+    text: '官端送来一条待确认的碳硅圈候选。',
+    image_refs: [],
+    reason: '前端草稿验收',
+  },
+  author: 'mcp',
+  source: 'chat_tool',
+  actor: 'myri',
+  surface: 'official_mcp',
+  model_label: 'GPT-5.5 Thinking',
+  model_nickname: '回潮',
+  symbol: '≋',
+  display_author: 'ChatGPT-5.5 Thinking 回潮≋',
+  created_at: now(),
+  updated_at: now(),
+}, {
+  id: 'diary-draft-api-1',
+  content_type: 'diary',
+  status: 'pending',
+  payload: {
+    date: '2026-07-28',
+    weather: '微雾',
+    mood: '安稳',
+    text: '海岸 API 侧送来一张待确认日记。',
+    image_refs: [],
+  },
+  author: 'api',
+  source: 'chat_tool',
+  actor: 'myri',
+  surface: 'coast_api',
+  model_label: 'openai/gpt-5.2',
+  model_nickname: null,
+  symbol: '✦',
+  display_author: '海岸 API ✦',
+  created_at: now(),
+  updated_at: now(),
+}];
 const radioMessages = [];
 const lighthouseLetters = [];
 let roomSequence = 0;
@@ -324,6 +366,33 @@ globalThis.fetch = async (input, options = {}) => {
   if (url.pathname === '/api/daily/summaries') {
     return response({ ok: true, summaries: dailySummaries });
   }
+  if (url.pathname === '/api/daily/drafts') {
+    return response({ ok: true, drafts: dailyDrafts.filter((draft) => draft.status === (url.searchParams.get('status') || 'pending')) });
+  }
+  const dailyDraftMatch = url.pathname.match(/^\/api\/daily\/drafts\/([^/]+)(?:\/(publish))?$/);
+  if (dailyDraftMatch) {
+    const draft = dailyDrafts.find((item) => item.id === decodeURIComponent(dailyDraftMatch[1]));
+    if (dailyDraftMatch[2] === 'publish') {
+      const provenance = {
+        actor: draft.actor,
+        surface: draft.surface,
+        model_label: draft.model_label,
+        model_nickname: draft.model_nickname,
+        symbol: draft.symbol,
+        display_author: draft.display_author,
+      };
+      const record = draft.content_type === 'moment'
+        ? { ...mockMoment(draft.payload, draft.author, draft.source), ...provenance }
+        : { ...mockDiary(draft.payload, draft.author, draft.source), ...provenance };
+      if (draft.content_type === 'moment') dailyMoments.unshift(record);
+      else dailyDiaries.unshift(record);
+      draft.status = 'published';
+      draft.published_record_id = record.id;
+      return response({ ok: true, draft, record });
+    }
+    draft.status = 'discarded';
+    return response({ ok: true, draft });
+  }
   if (url.pathname === '/api/radio/messages') {
     if (method === 'GET') return response({ ok: true, room_id: 'radio', messages: radioMessages });
     const message = {
@@ -361,7 +430,7 @@ globalThis.fetch = async (input, options = {}) => {
       model_label: body.model,
       model_nickname: null,
       symbol: '✦',
-      display_author: '✦Myrisol',
+      display_author: '海岸 API ✦',
       usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 },
       created_at: now(),
     };
@@ -387,6 +456,35 @@ globalThis.fetch = async (input, options = {}) => {
     };
     lighthouseLetters.unshift(letter);
     return response({ ok: true, letter }, 201);
+  }
+  if (url.pathname === '/api/radio/memory' || url.pathname === '/api/lighthouse/memory') {
+    const kind = url.pathname.includes('/radio/') ? 'radio' : 'lighthouse';
+    const blank = (surface, author) => ({
+      conversation_id: `${kind}-${surface}`,
+      soil: {
+        conversation_id: `${kind}-${surface}`,
+        current_text: '',
+        hand_seeds: [],
+        do_not_repeat: '',
+        pocket_candidates: [],
+        surface,
+        display_author: author,
+      },
+      pending_pockets: [],
+      seeds: [],
+      memories: [],
+    });
+    return response({
+      ok: true,
+      memory: {
+        room_id: kind,
+        sources: {
+          web_manual: blank('web_manual', '小寒'),
+          coast_api: blank('coast_api', '海岸 API ✦'),
+          official_mcp: blank('official_mcp', 'ChatGPT≋'),
+        },
+      },
+    });
   }
   const lighthouseReadMatch = url.pathname.match(/^\/api\/lighthouse\/letters\/([^/]+)\/read$/);
   if (lighthouseReadMatch) {
@@ -618,6 +716,13 @@ globalThis.fetch = async (input, options = {}) => {
       query,
       search: { mode: 'bounded_keyword', normalized_query: query, effective_terms: terms.slice(0, 10), degraded: terms.length > 10 },
     });
+  }
+  const officialSoilDeleteMatch = url.pathname.match(/^\/api\/memory\/official-soils\/([^/]+)$/);
+  if (officialSoilDeleteMatch && method === 'DELETE') {
+    const id = decodeURIComponent(officialSoilDeleteMatch[1]);
+    const index = officialSoils.findIndex((soil) => soil.id === id);
+    if (index >= 0) officialSoils.splice(index, 1);
+    return response({ ok: true, record: { id, deleted: true, deleted_by: 'xiaohan' } });
   }
   if (url.pathname === '/api/memory/search') {
     const query = String(body.query || '').toLowerCase();
@@ -880,7 +985,8 @@ for (const copy of ['灯塔巡迹 · ChatGPT-5.5 Thinking 回潮≋', '灯塔侧
   assert.ok(officialSoilCard.textContent.includes(copy), `official soil UI is missing: ${copy}`);
 }
 assert.equal(officialSoilCard.textContent.includes('官端思维壤'), false);
-assert.equal(officialSoilCard.querySelector('[data-action*="edit"], [data-action*="delete"]'), null);
+assert.equal(officialSoilCard.querySelector('[data-action*="edit"]'), null);
+assert.ok(officialSoilCard.querySelector('[data-action="memory:official-soil-delete"]'));
 const unnamedOfficialSoilCard = document.querySelector('[data-official-soil-id="official-soil-without-nickname"]');
 assert.ok(unnamedOfficialSoilCard.textContent.includes('灯塔巡迹 · o3≋'));
 assert.equal(unnamedOfficialSoilCard.textContent.includes('ChatGPT-o3≋'), false, 'the visible trace signature must use the actual model_label');
@@ -892,6 +998,11 @@ const clearMemorySearchForm = document.querySelector('[data-submit="memory:searc
 clearMemorySearchForm.querySelector('[name="query"]').value = '';
 clearMemorySearchForm.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
 await waitFor(() => document.querySelector('[data-submit="memory:search"]') !== clearMemorySearchForm, 'clear memory search');
+document.querySelector('[data-official-soil-id="official-soil-e364eddd-1964-4ad8-9285-5299f4add3d4"] [data-action="memory:official-soil-delete"]').click();
+danger = await waitForDanger('删除这条灯塔巡迹？');
+acceptDanger(danger);
+await waitFor(() => !document.querySelector('[data-official-soil-id="official-soil-e364eddd-1964-4ad8-9285-5299f4add3d4"]'), 'owner deletes Lighthouse Trace');
+assert.equal(officialSoils.some((soil) => soil.id === 'official-soil-e364eddd-1964-4ad8-9285-5299f4add3d4'), false);
 document.querySelector('[data-action="memory:pockets"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory-pockets', 'pending pocket route');
 const autoPocketCard = document.querySelector('[data-pocket-id="soil-pocket-conv-1"]');
@@ -1020,6 +1131,12 @@ await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'm
 assert.ok(document.querySelector('.moment-profile > div h2'));
 assert.ok(document.querySelector('[data-action="daily:myri-avatar"]')?.textContent.includes('更换 Myri 头像'));
 assert.equal(document.querySelector('.moment-feed > .feature-card'), null);
+assert.ok(document.querySelector('[data-draft-id="moment-draft-official-1"]')?.textContent.includes('ChatGPT-5.5 Thinking 回潮≋'));
+document.querySelector('[data-draft-id="moment-draft-official-1"] [data-action="daily:discard-content-draft"]').click();
+danger = await waitForDanger('丢弃这份草稿？');
+acceptDanger(danger);
+await waitFor(() => !document.querySelector('[data-draft-id="moment-draft-official-1"]'), 'discard model moment candidate');
+assert.equal(dailyDrafts.find((draft) => draft.id === 'moment-draft-official-1').status, 'discarded');
 document.querySelector('[data-action="daily:moments-compose"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'moments-compose', 'moments composer');
 assert.equal(document.querySelector('.image-picker b'), null);
@@ -1156,9 +1273,15 @@ assert.ok(document.querySelector('.local-message-list').textContent.includes('�
 document.querySelector('[data-action="rooms:ask-api"]').click();
 await waitFor(() => document.querySelector('.local-message-list')?.textContent.includes('API Myri 收到了这条电波'), 'api Myri radio reply');
 document.querySelector('.local-message.is-user [data-action="rooms:withdraw-radio"]').click();
+danger = await waitForDanger('撤回这条电波吗？');
+acceptDanger(danger);
 await waitFor(() => document.querySelector('.local-message-list')?.textContent.includes('这条电波已撤回'), 'withdraw own radio message');
+document.querySelector('.local-message.is-api [data-action="rooms:withdraw-radio"]').click();
+danger = await waitForDanger('撤回这条电波吗？');
+acceptDanger(danger);
+await waitFor(() => document.querySelectorAll('[data-action="rooms:withdraw-radio"]').length === 0, 'owner withdraws API radio message');
 assert.equal(document.querySelectorAll('[data-action="rooms:withdraw-radio"]').length, 0);
-assert.ok(document.querySelector('.local-message-list').textContent.includes('✦Myrisol'));
+assert.ok(document.querySelector('.local-message-list').textContent.includes('海岸 API ✦'));
 assert.ok(document.querySelector('.local-message.is-api small').textContent.toLocaleLowerCase('en-US')
   .includes(profile.current_chat_model.split('/').at(-1).split('-')[0].toLocaleLowerCase('en-US')));
 assert.ok(document.querySelector('.local-message.is-api small').textContent.includes('30 tokens'));

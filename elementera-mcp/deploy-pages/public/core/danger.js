@@ -78,6 +78,48 @@ const DANGER_ACTIONS = Object.freeze({
     cancelText: '取消',
     dangerLevel: 'warning',
   }),
+  'memory:official-soil-delete': Object.freeze({
+    title: '删除这条灯塔巡迹？',
+    message: '删除后不会再出现在海岸中，也不会参与搜索或召回。',
+    confirmText: '删除',
+    cancelText: '取消',
+    dangerLevel: 'danger',
+  }),
+  'rooms:withdraw-radio': Object.freeze({
+    title: '撤回这条电波吗？',
+    message: '撤回后房间里将不再显示正文，也不会进入上下文召回。',
+    confirmText: '撤回',
+    cancelText: '取消',
+    dangerLevel: 'danger',
+  }),
+  'rooms:resolve-pocket': Object.freeze({
+    title: '处理这条房间候选？',
+    message: '请确认它要进入所选分区，或从待确认袋中丢弃。',
+    confirmText: '确认处理',
+    cancelText: '取消',
+    dangerLevel: 'warning',
+  }),
+  'daily:publish-content-draft': Object.freeze({
+    title: '确认发布这份草稿？',
+    message: '发布后它会进入正式日记或碳硅圈，并保留原始来源署名。',
+    confirmText: '确认发布',
+    cancelText: '取消',
+    dangerLevel: 'warning',
+  }),
+  'daily:discard-content-draft': Object.freeze({
+    title: '丢弃这份草稿？',
+    message: '丢弃后它不会发布，也不会进入正式海岸内容。',
+    confirmText: '丢弃',
+    cancelText: '取消',
+    dangerLevel: 'danger',
+  }),
+  'daily:discard-summary': Object.freeze({
+    title: '丢弃本次总结结果？',
+    message: '这份尚未提交的总结、日记与候选内容会被放下，不会写入服务器。',
+    confirmText: '丢弃',
+    cancelText: '取消',
+    dangerLevel: 'warning',
+  }),
 });
 
 const STYLE_ID = 'coast-danger-confirm-styles';
@@ -275,4 +317,3 @@ export function confirmDanger(options) {
   if (!defaultConfirmer) defaultConfirmer = createDangerConfirmer();
   return defaultConfirmer(options);
 }
-

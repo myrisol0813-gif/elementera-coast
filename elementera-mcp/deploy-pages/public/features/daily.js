@@ -77,6 +77,7 @@ export function createDaily({ storage, router, toast, chat }) {
     diaries: cache.diaries || [],
     albumItems: cache.albumItems || [],
     summaries: cache.summaries || [],
+    drafts: [],
     commentTarget: '',
     myriCommentingTarget: '',
     diaryDate: dateKey(),
@@ -140,6 +141,7 @@ export function createDaily({ storage, router, toast, chat }) {
         state.diaries = data.diaries;
         state.albumItems = data.albumItems;
         state.summaries = data.summaries;
+        state.drafts = data.drafts || [];
         state.summaryRanges = data.summaryRanges;
         state.loaded = true;
         state.sync = 'server';
@@ -193,9 +195,10 @@ export function createDaily({ storage, router, toast, chat }) {
     return myriAvatar();
   }
 
-  function authorName(author) {
-    if (author === 'api') return '✦Myrisol';
-    if (author === 'mcp') return '≋Myrisol';
+  function authorName(author, entry = {}) {
+    if (entry.displayAuthor) return entry.displayAuthor;
+    if (author === 'api') return '海岸 API ✦';
+    if (author === 'mcp') return 'ChatGPT≋';
     if (author === 'myri') return 'Myri';
     return '小寒';
   }
@@ -268,7 +271,7 @@ export function createDaily({ storage, router, toast, chat }) {
       : `<button type="button" data-action="daily:publish-moment-status" data-id="${escapeAttribute(post.id)}">确认发布</button>`;
     return `<article class="moment-post">
       <div>${momentAvatar(post.author)}</div>
-      <div class="moment-main"><h3>${escapeHtml(authorName(post.author))}</h3><p>${escapeHtml(post.text || '（无正文）')}</p>
+      <div class="moment-main"><h3>${escapeHtml(authorName(post.author, post))}</h3><p>${escapeHtml(post.text || '（无正文）')}</p>
         ${post.image ? `<img class="moment-image" src="${escapeAttribute(post.image)}" alt="碳硅圈配图">` : ''}
         <div class="moment-actions"><span>${stamp} · ${momentStatus(post)}</span>${publishAction}<button class="${post.liked ? 'is-liked' : ''}" type="button" data-action="daily:like" data-id="${escapeAttribute(post.id)}">♡ ${Number(post.likeCount || 0)}</button><button type="button" data-action="daily:comment" data-id="${escapeAttribute(post.id)}">评论</button><button type="button" data-action="daily:myri-comment" data-id="${escapeAttribute(post.id)}" ${myriThinking ? 'disabled' : ''}>${myriThinking ? 'Myri在看…' : 'Myri回一句'}</button></div>
         ${momentComments(post)}
@@ -290,6 +293,11 @@ export function createDaily({ storage, router, toast, chat }) {
     const candidateNotice = candidateCount
       ? `<button class="daily-legacy-note" type="button" data-action="daily:publish-candidates"><strong>确认发布全部候选 · ${candidateCount} 条</strong><small>把一日总结里误留的候选扶正 ›</small></button>`
       : '';
+    const drafts = state.drafts.filter((entry) => entry.contentType === 'moment');
+    const draftSection = drafts.length
+      ? `<section class="daily-form-surface daily-model-drafts"><h2>待确认碳硅圈候选 · ${drafts.length}</h2>
+        ${drafts.map((entry) => contentDraftCard(entry)).join('')}</section>`
+      : '';
     return {
       title: '碳硅圈',
       subtitle: state.sync === 'server' ? '海岸内部 · 服务器同步' : '本机缓存',
@@ -297,7 +305,7 @@ export function createDaily({ storage, router, toast, chat }) {
       headerAction: `<button class="round-add" type="button" data-action="daily:moments-compose" aria-label="发表碳硅圈">${icon('plus')}</button>`,
       body: `${state.sync === 'cache' ? syncNotice() : ''}<button class="moment-cover" type="button" data-action="daily:cover" ${cover}><span>上传本机封面</span></button>
         <section class="moment-profile"><button type="button" data-action="daily:avatar">${xiaohanAvatar()}</button><div><h2>小寒</h2><p>服务器同步 · Myri 可通过真实工具写入</p></div></section>
-        ${avatarTools}
+        ${avatarTools}${draftSection}
         ${candidateNotice}<section class="moment-feed">${feed}</section>`,
     };
   }
@@ -319,19 +327,45 @@ export function createDaily({ storage, router, toast, chat }) {
   }
 
   function diaryEntry(entry) {
-    return `<article class="diary-paper"><header><b>${escapeHtml(authorName(entry.author))}</b><span>${escapeHtml(entry.weather)} · ${escapeHtml(entry.mood)}</span></header><p>${escapeHtml(entry.text || '今天也在海岸留下一张纸。')}</p>${entry.image ? `<img src="${escapeAttribute(entry.image)}" alt="日记配图">` : ''}</article>`;
+    return `<article class="diary-paper"><header><b>${escapeHtml(authorName(entry.author, entry))}</b><span>${escapeHtml(entry.weather)} · ${escapeHtml(entry.mood)}</span></header><p>${escapeHtml(entry.text || '今天也在海岸留下一张纸。')}</p>${entry.image ? `<img src="${escapeAttribute(entry.image)}" alt="日记配图">` : ''}</article>`;
+  }
+
+  function contentDraftCard(entry) {
+    const payload = entry.payload || {};
+    const kind = entry.contentType === 'moment' ? '碳硅圈候选' : '日记草稿';
+    const metadata = [
+      authorName(entry.author, entry),
+      entry.surface || '',
+      shortDateLabel(entry.createdAt),
+    ].filter(Boolean).join(' · ');
+    return `<article class="summary-candidate daily-model-draft" data-draft-id="${escapeAttribute(entry.id)}">
+      <small>${escapeHtml(`${kind} · ${metadata}`)}</small>
+      ${entry.contentType === 'diary'
+        ? `<h3>${escapeHtml(payload.date || dateKey())} · ${escapeHtml(payload.weather || '未标注')} · ${escapeHtml(payload.mood || '未标注')}</h3>`
+        : ''}
+      <p>${escapeHtml(payload.text || '（仅图片引用）')}</p>
+      <div class="button-row">
+        <button type="button" data-action="daily:discard-content-draft" data-id="${escapeAttribute(entry.id)}">丢弃</button>
+        <button class="primary-wide" type="button" data-action="daily:publish-content-draft" data-id="${escapeAttribute(entry.id)}">确认发布</button>
+      </div>
+    </article>`;
   }
 
   function diaryView() {
     if (!state.loaded) return loadStateView('日记', '正在连接服务器');
     const dates = uniqueDates(state.diaryDate, state.diaries);
     const entries = state.diaries.filter((entry) => entry.date === state.diaryDate);
+    const drafts = state.drafts.filter((entry) => entry.contentType === 'diary');
+    const draftSection = drafts.length
+      ? `<section class="daily-form-surface daily-model-drafts"><h2>待确认日记草稿 · ${drafts.length}</h2>
+        ${drafts.map((entry) => contentDraftCard(entry)).join('')}</section>`
+      : '';
     return {
       title: '日记',
       subtitle: state.sync === 'server' ? '服务器同步' : '本机缓存',
       className: 'diary-panel',
       headerAction: `<button class="round-add" type="button" data-action="daily:diary-compose" aria-label="写日记">${icon('plus')}</button>`,
-      body: `${state.sync === 'cache' ? syncNotice() : ''}<section class="diary-filter">${dates.map((date) => `<button class="${date === state.diaryDate ? 'is-active' : ''}" type="button" data-action="daily:diary-date" data-date="${date}">${dateLabel(date)}</button>`).join('')}</section>
+      body: `${state.sync === 'cache' ? syncNotice() : ''}${draftSection}<section class="diary-filter">${dates.map((date) => `<button class="${date === state.diaryDate ? 'is-active' : ''}" type="button" data-action="daily:diary-date" data-date="${date}">${dateLabel(date)}</button>`).join('')}</section>
         <section class="diary-stack">${entries.length ? entries.map(diaryEntry).join('') : '<section class="daily-empty"><h2>暂无日记。</h2><p>日记只由小寒手动写入，或从一日总结确认页提交。</p></section>'}</section>`,
     };
   }
@@ -343,7 +377,7 @@ export function createDaily({ storage, router, toast, chat }) {
       className: 'daily-compose',
       body: `<p class="daily-context">日记不会成为普通聊天工具。同日同作者已有纸页时，请明确选择追加或替换。</p>
         <section class="daily-form-surface">
-          <div class="form-grid"><label>写作者<select id="diaryAuthor"><option value="xiaohan">小寒</option><option value="api">✦Myrisol / API</option><option value="mcp">≋Myrisol / MCP</option></select></label><label>天气<input id="diaryWeather" placeholder="晴 / 雨 / 雾"></label><label>心情<input id="diaryMood" placeholder="平静 / 开心 / 想你"></label></div>
+          <div class="form-grid"><label>写作者<input value="小寒" disabled></label><label>天气<input id="diaryWeather" placeholder="晴 / 雨 / 雾"></label><label>心情<input id="diaryMood" placeholder="平静 / 开心 / 想你"></label></div>
           <textarea id="diaryText" rows="8" placeholder="今天的小句子..."></textarea>
           <label>图片引用（可选）<input id="diaryImageRef" placeholder="https://… / coast://…"></label>
           <label>同日同作者已有纸页时<select id="diaryConflictMode"><option value="append">追加一张</option><option value="replace">替换最新一张</option></select></label>
@@ -480,7 +514,7 @@ export function createDaily({ storage, router, toast, chat }) {
           <label class="summary-select"><input id="summaryDiaryEnabled" type="checkbox" ${diary.enabled ? 'checked' : ''}>保存日记草稿</label>
           <div class="form-grid"><label>日期<input id="summaryDiaryDate" value="${escapeAttribute(diary.date || dateKey())}"></label><label>天气<input id="summaryDiaryWeather" value="${escapeAttribute(diary.weather || '未标注')}"></label><label>心情<input id="summaryDiaryMood" value="${escapeAttribute(diary.mood || '未标注')}"></label></div>
           <textarea id="summaryDiaryText" rows="7">${escapeHtml(diary.text || '')}</textarea>
-          <label>同日已有 ✦Myrisol 日记时<select id="summaryDiaryConflict"><option value="append">追加一张</option><option value="replace">替换最新一张</option></select></label>
+          <label>同日已有海岸 API ✦ 日记时<select id="summaryDiaryConflict"><option value="append">追加一张</option><option value="replace">替换最新一张</option></select></label>
         </section>
         ${draft.moment_candidates?.length ? `<section class="daily-form-surface"><h2>碳硅圈候选</h2>${draft.moment_candidates.map(summaryMomentCandidate).join('')}</section>` : ''}
         ${draft.album_candidates?.length ? `<section class="daily-form-surface"><h2>相册候选</h2>${draft.album_candidates.map(summaryAlbumCandidate).join('')}</section>` : ''}
@@ -823,6 +857,32 @@ export function createDaily({ storage, router, toast, chat }) {
       toast(`已确认发布 ${candidates.length} 条候选动态。`, 2200);
       return router.refresh();
     }
+    if (name === 'publish-content-draft') {
+      const current = state.drafts.find((entry) => entry.id === target.dataset.id);
+      if (!current) return;
+      const value = current.contentType === 'diary'
+        ? { conflict_mode: 'append' }
+        : {};
+      const result = await client.publishDraft(current.id, value);
+      state.drafts = state.drafts.filter((entry) => entry.id !== current.id);
+      if (current.contentType === 'moment') {
+        state.moments = [result.record, ...state.moments.filter((entry) => entry.id !== result.record.id)];
+      } else {
+        state.diaries = [result.record, ...state.diaries.filter((entry) => entry.id !== result.record.id)];
+        state.diaryDate = result.record.date;
+      }
+      persistCache();
+      toast(current.contentType === 'moment' ? '候选已发布到碳硅圈。' : '日记草稿已经收笔。');
+      return router.refresh();
+    }
+    if (name === 'discard-content-draft') {
+      const current = state.drafts.find((entry) => entry.id === target.dataset.id);
+      if (!current) return;
+      await client.discardDraft(current.id);
+      state.drafts = state.drafts.filter((entry) => entry.id !== current.id);
+      toast('这份草稿已丢弃，没有发布。');
+      return router.refresh();
+    }
     if (name === 'comment') {
       state.commentTarget = state.commentTarget === target.dataset.id ? '' : target.dataset.id;
       return router.refresh();
@@ -865,7 +925,6 @@ export function createDaily({ storage, router, toast, chat }) {
       if (!text && !imageRef) return toast('先写一点日记正文或图片引用。');
       const created = await client.createDiary({
         date: state.diaryDate,
-        author: q('#diaryAuthor')?.value || 'xiaohan',
         weather: q('#diaryWeather')?.value.trim() || '未标注',
         mood: q('#diaryMood')?.value.trim() || '未标注',
         text,
