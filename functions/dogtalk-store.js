@@ -8,6 +8,7 @@ const DEFAULT_MISUNDERSTANDING = '不要误会成长期偏好、边界取消、�
 const ROOM_SCOPES = new Set(['conversation', 'radio', 'lighthouse']);
 const READ_MODES = new Set(['keep_private', 'when_confused', 'current_room', 'read_now']);
 const ACTIVE_STATUSES = new Set(['draft', 'saved']);
+const SNAPSHOT_SOURCE_TYPES = new Set(['turn', 'radio_message', 'lighthouse_letter']);
 const MIGRATION_ID = 'mystic-dogtalk-v1';
 const schemaPromises = new WeakMap();
 
@@ -66,6 +67,37 @@ function rowToDogtalk(row) {
     updated_at: iso(row.updated_at),
     archived_at: iso(row.archived_at),
     last_read_at: iso(row.last_read_at),
+  };
+}
+
+function rowToSnapshot(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    type: TYPE,
+    dogtalk_id: row.dogtalk_id,
+    owner: OWNER,
+    room_scope: row.room_scope,
+    scope_key: row.scope_key,
+    conversation_id: row.conversation_id || null,
+    source_type: row.source_type,
+    source_id: row.source_id,
+    body: row.body || '',
+    true_core: row.true_core || '',
+    self_note: row.self_note || '',
+    myri_hint: row.myri_hint || '',
+    not_to_misunderstand: row.not_to_misunderstand || DEFAULT_MISUNDERSTANDING,
+    weather: row.weather || '',
+    read_mode: READ_MODES.has(row.read_mode) ? row.read_mode : 'keep_private',
+    readable_by_myri: true,
+    auto_recall: false,
+    memory_weight: 'low',
+    not_instruction: true,
+    not_preference: true,
+    not_memory_seed: true,
+    not_pocket: true,
+    visibility: 'private_to_xiaohan_and_myri',
+    created_at: iso(row.created_at),
   };
 }
 
@@ -199,6 +231,37 @@ async function initialize(db) {
   )`);
   await run(db, `CREATE INDEX IF NOT EXISTS idx_dogtalk_scope_active
     ON coast_mystic_dogtalk(scope_key, status, updated_at DESC)`);
+  await run(db, `CREATE TABLE IF NOT EXISTS coast_mystic_dogtalk_snapshots (
+    id TEXT PRIMARY KEY,
+    dogtalk_id TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    room_scope TEXT NOT NULL,
+    scope_key TEXT NOT NULL,
+    conversation_id TEXT,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    body TEXT NOT NULL,
+    true_core TEXT NOT NULL DEFAULT '',
+    self_note TEXT NOT NULL DEFAULT '',
+    myri_hint TEXT NOT NULL DEFAULT '',
+    not_to_misunderstand TEXT NOT NULL DEFAULT '',
+    weather TEXT NOT NULL DEFAULT '',
+    read_mode TEXT NOT NULL DEFAULT 'keep_private',
+    readable_by_myri INTEGER NOT NULL DEFAULT 1,
+    auto_recall INTEGER NOT NULL DEFAULT 0,
+    memory_weight TEXT NOT NULL DEFAULT 'low',
+    not_instruction INTEGER NOT NULL DEFAULT 1,
+    not_preference INTEGER NOT NULL DEFAULT 1,
+    not_memory_seed INTEGER NOT NULL DEFAULT 1,
+    not_pocket INTEGER NOT NULL DEFAULT 1,
+    visibility TEXT NOT NULL DEFAULT 'private_to_xiaohan_and_myri',
+    created_at INTEGER NOT NULL,
+    UNIQUE (source_type, source_id),
+    FOREIGN KEY (dogtalk_id) REFERENCES coast_mystic_dogtalk(id),
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+  )`);
+  await run(db, `CREATE INDEX IF NOT EXISTS idx_dogtalk_snapshot_scope_created
+    ON coast_mystic_dogtalk_snapshots(scope_key, created_at DESC)`);
   await migrateLegacyOwnerNotes(db);
 }
 
@@ -318,6 +381,106 @@ export async function saveMysticDogtalk(db, value = {}) {
     timestamp,
   ]);
   return rowToDogtalk(await first(db, 'SELECT * FROM coast_mystic_dogtalk WHERE id = ?', [id]));
+}
+
+function snapshotSource(value = {}) {
+  const sourceType = String(value.source_type || '');
+  if (!SNAPSHOT_SOURCE_TYPES.has(sourceType)) {
+    throw new DogtalkStoreError('invalid_dogtalk_snapshot_source', '神秘狗话的消息来源无效。');
+  }
+  const rawSourceId = String(value.source_id || '').trim();
+  if (!rawSourceId) {
+    throw new DogtalkStoreError('dogtalk_snapshot_source_required', '神秘狗话需要跟随一条实际消息。');
+  }
+  const sourceId = sanitizeId(rawSourceId, 'dogtalk_source');
+  return { source_type: sourceType, source_id: sourceId };
+}
+
+async function persistMysticDogtalkSnapshot(db, dogtalk, source, snapshotId = '') {
+  const existing = await first(db, `SELECT * FROM coast_mystic_dogtalk_snapshots
+    WHERE source_type = ? AND source_id = ?`, [source.source_type, source.source_id]);
+  if (existing) {
+    return {
+      dogtalk: await getMysticDogtalk(db, {
+        room_scope: existing.room_scope,
+        conversation_id: existing.conversation_id,
+      }),
+      snapshot: rowToSnapshot(existing),
+    };
+  }
+  const id = snapshotId
+    ? sanitizeId(snapshotId, 'dogtalk_snapshot')
+    : `dogtalk-snapshot-${crypto.randomUUID()}`;
+  const timestamp = Date.now();
+  await run(db, `INSERT INTO coast_mystic_dogtalk_snapshots (
+    id, dogtalk_id, owner, room_scope, scope_key, conversation_id,
+    source_type, source_id, body, true_core, self_note, myri_hint,
+    not_to_misunderstand, weather, read_mode, readable_by_myri,
+    auto_recall, memory_weight, not_instruction, not_preference,
+    not_memory_seed, not_pocket, visibility, created_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 'low',
+    1, 1, 1, 1, 'private_to_xiaohan_and_myri', ?)`, [
+    id,
+    dogtalk.id,
+    OWNER,
+    dogtalk.room_scope,
+    dogtalk.scope_key,
+    dogtalk.conversation_id,
+    source.source_type,
+    source.source_id,
+    dogtalk.body,
+    dogtalk.true_core,
+    dogtalk.self_note,
+    dogtalk.myri_hint,
+    dogtalk.not_to_misunderstand,
+    dogtalk.weather,
+    dogtalk.read_mode,
+    timestamp,
+  ]);
+  return {
+    dogtalk,
+    snapshot: rowToSnapshot(await first(
+      db,
+      'SELECT * FROM coast_mystic_dogtalk_snapshots WHERE id = ?',
+      [id],
+    )),
+  };
+}
+
+export async function snapshotMysticDogtalk(db, dogtalkValue = {}, sourceValue = {}, value = {}) {
+  const source = snapshotSource(sourceValue);
+  await ensureDogtalkSchema(db);
+  const dogtalk = rowToDogtalk(await requireActiveDogtalk(db, dogtalkValue.id));
+  if (dogtalk.scope_key !== dogtalkValue.scope_key) {
+    throw new DogtalkStoreError(
+      'dogtalk_snapshot_scope_mismatch',
+      '神秘狗话与消息不属于同一个房间。',
+      409,
+    );
+  }
+  return persistMysticDogtalkSnapshot(db, dogtalk, source, value.snapshot_id);
+}
+
+export async function saveMysticDogtalkWithSnapshot(db, value = {}, sourceValue = {}) {
+  const source = snapshotSource(sourceValue);
+  await ensureDogtalkSchema(db);
+  const dogtalk = await saveMysticDogtalk(db, { ...value, status: 'saved' });
+  return persistMysticDogtalkSnapshot(db, dogtalk, source, value.snapshot_id);
+}
+
+export async function listMysticDogtalkSnapshots(db, value = {}) {
+  await ensureDogtalkSchema(db);
+  const scope = await dogtalkScope(db, value);
+  const sourceIds = [...new Set((Array.isArray(value.source_ids) ? value.source_ids : [])
+    .map((item) => sanitizeId(item, 'dogtalk_source'))
+    .filter(Boolean))]
+    .slice(0, 200);
+  if (!sourceIds.length) return [];
+  const placeholders = sourceIds.map(() => '?').join(', ');
+  const rows = await db.prepare(`SELECT * FROM coast_mystic_dogtalk_snapshots
+    WHERE scope_key = ? AND source_id IN (${placeholders})
+    ORDER BY created_at ASC`).bind(scope.scope_key, ...sourceIds).all();
+  return (rows?.results || []).map(rowToSnapshot);
 }
 
 async function requireActiveDogtalk(db, idValue) {

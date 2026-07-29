@@ -95,6 +95,11 @@ export function roomMemoryConversationId(roomValue, surfaceValue) {
   );
 }
 
+export function roomMemoryLibraryConversationId(roomValue) {
+  const roomId = room(roomValue);
+  return sanitizeId(`coast-room:${roomId}:library`, 'room_memory');
+}
+
 function sourceLabel(source) {
   return {
     coast_api: '海岸 API ✦',
@@ -124,12 +129,30 @@ async function ensureRoomConversation(db, roomValue, surfaceValue) {
   return id;
 }
 
+async function ensureRoomLibraryConversation(db, roomValue) {
+  const roomId = room(roomValue);
+  await ensureChatSchema(db);
+  const id = roomMemoryLibraryConversationId(roomId);
+  const timestamp = Date.now();
+  await db.prepare(`INSERT OR IGNORE INTO conversations (
+    id, user_id, title, created_at, updated_at, deleted_at, title_manual,
+    title_generated_at, title_model_id, archived_at, conversation_kind
+  ) VALUES (?, 'owner', ?, ?, ?, NULL, 1, NULL, NULL, NULL, ?)`)
+    .bind(id, `${ROOM_META[roomId].title} · 共同库`, timestamp, timestamp, roomId).run();
+  await db.prepare(`INSERT OR IGNORE INTO conversation_states
+    (conversation_id, state_json, updated_at) VALUES (?, ?, ?)`)
+    .bind(id, JSON.stringify({ version: 4, updated_at: new Date(timestamp).toISOString(), turns: [] }), timestamp)
+    .run();
+  return id;
+}
+
 export async function ensureRoomMemory(db, roomValue) {
   const roomId = room(roomValue);
   const ids = {};
   for (const source of memorySurfaces(roomId)) {
     ids[source] = await ensureRoomConversation(db, roomId, source);
   }
+  await ensureRoomLibraryConversation(db, roomId);
   return ids;
 }
 
@@ -138,6 +161,9 @@ function scopedRecord(record, roomId, source) {
     ...record,
     room_scope: roomId,
     room_key: ROOM_META[roomId].room_key,
+    ...(record?.source_surface && record.source_surface !== source
+      ? { origin_source_surface: record.source_surface }
+      : {}),
     source_surface: source,
   };
 }
@@ -145,25 +171,19 @@ function scopedRecord(record, roomId, source) {
 export async function listRoomMemory(db, roomValue) {
   const roomId = room(roomValue);
   const ids = await ensureRoomMemory(db, roomId);
+  const libraryConversationId = await ensureRoomLibraryConversation(db, roomId);
   const sources = {};
   for (const source of memorySurfaces(roomId)) {
     const conversationId = ids[source];
-    const [soil, pockets, seeds, memories] = await Promise.all([
+    const [soil, pendingPockets, stonePockets, archivedPockets, entries] = await Promise.all([
       readSoil(db, conversationId),
       listPockets(db, { conversation_id: conversationId, status: 'pending' }),
-      listEntries(db, {
-        conversation_id: conversationId,
-        scope: 'conversation',
-        entry_type: 'seed',
-        limit: 100,
-      }),
-      listEntries(db, {
-        conversation_id: conversationId,
-        scope: 'conversation',
-        entry_type: 'memory',
-        limit: 100,
-      }),
+      listPockets(db, { conversation_id: conversationId, status: 'stone' }),
+      listPockets(db, { conversation_id: conversationId, status: 'archived' }),
+      listEntries(db, { conversation_id: conversationId, scope: 'conversation', limit: 100 }),
     ]);
+    const activeEntries = entries.entries.filter((item) => !['stone', 'archived', 'discarded'].includes(item.status));
+    const sealedEntries = entries.entries.filter((item) => ['stone', 'archived'].includes(item.status));
     sources[source] = {
       room_scope: roomId,
       room_key: ROOM_META[roomId].room_key,
@@ -171,15 +191,32 @@ export async function listRoomMemory(db, roomValue) {
       source_label: sourceLabel(source),
       conversation_id: conversationId,
       soil: scopedRecord(soil, roomId, source),
-      pending_pockets: pockets.map((item) => scopedRecord(item, roomId, source)),
-      seeds: seeds.entries.map((item) => scopedRecord(item, roomId, source)),
-      memories: memories.entries.map((item) => scopedRecord(item, roomId, source)),
+      pending_pockets: pendingPockets.map((item) => scopedRecord(item, roomId, source)),
+      seeds: activeEntries.filter((item) => item.entry_type === 'seed')
+        .map((item) => scopedRecord(item, roomId, source)),
+      memories: activeEntries.filter((item) => item.entry_type === 'memory')
+        .map((item) => scopedRecord(item, roomId, source)),
+      stones: [
+        ...sealedEntries,
+        ...stonePockets,
+        ...archivedPockets,
+      ].map((item) => scopedRecord(item, roomId, source)),
     };
   }
-  const [globalSeeds, globalMemories] = await Promise.all([
-    listEntries(db, { scope: 'global', entry_type: 'seed', limit: 100 }),
-    listEntries(db, { scope: 'global', entry_type: 'memory', limit: 100 }),
+  const [libraryEntries, globalEntries] = await Promise.all([
+    listEntries(db, { scope: 'conversation', conversation_id: libraryConversationId, limit: 100 }),
+    listEntries(db, { scope: 'global', limit: 100 }),
   ]);
+  const sourceEntries = Object.values(sources).flatMap((value) => [...value.seeds, ...value.memories]);
+  const sourceStones = Object.values(sources).flatMap((value) => value.stones);
+  const activeLibraryEntries = libraryEntries.entries
+    .filter((item) => !['stone', 'archived', 'discarded'].includes(item.status));
+  const sealedLibraryEntries = libraryEntries.entries
+    .filter((item) => ['stone', 'archived'].includes(item.status));
+  const globalActive = globalEntries.entries
+    .filter((item) => !['stone', 'archived', 'discarded'].includes(item.status));
+  const globalSealed = globalEntries.entries
+    .filter((item) => ['stone', 'archived'].includes(item.status));
   return {
     room_id: roomId,
     room_scope: roomId,
@@ -188,13 +225,27 @@ export async function listRoomMemory(db, roomValue) {
     soil_label: ROOM_META[roomId].soil_label,
     local_label: ROOM_META[roomId].local_label,
     participants: participants(roomId),
+    library_conversation_id: libraryConversationId,
     sources,
     pending_pockets: Object.values(sources).flatMap((value) => value.pending_pockets),
-    seeds: Object.values(sources).flatMap((value) => value.seeds),
-    memories: Object.values(sources).flatMap((value) => value.memories),
+    seeds: [
+      ...activeLibraryEntries.filter((item) => item.entry_type === 'seed')
+        .map((item) => scopedRecord(item, roomId, 'room_shared')),
+      ...sourceEntries.filter((item) => item.entry_type === 'seed'),
+    ],
+    memories: [
+      ...activeLibraryEntries.filter((item) => item.entry_type === 'memory')
+        .map((item) => scopedRecord(item, roomId, 'room_shared')),
+      ...sourceEntries.filter((item) => item.entry_type === 'memory'),
+    ],
+    stones: [
+      ...sealedLibraryEntries.map((item) => scopedRecord(item, roomId, 'room_shared')),
+      ...sourceStones,
+    ],
     global: {
-      seeds: globalSeeds.entries,
-      memories: globalMemories.entries,
+      seeds: globalActive.filter((item) => item.entry_type === 'seed'),
+      memories: globalActive.filter((item) => item.entry_type === 'memory'),
+      stones: globalSealed,
     },
   };
 }
@@ -314,13 +365,25 @@ export async function buildRoomMemoryContext(env, roomValue, surfaceValue, query
   const roomId = room(roomValue);
   const source = modelMemorySurface(roomId, surfaceValue);
   const ids = await ensureRoomMemory(env.COAST_CHAT_DB, roomId);
+  const libraryConversationId = await ensureRoomLibraryConversation(env.COAST_CHAT_DB, roomId);
   const orderedSources = [
     source,
     ...memorySurfaces(roomId).filter((item) => item !== source),
   ];
-  const memories = [];
-  for (const [index, sourceName] of orderedSources.entries()) {
-    memories.push(await buildMemoryContext(
+  const sharedMemory = await buildMemoryContext(
+    env,
+    MEMORY_OWNER_ID,
+    libraryConversationId,
+    query,
+    {
+      ...options,
+      mode: options.mode || 'chat',
+      include_global: true,
+    },
+  );
+  const sourceMemories = [];
+  for (const sourceName of orderedSources) {
+    sourceMemories.push(await buildMemoryContext(
       env,
       MEMORY_OWNER_ID,
       ids[sourceName],
@@ -328,10 +391,11 @@ export async function buildRoomMemoryContext(env, roomValue, surfaceValue, query
       {
         ...options,
         mode: options.mode || 'chat',
-        include_global: index === 0,
+        include_global: false,
       },
     ));
   }
+  const memories = [sharedMemory, ...sourceMemories];
   const soils = {};
   for (const [sourceName, conversationId] of Object.entries(ids)) {
     soils[sourceName] = await readSoil(env.COAST_CHAT_DB, conversationId);
@@ -340,13 +404,14 @@ export async function buildRoomMemoryContext(env, roomValue, surfaceValue, query
     conversation_seeds: uniqueEntries(memories, 'conversation_seeds'),
     conversation_memories: uniqueEntries(memories, 'conversation_memories'),
     conversation_pockets: uniqueEntries(memories, 'conversation_pockets'),
-    global_seeds: memories[0]?.global_seeds || [],
-    global_memories: memories[0]?.global_memories || [],
-    global_pockets: memories[0]?.global_pockets || [],
+    global_seeds: sharedMemory.global_seeds || [],
+    global_memories: sharedMemory.global_memories || [],
+    global_pockets: sharedMemory.global_pockets || [],
     trace: {
       selected: [...new Set(memories.flatMap((item) => item.trace?.selected || []))],
       room_scope: roomId,
       source_surface: source,
+      room_library_conversation_id: libraryConversationId,
     },
   };
   let dogtalk = { context: '', selected: false };
@@ -382,7 +447,30 @@ export async function resolveRoomPocketByOwner(db, roomValue, pocketId, value = 
   if (!source) {
     throw new MemoryStoreError('room_pocket_not_found', '这条待确认内容不属于当前房间。', 404);
   }
-  const result = await resolvePocket(db, pocket.id, value);
+  const action = String(value.action || '');
+  const roomDestination = action.match(/^(radio|lighthouse)_(seed|memory)$/);
+  const currentDestination = action.match(/^current_(seed|memory)$/);
+  let resolvedValue = { ...value };
+  if (roomDestination) {
+    const targetRoom = roomDestination[1];
+    resolvedValue = {
+      ...value,
+      action: `conversation_${roomDestination[2]}`,
+      target_conversation_id: await ensureRoomLibraryConversation(db, targetRoom),
+    };
+  } else if (currentDestination) {
+    resolvedValue = {
+      ...value,
+      action: `conversation_${currentDestination[1]}`,
+      target_conversation_id: sanitizeId(value.current_conversation_id || '', 'conversation'),
+    };
+  } else if (['conversation_seed', 'conversation_memory'].includes(action)) {
+    resolvedValue = {
+      ...value,
+      target_conversation_id: await ensureRoomLibraryConversation(db, roomId),
+    };
+  }
+  const result = await resolvePocket(db, pocket.id, resolvedValue);
   return {
     ...result,
     room_scope: roomId,

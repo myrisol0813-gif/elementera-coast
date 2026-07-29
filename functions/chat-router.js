@@ -5,7 +5,11 @@ import {
   executeDogtalkModelTool,
   isDogtalkModelTool,
 } from './dogtalk-model-tool.js';
-import { dogtalkContext } from './dogtalk-store.js';
+import {
+  dogtalkContext,
+  DogtalkStoreError,
+  saveMysticDogtalkWithSnapshot,
+} from './dogtalk-store.js';
 import { buildCrossSurfaceContext } from './cross-surface-recall.js';
 import { buildMemoryContext, formatMemoryContext } from './memory-recall.js';
 import { MEMORY_OWNER_ID } from './memory-store.js';
@@ -167,7 +171,7 @@ function safeStreamError(error) {
   return { type: 'stream_error', message: '流式生成中断，请稍后重试。' };
 }
 
-function streamFormalChat(request, env, input, assembled, memory, executeTool) {
+function streamFormalChat(request, env, input, assembled, memory, executeTool, dogtalkSubmission = null) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
@@ -199,6 +203,7 @@ function streamFormalChat(request, env, input, assembled, memory, executeTool) {
       'Cache-Control': 'no-cache, no-transform',
       'X-Content-Type-Options': 'nosniff',
       'X-Coast-Memory-Selected': JSON.stringify(memory?.trace?.selected || []),
+      'X-Coast-Dogtalk-Snapshot': dogtalkSubmission?.snapshot?.id || '',
     },
   });
 }
@@ -217,6 +222,24 @@ async function formalChat(request, env) {
   const lastUser = [...messages].reverse().find((message) => message?.role === 'user' && typeof message.content === 'string');
   if (!lastUser || messages.at(-1)?.role !== 'user') {
     throw new ChatStoreError('invalid_request', '当前用户消息必须位于请求末尾。', 400);
+  }
+  let dogtalkSubmission = null;
+  if (value.dogtalk && typeof value.dogtalk === 'object' && !Array.isArray(value.dogtalk)) {
+    if (!sourceTurnId) {
+      throw new ChatStoreError('dogtalk_turn_required', '神秘狗话需要跟随当前消息轮次。', 400);
+    }
+    dogtalkSubmission = await saveMysticDogtalkWithSnapshot(
+      env.COAST_CHAT_DB,
+      {
+        ...value.dogtalk,
+        room_scope: 'conversation',
+        conversation_id: conversationId,
+      },
+      {
+        source_type: 'turn',
+        source_id: sourceTurnId,
+      },
+    );
   }
 
   let memory = null;
@@ -269,7 +292,7 @@ async function formalChat(request, env) {
     return streamFormalChat(request, env, {
       model: value.model,
       settings: requestSettings,
-    }, assembled, memory, executeTool);
+    }, assembled, memory, executeTool, dogtalkSubmission);
   }
   const result = await performFormalChatWithTools(env, {
     model: value.model,
@@ -289,6 +312,7 @@ async function formalChat(request, env) {
       selected_cross_surface_ids: crossSurface.selected,
       cross_surface_triggered: crossSurface.triggered,
       dogtalk_selected: dogtalk.selected,
+      dogtalk_snapshot_id: dogtalkSubmission?.snapshot?.id || null,
       vector_enabled: Boolean(memory?.trace?.vector_enabled),
     },
   });
@@ -511,6 +535,7 @@ export async function routeChatApi(request, env) {
     return await conversations(request, env, pathname);
   } catch (error) {
     if (error instanceof ModelRequestError) return modelErrorResponse(error);
+    if (error instanceof DogtalkStoreError) return apiError(error.type, error.message, error.status);
     if (error instanceof ChatStoreError) return apiError(error.type, error.message, error.status);
     const reference = crypto.randomUUID().slice(0, 8);
     console.error(`[chat-api:${reference}]`, error);

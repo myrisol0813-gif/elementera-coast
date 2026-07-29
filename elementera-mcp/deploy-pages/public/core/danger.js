@@ -99,6 +99,13 @@ const DANGER_ACTIONS = Object.freeze({
     cancelText: '取消',
     dangerLevel: 'warning',
   }),
+  'memory:room-pocket-resolve': Object.freeze({
+    title: '处理这条房间候选？',
+    message: '请确认它要进入所选平行库，或从待确认袋中丢弃。',
+    confirmText: '确认处理',
+    cancelText: '取消',
+    dangerLevel: 'warning',
+  }),
   'dogtalk:clear': Object.freeze({
     title: '清空这条神秘狗话草稿？',
     message: '本条草稿会收进归档，不再作为当前房间最近的神秘狗话；思维壤、落袋、种子和记忆不会受到影响。',

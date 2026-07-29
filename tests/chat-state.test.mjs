@@ -14,9 +14,15 @@ import {
 } from '../elementera-mcp/deploy-pages/public/features/chat-state.js';
 
 let state = createState();
-let result = appendTurn(state, 'a1');
+let result = appendTurn(state, 'a1', {
+  dogtalk_snapshot_id: 'dogtalk-snapshot-turn-a1',
+});
 state = result.state;
 const turnId = result.turn.id;
+assert.equal(
+  activeBranch(state.turns[0]).user.dogtalk_snapshot_id,
+  'dogtalk-snapshot-turn-a1',
+);
 state = appendAssistantVariant(state, turnId, { content: 'answer-a1-1' }).state;
 state = appendAssistantVariant(state, turnId, { content: 'answer-a1-2' }).state;
 assert.equal(activeBranch(state.turns[0]).assistant.content, 'answer-a1-2');

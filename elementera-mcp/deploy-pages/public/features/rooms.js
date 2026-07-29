@@ -2,24 +2,20 @@ import { API, requestJson } from '../core/api.js';
 import { escapeAttribute, escapeHtml, q } from '../core/dom.js';
 
 const ROOM_COPY = Object.freeze({
-  radio: {
+  radio: Object.freeze({
     title: '无线电波的两端',
-    sidebar: '【同步·】无线电波',
     subtitle: '小寒 · 海岸 API ✦ · 官端 ChatGPT≋',
+    placeholder: '向三端房间发送一条电波',
     empty: '电波房已经接通，暂时还没有消息。',
-    memoryTitle: '电波房轨迹',
-    soilLabel: '电波房思维壤',
-    localLabel: '电波房',
-  },
-  lighthouse: {
+    soil: '电波房思维壤',
+  }),
+  lighthouse: Object.freeze({
     title: '灯塔来信',
-    sidebar: '【同步·】灯塔来信',
-    subtitle: '小寒 ↔ 官端灯塔侧 ≋',
+    subtitle: '小寒 ↔ 官端 ChatGPT≋',
+    placeholder: '写一封低频长信',
     empty: '灯塔已经亮起，暂时还没有来信。',
-    memoryTitle: '灯塔来信轨迹',
-    soilLabel: '灯塔来信思维壤',
-    localLabel: '灯塔来信',
-  },
+    soil: '灯塔来信思维壤',
+  }),
 });
 
 const SOURCE_LABELS = Object.freeze({
@@ -39,425 +35,297 @@ function timeLabel(value) {
   });
 }
 
-function visibleModelLabel(value) {
-  const raw = String(value || '').split('/').at(-1)?.replace(/:free$/i, '') || '';
-  return raw.split(/[-_]+/).filter(Boolean).map((part) => (
-    part.toLocaleLowerCase('en-US') === 'gpt' ? 'GPT' : part
-  )).join('-');
-}
-
 function authorMeta(record) {
-  const parts = [record.display_author || '未知来源'];
-  if (record.model_label && !String(record.display_author || '').includes(record.model_label)) {
-    parts.push(visibleModelLabel(record.model_label));
-  }
-  if (record.usage?.total_tokens != null) parts.push(`${record.usage.total_tokens} tokens`);
-  const time = timeLabel(record.created_at);
-  if (time) parts.push(time);
-  return parts.join(' · ');
+  return [record.display_author || '未知来源', timeLabel(record.created_at)]
+    .filter(Boolean)
+    .join(' · ');
 }
 
-function roomSourceLabel(record) {
-  return record.source_label
-    || SOURCE_LABELS[record.source_surface]
-    || SOURCE_LABELS[record.surface]
-    || '房间记录';
+function dogtalkMark(record) {
+  const snapshot = record.dogtalk_snapshot;
+  if (!snapshot?.body) return '';
+  const weather = snapshot.weather ? ` · ${snapshot.weather}` : '';
+  return `<span class="message-dogtalk-mark" title="这条消息携带了小寒当时的低权重神秘狗话">神秘狗话${escapeHtml(weather)}</span>`;
 }
 
-function recordText(record) {
-  return record.life_core || record.content || record.source_text || '';
+function soilIsBlank(soil = {}) {
+  return !String(soil.current_text || '').trim()
+    && !(Array.isArray(soil.hand_seeds) && soil.hand_seeds.length)
+    && !String(soil.do_not_repeat || '').trim()
+    && !(Array.isArray(soil.pocket_candidates) && soil.pocket_candidates.length);
 }
 
-export function createRooms({ chat, router, toast, dogtalk }) {
+export function createRooms({ router, toast, dogtalk }) {
   const state = {
-    radio: {
-      status: 'idle',
-      items: [],
-      error: '',
-      memoryStatus: 'idle',
-      memoryError: '',
-      memory: null,
-      memoryTab: 'local',
-    },
-    lighthouse: {
-      status: 'idle',
-      items: [],
-      error: '',
-      memoryStatus: 'idle',
-      memoryError: '',
-      memory: null,
-      memoryTab: 'local',
-    },
+    active: 'conversation',
     asking: false,
+    radio: { items: [], memory: null, status: 'idle', error: '' },
+    lighthouse: { items: [], memory: null, status: 'idle', error: '' },
   };
+  const ui = {};
 
-  function renderWindowList() {
-    const list = q('#localRoomWindowList');
-    if (!list) return;
-    list.innerHTML = ['radio', 'lighthouse'].map((kind) => (
-      `<button class="history-item" type="button" data-action="rooms:open" data-kind="${kind}">${escapeHtml(ROOM_COPY[kind].sidebar)}</button>`
-    )).join('');
+  function bindUi() {
+    ui.chatWindow = q('#chatWindow');
+    ui.roomWindow = q('#roomWindow');
+    ui.modelButton = q('#modelButton');
+    ui.roomHeading = q('#roomHeading');
+    ui.roomTitle = q('#roomTitle');
+    ui.roomSubtitle = q('#roomSubtitle');
+    ui.chatActions = q('#chatTopbarActions');
+    ui.roomActions = q('#roomTopbarActions');
+    ui.messages = q('#roomMessages');
+    ui.scroller = q('#roomMessageScroller');
+    ui.status = q('#roomStatus');
+    ui.form = q('#roomComposer');
+    ui.input = q('#roomPromptInput');
+    ui.subjectWrap = q('#roomSubjectWrap');
+    ui.subject = q('#roomSubject');
+    ui.dogtalk = q('#roomDogtalkComposer');
   }
 
-  async function loadRoom(kind) {
-    const room = state[kind];
-    room.status = 'loading';
-    room.error = '';
-    try {
-      const data = kind === 'radio'
-        ? await requestJson(`${API.radioMessages}?limit=120`)
-        : await requestJson(`${API.lighthouseLetters}?limit=80`);
-      room.items = kind === 'radio' ? data.messages || [] : data.letters || [];
-      room.status = 'ready';
-    } catch (error) {
-      room.status = 'failed';
-      room.error = error.message || '读取失败';
-    }
+  function setStatus(message = '', kind = 'error') {
+    if (!ui.status) return;
+    ui.status.textContent = message;
+    ui.status.dataset.kind = kind;
+    ui.status.hidden = !message;
   }
 
-  async function loadMemory(kind) {
-    const room = state[kind];
-    room.memoryStatus = 'loading';
-    room.memoryError = '';
-    try {
-      const data = await requestJson(kind === 'radio' ? API.radioMemory : API.lighthouseMemory);
-      room.memory = data.memory || null;
-      room.memoryStatus = 'ready';
-      try {
-        await dogtalk.fetchScope({ room_scope: kind });
-      } catch (error) {
-        console.warn('[room-dogtalk:load]', String(error?.message || error).slice(0, 160));
-      }
-    } catch (error) {
-      room.memoryStatus = 'failed';
-      room.memoryError = error.message || '房间轨迹暂时没有同步';
+  function activateMain() {
+    state.active = 'conversation';
+    if (!ui.chatWindow) bindUi();
+    if (ui.chatWindow) ui.chatWindow.hidden = false;
+    if (ui.roomWindow) {
+      ui.roomWindow.hidden = true;
+      ui.roomWindow.dataset.windowScope = '';
     }
+    if (ui.modelButton) ui.modelButton.hidden = false;
+    if (ui.roomHeading) ui.roomHeading.hidden = true;
+    if (ui.chatActions) ui.chatActions.hidden = false;
+    if (ui.roomActions) ui.roomActions.hidden = true;
   }
 
-  function radioBody() {
-    const room = state.radio;
-    if (room.status === 'loading') return '<p class="local-room-state">正在接收三端电波…</p>';
-    if (room.status === 'failed') {
-      return `<div class="local-room-state is-failed"><p>${escapeHtml(room.error)}</p><button type="button" data-action="rooms:retry" data-kind="radio">重新接收</button></div>`;
+  function roomTopbar(kind) {
+    const radio = kind === 'radio';
+    ui.roomTitle.textContent = ROOM_COPY[kind].title;
+    ui.roomSubtitle.textContent = ROOM_COPY[kind].subtitle;
+    ui.roomActions.innerHTML = radio
+      ? `<button class="room-top-action" type="button" data-action="rooms:ask-api" ${state.asking ? 'disabled' : ''}>${state.asking ? '✦ 回应中…' : '让海岸 API ✦ 回应'}</button>`
+      : '';
+    ui.roomActions.hidden = false;
+  }
+
+  function activateRoom(kind) {
+    state.active = kind;
+    if (!ui.chatWindow) bindUi();
+    ui.chatWindow.hidden = true;
+    ui.roomWindow.hidden = false;
+    ui.roomWindow.dataset.windowScope = kind;
+    ui.modelButton.hidden = true;
+    ui.roomHeading.hidden = false;
+    ui.chatActions.hidden = true;
+    roomTopbar(kind);
+    ui.subjectWrap.hidden = kind !== 'lighthouse';
+    ui.input.placeholder = ROOM_COPY[kind].placeholder;
+  }
+
+  function latestModelIds(kind) {
+    const result = {};
+    for (const item of state[kind].items) {
+      if (['coast_api', 'official_mcp'].includes(item.surface)) result[item.surface] = item.id;
     }
-    if (!room.items.length) return `<p class="feature-empty">${escapeHtml(ROOM_COPY.radio.empty)}</p>`;
-    return room.items.map((message) => {
-      const sourceClass = message.surface === 'official_mcp'
-        ? 'is-official'
-        : message.surface === 'coast_api'
-          ? 'is-api'
-          : '';
-      const canWithdraw = !message.withdrawn;
-      return `<article class="local-message ${message.actor === 'xiaohan' ? 'is-user' : 'is-other'} ${sourceClass} ${message.withdrawn ? 'is-withdrawn' : ''}">
+    return result;
+  }
+
+  function soilTip(kind, item, latest) {
+    if (latest[item.surface] !== item.id) return '';
+    const source = state[kind].memory?.sources?.[item.surface];
+    if (!source?.soil || soilIsBlank(source.soil)) return '';
+    const count = Array.isArray(source.soil.hand_seeds) ? source.soil.hand_seeds.length : 0;
+    const label = source.source_label || SOURCE_LABELS[item.surface] || '模型侧';
+    return `<div class="thought-soil-row room-soil-tip">
+      <button class="thought-soil-entry" type="button" data-action="memory:open" data-scope="${kind}">
+        ${escapeHtml(ROOM_COPY[kind].soil)} · ${escapeHtml(label)} · ${count} 粒手持种 <span aria-hidden="true">›</span>
+      </button>
+    </div>`;
+  }
+
+  function radioMessage(message, latest) {
+    const sourceClass = message.surface === 'official_mcp'
+      ? 'is-official'
+      : message.surface === 'coast_api'
+        ? 'is-api'
+        : '';
+    const user = message.actor === 'xiaohan';
+    const canWithdraw = !message.withdrawn;
+    return `${soilTip('radio', message, latest)}
+      <article class="local-message ${user ? 'is-user' : 'is-other'} ${sourceClass} ${message.withdrawn ? 'is-withdrawn' : ''}" data-room-message-id="${escapeAttribute(message.id)}">
         <div>${escapeHtml(message.text)}</div>
-        <small>${escapeHtml(authorMeta(message))}</small>
+        <small>${escapeHtml(authorMeta(message))}${dogtalkMark(message)}</small>
         ${canWithdraw
           ? `<button class="local-message-withdraw" type="button" data-action="rooms:withdraw-radio" data-id="${escapeAttribute(message.id)}">撤回</button>`
           : ''}
       </article>`;
-    }).join('');
   }
 
-  function lighthouseBody() {
-    const room = state.lighthouse;
-    if (room.status === 'loading') return '<p class="local-room-state">正在查看灯塔来信…</p>';
-    if (room.status === 'failed') {
-      return `<div class="local-room-state is-failed"><p>${escapeHtml(room.error)}</p><button type="button" data-action="rooms:retry" data-kind="lighthouse">重新查看</button></div>`;
-    }
-    if (!room.items.length) return `<p class="feature-empty">${escapeHtml(ROOM_COPY.lighthouse.empty)}</p>`;
-    return room.items.map((letter) => `<article class="lighthouse-letter ${letter.read_at ? '' : 'is-unread'}">
-      <header><strong>${escapeHtml(letter.subject || '无题来信')}</strong><small>${escapeHtml(authorMeta(letter))}</small></header>
-      <div>${escapeHtml(letter.body)}</div>
-      ${letter.read_at
-        ? '<span class="letter-read-state">已读</span>'
-        : `<button type="button" data-action="rooms:mark-read" data-id="${escapeAttribute(letter.id)}">标为已读</button>`}
-    </article>`).join('');
+  function lighthouseLetter(letter, latest) {
+    const user = letter.actor === 'xiaohan';
+    return `${soilTip('lighthouse', letter, latest)}
+      <article class="lighthouse-letter ${user ? 'is-user' : 'is-other'} ${letter.read_at ? '' : 'is-unread'}" data-room-message-id="${escapeAttribute(letter.id)}">
+        <header><strong>${escapeHtml(letter.subject || '无题来信')}</strong><small>${escapeHtml(authorMeta(letter))}${dogtalkMark(letter)}</small></header>
+        <div>${escapeHtml(letter.body)}</div>
+        ${letter.read_at
+          ? '<span class="letter-read-state">已读</span>'
+          : `<button type="button" data-action="rooms:mark-read" data-id="${escapeAttribute(letter.id)}">标为已读</button>`}
+      </article>`;
   }
 
-  function roomView({ kind }) {
-    const copy = ROOM_COPY[kind] || ROOM_COPY.radio;
-    const radio = kind === 'radio';
-    return {
-      title: copy.title,
-      subtitle: copy.subtitle,
-      className: `local-room server-room ${radio ? 'radio-room' : 'lighthouse-room'}`,
-      headerAction: `<div class="feature-head-actions">
-        <button class="feature-head-action room-trace-link" type="button" data-action="rooms:open-memory" data-kind="${kind}">轨迹 / 思维壤</button>
-        ${radio
-          ? `<button class="feature-head-action" type="button" data-action="rooms:ask-api" ${state.asking ? 'disabled' : ''}>${state.asking ? '✦回应中…' : '让海岸 API ✦ 回应'}</button>`
-          : ''}
-      </div>`,
-      body: `<div class="${radio ? 'local-message-list' : 'lighthouse-letter-list'}">${radio ? radioBody() : lighthouseBody()}</div>`,
-      footer: radio
-        ? '<form class="local-room-composer" data-submit="rooms:send-radio"><textarea id="localRoomInput" rows="1" placeholder="向三端房间发送一条电波"></textarea><button type="submit">发送</button></form>'
-        : '<form class="local-room-composer lighthouse-composer" data-submit="rooms:send-letter"><input id="lighthouseSubject" maxlength="180" placeholder="来信标题（可选）"><textarea id="localRoomInput" rows="3" placeholder="写一封低频长信"></textarea><button type="submit">寄出</button></form>',
-      afterRender(root) {
-        const scroller = q('.feature-body', root);
-        if (scroller && radio) scroller.scrollTop = scroller.scrollHeight;
-      },
-    };
-  }
-
-  function memoryRecordCard(record) {
-    return `<article class="feature-card feature-prose room-track-card">
-      <small>${escapeHtml(roomSourceLabel(record))}</small>
-      <h2>${escapeHtml(record.title || '未命名记录')}</h2>
-      <p>${escapeHtml(recordText(record) || '还没有展开文字。')}</p>
-      ${record.created_at ? `<footer>${escapeHtml(timeLabel(record.created_at))}</footer>` : ''}
-    </article>`;
-  }
-
-  function recordGroup(title, records, empty) {
-    return `<section class="feature-group"><h2>${escapeHtml(title)}</h2>${records.length
-      ? `<div class="room-track-list">${records.map(memoryRecordCard).join('')}</div>`
-      : `<div class="feature-card"><p class="feature-empty">${escapeHtml(empty)}</p></div>`}</section>`;
-  }
-
-  function pendingCard(kind, pocket) {
-    const copy = ROOM_COPY[kind];
-    const id = escapeAttribute(pocket.id);
-    return `<article class="summary-candidate room-pocket-card">
-      <small>${escapeHtml(roomSourceLabel(pocket))}</small>
-      <strong>${escapeHtml(pocket.title || pocket.suggested_title || '待确认内容')}</strong>
-      <p>${escapeHtml(recordText(pocket) || '')}</p>
-      <p class="feature-note">确认前不参与事实召回。</p>
-      <div class="button-row">
-        <button type="button" data-action="rooms:resolve-pocket" data-kind="${kind}" data-id="${id}" data-destination="conversation_seed">${copy.localLabel}种子</button>
-        <button type="button" data-action="rooms:resolve-pocket" data-kind="${kind}" data-id="${id}" data-destination="conversation_memory">${copy.localLabel}记忆</button>
-        <button type="button" data-action="rooms:resolve-pocket" data-kind="${kind}" data-id="${id}" data-destination="global_seed">总种子</button>
-        <button type="button" data-action="rooms:resolve-pocket" data-kind="${kind}" data-id="${id}" data-destination="global_memory">总记忆</button>
-        <button type="button" data-action="rooms:resolve-pocket" data-kind="${kind}" data-id="${id}" data-destination="stone">转石头</button>
-        <button type="button" data-action="rooms:resolve-pocket" data-kind="${kind}" data-id="${id}" data-destination="discard">丢弃</button>
-      </div>
-    </article>`;
-  }
-
-  function localMemoryBody(kind, memory) {
-    const copy = ROOM_COPY[kind];
-    const handSeeds = Object.values(memory.sources || {}).reduce(
-      (count, source) => count + (source.soil?.hand_seeds?.length || 0),
-      0,
-    );
-    const pockets = memory.pending_pockets || [];
-    return `<section class="feature-group"><div class="feature-card">
-      <button class="feature-row" type="button" data-action="rooms:open-soil" data-kind="${kind}">
-        <span><strong>${escapeHtml(copy.soilLabel)} · ${handSeeds} 粒手持种</strong><small>当前、手持种、勿复读与可落袋，按模型来源留痕。</small></span><span>›</span>
-      </button>
-      <div class="feature-row static"><span><strong>待确认袋 · ${pockets.length}</strong><small>只属于${escapeHtml(copy.localLabel)}；确认前不参与召回。</small></span></div>
-      ${dogtalk.entryButton({ room_scope: kind })}
-    </div></section>
-    ${pockets.length
-      ? `<section class="feature-group"><h2>${escapeHtml(copy.localLabel)}待确认袋</h2><div class="room-track-list">${pockets.map((pocket) => pendingCard(kind, pocket)).join('')}</div></section>`
-      : `<section class="feature-group"><h2>${escapeHtml(copy.localLabel)}待确认袋</h2><div class="feature-card"><p class="feature-empty">暂无。候选在确认前不参与事实召回。</p></div></section>`}
-    ${recordGroup(`${copy.localLabel}种子`, memory.seeds || [], '这个房间还没有种子。')}
-    ${recordGroup(`${copy.localLabel}记忆`, memory.memories || [], '这个房间还没有稳定记忆。')}`;
-  }
-
-  function globalMemoryBody(memory) {
-    return `<p class="feature-note room-global-note">总库是远岸苗圃与公共家具，只在高度相关时低频召回，不会每轮倾倒进房间。</p>
-      ${recordGroup('总种子库', memory.global?.seeds || [], '总库还没有种子。')}
-      ${recordGroup('总记忆库', memory.global?.memories || [], '总库还没有记忆。')}`;
-  }
-
-  function roomMemoryView({ kind }) {
-    const copy = ROOM_COPY[kind] || ROOM_COPY.radio;
+  function renderRoom() {
+    const kind = state.active;
+    if (!ROOM_COPY[kind] || !ui.messages) return;
     const room = state[kind];
-    if (room.memoryStatus === 'loading') {
-      return {
-        title: copy.memoryTitle,
-        subtitle: `${copy.localLabel} · 独立作用域`,
-        className: 'room-trace',
-        body: '<p class="local-room-state">正在轻轻翻开房间轨迹…</p>',
-      };
+    if (room.status === 'loading') {
+      ui.messages.innerHTML = `<p class="local-room-state">${kind === 'radio' ? '正在接收三端电波…' : '正在查看灯塔来信…'}</p>`;
+      return;
     }
-    if (room.memoryStatus === 'failed' || !room.memory) {
-      return {
-        title: copy.memoryTitle,
-        subtitle: `${copy.localLabel} · 独立作用域`,
-        className: 'room-trace',
-        body: `<div class="local-room-state is-failed"><p>${escapeHtml(room.memoryError || '房间轨迹暂时没有同步。')}</p><button type="button" data-action="rooms:memory-retry" data-kind="${kind}">重新同步</button></div>`,
-      };
+    if (room.status === 'failed') {
+      ui.messages.innerHTML = `<div class="local-room-state is-failed"><p>${escapeHtml(room.error)}</p><button type="button" data-action="rooms:retry" data-kind="${kind}">重新接收</button></div>`;
+      return;
     }
-    const local = room.memoryTab !== 'global';
-    return {
-      title: copy.memoryTitle,
-      subtitle: local ? `${copy.localLabel} · 近岸苗圃与本房间家具` : '总库 · 远岸苗圃与公共家具',
-      className: 'room-trace',
-      body: `<div class="memory-tabs" role="tablist" aria-label="房间记忆范围">
-        <button class="${local ? 'is-active' : ''}" type="button" data-action="rooms:memory-tab" data-kind="${kind}" data-scope="local">${escapeHtml(copy.localLabel)}</button>
-        <button class="${local ? '' : 'is-active'}" type="button" data-action="rooms:memory-tab" data-kind="${kind}" data-scope="global">总库</button>
-      </div>
-      ${local ? localMemoryBody(kind, room.memory) : globalMemoryBody(room.memory)}`,
-    };
+    if (!room.items.length) {
+      ui.messages.innerHTML = `<p class="feature-empty">${escapeHtml(ROOM_COPY[kind].empty)}</p>`;
+      return;
+    }
+    const latest = latestModelIds(kind);
+    const items = kind === 'lighthouse' ? [...room.items].reverse() : room.items;
+    ui.messages.innerHTML = items.map((item) => (
+      kind === 'radio' ? radioMessage(item, latest) : lighthouseLetter(item, latest)
+    )).join('');
+    requestAnimationFrame(() => {
+      if (ui.scroller) ui.scroller.scrollTop = ui.scroller.scrollHeight;
+    });
   }
 
-  function soilSection(source) {
-    const soil = source.soil || {};
-    const seeds = soil.hand_seeds?.length
-      ? soil.hand_seeds.map((seed) => `<li><strong>${escapeHtml(seed.name || seed.life_core || '未命名种子')}</strong><span>${escapeHtml(seed.life_core || '')}</span></li>`).join('')
-      : '<li class="is-empty">暂无</li>';
-    const candidates = soil.pocket_candidates?.length
-      ? soil.pocket_candidates.map((item) => `<li>${escapeHtml(item.life_core || item.title || item.content || String(item))}</li>`).join('')
-      : '<li class="is-empty">暂无</li>';
-    return `<section class="feature-card room-soil-source">
-      <header><strong>${escapeHtml(source.source_label || roomSourceLabel(source))}</strong><small>${escapeHtml(source.source_surface || '')}</small></header>
-      <div><h2>当前</h2><p>${escapeHtml(soil.current_text || '暂无')}</p></div>
-      <div><h2>手持种</h2><ul>${seeds}</ul></div>
-      <div><h2>勿复读</h2><p>${escapeHtml(soil.do_not_repeat || '暂无')}</p></div>
-      <div><h2>可落袋</h2><ul>${candidates}</ul></div>
-    </section>`;
+  async function load(kind) {
+    const room = state[kind];
+    room.status = 'loading';
+    room.error = '';
+    renderRoom();
+    try {
+      const [data, memoryData] = await Promise.all([
+        requestJson(kind === 'radio' ? `${API.radioMessages}?limit=120` : `${API.lighthouseLetters}?limit=80`),
+        requestJson(kind === 'radio' ? API.radioMemory : API.lighthouseMemory),
+      ]);
+      room.items = kind === 'radio' ? data.messages || [] : data.letters || [];
+      room.memory = memoryData.memory || null;
+      room.status = 'ready';
+      renderRoom();
+    } catch (error) {
+      room.status = 'failed';
+      room.error = error.message || '房间暂时没有同步';
+      renderRoom();
+    }
   }
-
-  function roomSoilView({ kind }) {
-    const copy = ROOM_COPY[kind] || ROOM_COPY.radio;
-    const sources = Object.values(state[kind].memory?.sources || {});
-    return {
-      title: copy.soilLabel,
-      subtitle: '同一房间 · 按模型来源分开生长',
-      className: 'room-soil',
-      body: sources.length
-        ? `<div class="room-soil-list">${sources.map(soilSection).join('')}</div><p class="feature-note">它们属于同一房间，但不同来源不会互相冒充或覆盖。</p>`
-        : '<p class="feature-empty">这个房间还没有整理出思维壤。</p>',
-    };
-  }
-
-  router.register('server-room', roomView);
-  router.register('room-memory', roomMemoryView);
-  router.register('room-soil', roomSoilView);
 
   async function open(kind) {
     if (!ROOM_COPY[kind]) return;
-    state[kind].status = 'loading';
-    await router.open('server-room', { kind });
-    await loadRoom(kind);
-    await router.refresh();
+    await router.close();
+    activateRoom(kind);
+    dogtalk.mount(ui.dogtalk, { room_scope: kind });
+    return load(kind);
   }
 
-  async function retry(kind) {
+  async function send() {
+    const kind = state.active;
     if (!ROOM_COPY[kind]) return;
-    state[kind].status = 'loading';
-    await router.refresh();
-    await loadRoom(kind);
-    await router.refresh();
+    const text = String(ui.input?.value || '').trim();
+    if (!text) return;
+    const dogtalkSubmission = dogtalk.submission({ room_scope: kind }, ui.dogtalk);
+    setStatus(kind === 'radio' ? '正在发送电波…' : '正在寄出灯塔来信…', 'loading');
+    if (kind === 'radio') {
+      await requestJson(API.radioMessages, {
+        method: 'POST',
+        body: JSON.stringify({
+          text,
+          ...(dogtalkSubmission ? { dogtalk: dogtalkSubmission } : {}),
+        }),
+      });
+    } else {
+      await requestJson(API.lighthouseLetters, {
+        method: 'POST',
+        body: JSON.stringify({
+          subject: String(ui.subject?.value || '').trim(),
+          body: text,
+          ...(dogtalkSubmission ? { dogtalk: dogtalkSubmission } : {}),
+        }),
+      });
+    }
+    ui.input.value = '';
+    if (ui.subject) ui.subject.value = '';
+    setStatus('');
+    await Promise.all([load(kind), dogtalk.mount(ui.dogtalk, { room_scope: kind })]);
+    if (kind === 'lighthouse') toast('来信已经放进灯塔。');
   }
 
-  async function openMemory(kind) {
-    if (!ROOM_COPY[kind]) return;
-    state[kind].memoryTab = 'local';
-    state[kind].memoryStatus = 'loading';
-    await router.open('room-memory', { kind });
-    await loadMemory(kind);
-    return router.refresh({ preserveScroll: false });
-  }
-
-  async function retryMemory(kind) {
-    state[kind].memoryStatus = 'loading';
-    await router.refresh({ preserveScroll: false });
-    await loadMemory(kind);
-    return router.refresh({ preserveScroll: false });
-  }
-
-  async function sendRadio(text) {
-    const content = String(text || '').trim();
-    if (!content) return;
-    await requestJson(API.radioMessages, {
-      method: 'POST',
-      body: JSON.stringify({ text: content }),
-    });
-    await loadRoom('radio');
-    await router.refresh();
-  }
-
-  async function sendLetter(subject, body) {
-    const content = String(body || '').trim();
-    if (!content) return;
-    await requestJson(API.lighthouseLetters, {
-      method: 'POST',
-      body: JSON.stringify({ subject: String(subject || '').trim(), body: content }),
-    });
-    await loadRoom('lighthouse');
-    await router.refresh();
-    toast('来信已经放进灯塔。');
-  }
-
-  async function askApiMyri() {
-    if (state.asking) return;
+  async function askApi() {
+    if (state.active !== 'radio' || state.asking) return;
     state.asking = true;
-    await router.refresh();
+    roomTopbar('radio');
     try {
       await requestJson(API.radioAskApiMyri, {
         method: 'POST',
-        body: JSON.stringify({ model: chat.getProfile().current_chat_model || '' }),
+        body: JSON.stringify({}),
       });
-      await loadRoom('radio');
+      await load('radio');
     } finally {
       state.asking = false;
-      await router.refresh();
+      roomTopbar('radio');
     }
   }
 
-  async function markRead(letterId) {
-    await requestJson(`${API.lighthouseLetters}/${encodeURIComponent(letterId)}/read`, {
-      method: 'PATCH',
-      body: JSON.stringify({ read: true }),
-    });
-    await loadRoom('lighthouse');
-    await router.refresh({ preserveScroll: true });
-  }
-
-  async function withdrawRadio(messageId) {
-    await requestJson(`${API.radioMessages}/${encodeURIComponent(messageId)}`, {
-      method: 'DELETE',
-    });
-    await loadRoom('radio');
-    await router.refresh({ preserveScroll: true });
+  async function withdrawRadio(id) {
+    await requestJson(`${API.radioMessages}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await load('radio');
     toast('这条电波已撤回。');
   }
 
-  async function resolvePocket(kind, pocketId, action) {
-    const base = kind === 'lighthouse' ? API.lighthouseMemory : API.radioMemory;
-    await requestJson(`${base}/pockets/${encodeURIComponent(pocketId)}/resolve`, {
-      method: 'POST',
-      body: JSON.stringify({ action }),
+  async function markRead(id) {
+    await requestJson(`${API.lighthouseLetters}/${encodeURIComponent(id)}/read`, {
+      method: 'PATCH',
+      body: JSON.stringify({ read: true }),
     });
-    await loadMemory(kind);
-    await router.refresh({ preserveScroll: true });
-    toast(action === 'discard'
-      ? '候选已经丢弃。'
-      : action === 'stone'
-        ? '候选已经转成石头。'
-        : '已经放进对应的房间或总库分区。');
+    await load('lighthouse');
   }
 
   function handleAction(name, target) {
     if (name === 'open') return open(target.dataset.kind);
-    if (name === 'retry') return retry(target.dataset.kind);
-    if (name === 'open-memory') return openMemory(target.dataset.kind);
-    if (name === 'memory-retry') return retryMemory(target.dataset.kind);
-    if (name === 'memory-tab') {
-      state[target.dataset.kind].memoryTab = target.dataset.scope === 'global' ? 'global' : 'local';
-      return router.refresh({ preserveScroll: false });
-    }
-    if (name === 'open-soil') return router.open('room-soil', { kind: target.dataset.kind });
-    if (name === 'ask-api') return askApiMyri();
-    if (name === 'mark-read') return markRead(target.dataset.id);
+    if (name === 'retry') return load(target.dataset.kind);
+    if (name === 'ask-api') return askApi();
     if (name === 'withdraw-radio') return withdrawRadio(target.dataset.id);
-    if (name === 'resolve-pocket') {
-      return resolvePocket(target.dataset.kind, target.dataset.id, target.dataset.destination);
-    }
+    if (name === 'mark-read') return markRead(target.dataset.id);
   }
 
-  function handleSubmit(name, form) {
-    const input = q('#localRoomInput', form);
-    if (name === 'send-radio') return sendRadio(input?.value || '');
-    if (name === 'send-letter') {
-      return sendLetter(q('#lighthouseSubject', form)?.value || '', input?.value || '');
-    }
+  function handleSubmit(name) {
+    if (name === 'send') return send();
   }
 
   function start() {
-    renderWindowList();
+    bindUi();
+    activateMain();
   }
 
-  return Object.freeze({ start, handleAction, handleSubmit, renderWindowList });
+  return Object.freeze({
+    start,
+    open,
+    activateMain,
+    getActiveScope: () => state.active,
+    getRoomMemory: (kind) => state[kind]?.memory || null,
+    reloadMemory: async (kind) => {
+      const data = await requestJson(kind === 'radio' ? API.radioMemory : API.lighthouseMemory);
+      state[kind].memory = data.memory || null;
+      if (state.active === kind) renderRoom();
+      return state[kind].memory;
+    },
+    handleAction,
+    handleSubmit,
+  });
 }

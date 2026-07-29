@@ -265,8 +265,200 @@
   line-height: 1.4;
 }
 
-#promptInput::placeholder {
+#promptInput::placeholder,
+#roomPromptInput::placeholder {
   color: var(--muted);
+}
+
+#roomPromptInput {
+  width: 100%;
+  min-height: 32px;
+  max-height: 112px;
+  padding: 5px 0;
+  overflow-y: auto;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  line-height: 1.4;
+}
+
+.room-composer {
+  grid-template-columns: minmax(0, 1fr) 42px;
+}
+
+.room-composer .input-pill {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.room-subject-wrap {
+  grid-column: 1 / -1;
+}
+
+.room-subject-wrap input {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 18px;
+  outline: 0;
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.room-messages {
+  display: grid;
+  align-content: end;
+  gap: 14px;
+}
+
+.room-soil-tip {
+  margin: 1px 0 0 18px;
+}
+
+.message-dogtalk-mark {
+  display: inline-block;
+  margin-left: 7px;
+  color: color-mix(in srgb, var(--accent) 62%, var(--muted));
+}
+
+.dogtalk-composer-slot {
+  width: min(780px, 100%);
+  margin: 0 auto;
+  padding: 0 max(14px, var(--safe-right)) 6px max(14px, var(--safe-left));
+}
+
+.dogtalk-composer {
+  border: 1px solid color-mix(in srgb, var(--accent) 13%, var(--line));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-soft) 78%, var(--bg));
+}
+
+.dogtalk-composer > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 13px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.dogtalk-composer > summary::-webkit-details-marker {
+  display: none;
+}
+
+.dogtalk-composer > summary strong,
+.dogtalk-composer > summary small {
+  display: block;
+}
+
+.dogtalk-composer > summary strong {
+  font-size: 12px;
+}
+
+.dogtalk-composer > summary small {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dogtalk-composer[open] .dogtalk-chevron {
+  transform: rotate(180deg);
+}
+
+.dogtalk-fields {
+  display: grid;
+  gap: 11px;
+  max-height: min(54vh, 520px);
+  padding: 3px 13px 14px;
+  overflow-y: auto;
+}
+
+.dogtalk-fields label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-soft);
+  font-size: 11px;
+}
+
+.dogtalk-fields textarea,
+.dogtalk-fields input,
+.dogtalk-fields select {
+  width: 100%;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 11px;
+  outline: 0;
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+}
+
+.dogtalk-fields textarea {
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.dogtalk-grid {
+  display: grid;
+  grid-template-columns: minmax(0, .75fr) minmax(0, 1.25fr);
+  gap: 9px;
+}
+
+.dogtalk-intro,
+.dogtalk-fields .dogtalk-boundary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.dogtalk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0;
+}
+
+.dogtalk-actions button {
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface-raised);
+  color: var(--text-soft);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.dogtalk-unfolded {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+
+.dogtalk-unfolded[hidden] {
+  display: none;
+}
+
+.dogtalk-unfolded strong {
+  margin-top: 5px;
+  font-size: 11px;
+}
+
+.dogtalk-unfolded p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
 }
 
 .input-action {
@@ -276,8 +468,7 @@
   border-radius: 50%;
 }
 
-#chatConversationList,
-#localRoomWindowList {
+#chatConversationList {
   display: grid;
   gap: 2px;
 }
@@ -364,5 +555,9 @@
   .composer {
     grid-template-columns: 42px minmax(0, 1fr) 42px;
     padding-inline: 14px;
+  }
+
+  .dogtalk-grid {
+    grid-template-columns: 1fr;
   }
 }

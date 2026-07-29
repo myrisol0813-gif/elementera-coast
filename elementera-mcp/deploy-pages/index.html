@@ -13,10 +13,10 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/public/icons/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/public/icons/icon-32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/public/icons/icon-16.png">
-  <link rel="stylesheet" href="/public/styles/tokens.css?v=coast-app-19">
-  <link rel="stylesheet" href="/public/styles/shell.css?v=coast-app-19">
-  <link rel="stylesheet" href="/public/styles/chat.css?v=coast-app-19">
-  <link rel="stylesheet" href="/public/styles/features.css?v=coast-app-19">
+  <link rel="stylesheet" href="/public/styles/tokens.css?v=coast-app-20">
+  <link rel="stylesheet" href="/public/styles/shell.css?v=coast-app-20">
+  <link rel="stylesheet" href="/public/styles/chat.css?v=coast-app-20">
+  <link rel="stylesheet" href="/public/styles/features.css?v=coast-app-20">
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -45,11 +45,6 @@
           <button class="history-item" type="button" data-action="daily:home"><span data-icon="daily"></span>海岸日报</button>
         </section>
 
-        <section id="localRoomWindows" class="sidebar-section">
-          <h2>房间窗口</h2>
-          <div id="localRoomWindowList"></div>
-        </section>
-
         <section id="chatConversationSection" class="sidebar-section" data-owner="chat-conversations">
           <h2>主聊天窗口</h2>
           <div id="chatConversationList"><p class="sidebar-empty">正在载入…</p></div>
@@ -75,33 +70,58 @@
         <button id="modelButton" class="model-button" type="button" data-action="models:quick" aria-label="选择模型" aria-haspopup="dialog" aria-expanded="false">
           <span class="model-title">ChatGPT</span><span id="modelName" class="model-name">载入中 ›</span>
         </button>
-        <div class="topbar-actions">
+        <div id="roomHeading" class="room-heading" hidden>
+          <strong id="roomTitle"></strong>
+          <small id="roomSubtitle"></small>
+        </div>
+        <div id="chatTopbarActions" class="topbar-actions">
           <button id="newChatButton" class="icon-button" type="button" data-action="chat:new" data-icon="new-chat" aria-label="新建聊天"></button>
           <button id="moreButton" class="icon-button" type="button" data-action="letters:open" data-icon="more" aria-label="登岛信与予爱机书"></button>
         </div>
+        <div id="roomTopbarActions" class="topbar-actions" hidden></div>
         <div id="modelQuickPicker" class="model-quick-picker" hidden></div>
       </header>
 
-      <section id="messageScroller" class="message-scroller" aria-label="聊天消息">
-        <div id="messages" class="messages"><div class="empty-state">正在载入海岸…</div></div>
+      <section id="chatWindow" class="window-surface" data-window-scope="conversation">
+        <section id="messageScroller" class="message-scroller" aria-label="聊天消息">
+          <div id="messages" class="messages"><div class="empty-state">正在载入海岸…</div></div>
+        </section>
+
+        <div id="chatStatus" class="chat-status" role="status" aria-live="polite" hidden></div>
+        <div id="mainDogtalkComposer" class="dogtalk-composer-slot"></div>
+
+        <form id="composer" class="composer" autocomplete="off">
+          <button id="imageButton" class="composer-side" type="button" data-action="chat:image" data-icon="plus" aria-label="上传图片"></button>
+          <div class="input-pill">
+            <textarea id="promptInput" rows="1" placeholder="询问任何问题" aria-label="询问任何问题"></textarea>
+            <button id="micButton" class="input-action" type="button" data-action="chat:mic" data-icon="mic" aria-label="语音输入"></button>
+          </div>
+          <button id="composerActionButton" class="composer-primary" type="submit" data-icon="call" aria-label="通话"></button>
+        </form>
       </section>
 
-      <div id="chatStatus" class="chat-status" role="status" aria-live="polite" hidden></div>
-
-      <form id="composer" class="composer" autocomplete="off">
-        <button id="imageButton" class="composer-side" type="button" data-action="chat:image" data-icon="plus" aria-label="上传图片"></button>
-        <div class="input-pill">
-          <textarea id="promptInput" rows="1" placeholder="询问任何问题" aria-label="询问任何问题"></textarea>
-          <button id="micButton" class="input-action" type="button" data-action="chat:mic" data-icon="mic" aria-label="语音输入"></button>
-        </div>
-        <button id="composerActionButton" class="composer-primary" type="submit" data-icon="call" aria-label="通话"></button>
-      </form>
+      <section id="roomWindow" class="window-surface room-window" data-window-scope="" hidden>
+        <section id="roomMessageScroller" class="message-scroller" aria-label="房间消息">
+          <div id="roomMessages" class="messages room-messages"></div>
+        </section>
+        <div id="roomStatus" class="chat-status" role="status" aria-live="polite" hidden></div>
+        <div id="roomDogtalkComposer" class="dogtalk-composer-slot"></div>
+        <form id="roomComposer" class="composer room-composer" data-submit="rooms:send" autocomplete="off">
+          <div id="roomSubjectWrap" class="room-subject-wrap" hidden>
+            <input id="roomSubject" maxlength="180" placeholder="来信标题（可选）">
+          </div>
+          <div class="input-pill">
+            <textarea id="roomPromptInput" rows="1" placeholder="向房间写一点什么" aria-label="房间消息"></textarea>
+          </div>
+          <button class="composer-primary" type="submit" data-icon="send" aria-label="发送"></button>
+        </form>
+      </section>
     </main>
 
     <div id="overlayRoot" class="app-overlay" hidden></div>
     <div id="toastRoot" class="toast" role="status" aria-live="polite" hidden></div>
   </div>
 
-  <script type="module" src="/public/app.js?v=coast-app-19"></script>
+  <script type="module" src="/public/app.js?v=coast-app-20"></script>
 </body>
 </html>

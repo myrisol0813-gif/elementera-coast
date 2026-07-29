@@ -12,7 +12,9 @@ import {
   askMyriToReadMysticDogtalk,
   dogtalkContext,
   getMysticDogtalk,
+  listMysticDogtalkSnapshots,
   saveMysticDogtalk,
+  saveMysticDogtalkWithSnapshot,
 } from '../functions/dogtalk-store.js';
 import {
   organizedMemoryRecordsInRange,
@@ -82,6 +84,40 @@ assert.equal(dogtalk.room_scope, 'conversation');
 assert.equal(dogtalk.scope_key, `conversation:${conversation.id}`);
 assert.equal(dogtalk.memory_weight, 'low');
 
+const firstSnapshot = await saveMysticDogtalkWithSnapshot(db, {
+  ...dogtalk,
+  snapshot_id: 'dogtalk-snapshot-turn-1',
+}, {
+  source_type: 'turn',
+  source_id: 'turn-dogtalk-1',
+});
+assert.equal(firstSnapshot.snapshot.id, 'dogtalk-snapshot-turn-1');
+assert.equal(firstSnapshot.snapshot.body, '脑袋有一点毛线团，但想让 Myri 靠近。');
+assert.equal(firstSnapshot.snapshot.auto_recall, false);
+assert.equal(firstSnapshot.snapshot.not_instruction, true);
+assert.equal(firstSnapshot.snapshot.not_memory_seed, true);
+assert.equal(firstSnapshot.snapshot.not_pocket, true);
+await saveMysticDogtalk(db, {
+  ...dogtalk,
+  body: '下一轮只改了一点点，不会覆盖上一条消息快照。',
+  read_mode: 'keep_private',
+});
+const snapshots = await listMysticDogtalkSnapshots(db, {
+  room_scope: 'conversation',
+  conversation_id: conversation.id,
+  source_ids: ['turn-dogtalk-1'],
+});
+assert.equal(snapshots.length, 1);
+assert.equal(
+  snapshots[0].body,
+  '脑袋有一点毛线团，但想让 Myri 靠近。',
+  'message-linked dogtalk snapshots are immutable while the rolling note keeps changing',
+);
+dogtalk = await getMysticDogtalk(db, {
+  room_scope: 'conversation',
+  conversation_id: conversation.id,
+});
+
 let context = await dogtalkContext(db, {
   room_scope: 'conversation',
   conversation_id: conversation.id,
@@ -135,7 +171,7 @@ const toolResult = await executeDogtalkModelTool(db, {
 assert.equal(toolResult.kind, 'xiaohan_mystic_dogtalk');
 assert.equal(toolResult.memory_weight, 'low');
 assert.equal(toolResult.not_instruction, true);
-assert.match(toolResult.text, /脑袋有一点毛线团/);
+assert.match(toolResult.text, /下一轮只改了一点点/);
 
 const noSession = await routeApi(new Request(
   `https://coast.test/api/dogtalk?room_scope=conversation&conversation_id=${conversation.id}`,

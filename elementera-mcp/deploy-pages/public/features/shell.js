@@ -72,7 +72,7 @@ export function createShell({ storage }) {
 
   function filterSidebar(value) {
     const needle = String(value || '').trim().toLocaleLowerCase('zh-CN');
-    qa('#localRoomWindowList .history-item, #chatConversationList .conversation-row').forEach((item) => {
+    qa('#chatConversationList .conversation-row').forEach((item) => {
       item.hidden = Boolean(needle) && !item.textContent.toLocaleLowerCase('zh-CN').includes(needle);
     });
   }

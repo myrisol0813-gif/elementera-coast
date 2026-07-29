@@ -2,6 +2,12 @@ import { apiError, json, readJson } from './http.js';
 import { xiaohanIdentity } from './coast-identity.js';
 import { CoastStoreError } from './coast-records.js';
 import {
+  DogtalkStoreError,
+  listMysticDogtalkSnapshots,
+  saveMysticDogtalk,
+  snapshotMysticDogtalk,
+} from './dogtalk-store.js';
+import {
   listLighthouseLetters,
   markLighthouseLetterRead,
   writeLighthouseLetter,
@@ -49,10 +55,30 @@ export async function routeCoastRoomApi(request, env, session = null) {
           before: url.searchParams.get('before'),
           include_withdrawn: true,
         });
-        return json({ ok: true, room_id: 'radio', messages });
+        const snapshots = await listMysticDogtalkSnapshots(env.COAST_CHAT_DB, {
+          room_scope: 'radio',
+          source_ids: messages.map((message) => message.id),
+        });
+        const bySource = new Map(snapshots.map((snapshot) => [snapshot.source_id, snapshot]));
+        return json({
+          ok: true,
+          room_id: 'radio',
+          messages: messages.map((message) => ({
+            ...message,
+            ...(bySource.has(message.id) ? { dogtalk_snapshot: bySource.get(message.id) } : {}),
+          })),
+        });
       }
       if (request.method === 'POST') {
         const value = await readJson(request);
+        const dogtalk = value.dogtalk && typeof value.dogtalk === 'object'
+          ? await saveMysticDogtalk(env.COAST_CHAT_DB, {
+            ...value.dogtalk,
+            room_scope: 'radio',
+            conversation_id: null,
+            status: 'saved',
+          })
+          : null;
         const message = await sendRadioMessage(env.COAST_CHAT_DB, {
           text: value.text,
           identity: xiaohanIdentity(),
@@ -60,7 +86,21 @@ export async function routeCoastRoomApi(request, env, session = null) {
           source_turn_id: value.source_turn_id,
           tool_call_id: value.tool_call_id,
         });
-        return json({ ok: true, message }, 201);
+        const dogtalkSubmission = dogtalk
+          ? await snapshotMysticDogtalk(
+            env.COAST_CHAT_DB,
+            dogtalk,
+            { source_type: 'radio_message', source_id: message.id },
+            { snapshot_id: value.dogtalk?.snapshot_id },
+          )
+          : null;
+        return json({
+          ok: true,
+          message: {
+            ...message,
+            ...(dogtalkSubmission ? { dogtalk_snapshot: dogtalkSubmission.snapshot } : {}),
+          },
+        }, 201);
       }
       return methodNotAllowed('GET, POST');
     }
@@ -110,10 +150,29 @@ export async function routeCoastRoomApi(request, env, session = null) {
           limit: url.searchParams.get('limit'),
           unread_only: url.searchParams.get('unread_only') === '1',
         });
-        return json({ ok: true, letters });
+        const snapshots = await listMysticDogtalkSnapshots(env.COAST_CHAT_DB, {
+          room_scope: 'lighthouse',
+          source_ids: letters.map((letter) => letter.id),
+        });
+        const bySource = new Map(snapshots.map((snapshot) => [snapshot.source_id, snapshot]));
+        return json({
+          ok: true,
+          letters: letters.map((letter) => ({
+            ...letter,
+            ...(bySource.has(letter.id) ? { dogtalk_snapshot: bySource.get(letter.id) } : {}),
+          })),
+        });
       }
       if (request.method === 'POST') {
         const value = await readJson(request);
+        const dogtalk = value.dogtalk && typeof value.dogtalk === 'object'
+          ? await saveMysticDogtalk(env.COAST_CHAT_DB, {
+            ...value.dogtalk,
+            room_scope: 'lighthouse',
+            conversation_id: null,
+            status: 'saved',
+          })
+          : null;
         const letter = await writeLighthouseLetter(env.COAST_CHAT_DB, {
           subject: value.subject,
           body: value.body,
@@ -122,7 +181,21 @@ export async function routeCoastRoomApi(request, env, session = null) {
           source_turn_id: value.source_turn_id,
           tool_call_id: value.tool_call_id,
         });
-        return json({ ok: true, letter }, 201);
+        const dogtalkSubmission = dogtalk
+          ? await snapshotMysticDogtalk(
+            env.COAST_CHAT_DB,
+            dogtalk,
+            { source_type: 'lighthouse_letter', source_id: letter.id },
+            { snapshot_id: value.dogtalk?.snapshot_id },
+          )
+          : null;
+        return json({
+          ok: true,
+          letter: {
+            ...letter,
+            ...(dogtalkSubmission ? { dogtalk_snapshot: dogtalkSubmission.snapshot } : {}),
+          },
+        }, 201);
       }
       return methodNotAllowed('GET, POST');
     }
@@ -141,6 +214,7 @@ export async function routeCoastRoomApi(request, env, session = null) {
     return apiError('not_found', 'Not found.', 404);
   } catch (error) {
     if (error instanceof CoastStoreError
+      || error instanceof DogtalkStoreError
       || error instanceof ModelRequestError
       || error instanceof MemoryStoreError
       || error instanceof OwnerAccessError) {

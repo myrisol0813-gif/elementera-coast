@@ -210,7 +210,7 @@ function soilIsBlank(soil = {}) {
     && !(Array.isArray(soil.pocket_candidates) && soil.pocket_candidates.length);
 }
 
-export function createChat({ storage, toast }) {
+export function createChat({ storage, toast, dogtalk }) {
   const runtime = {
     conversations: [],
     histories: new Map(),
@@ -223,6 +223,7 @@ export function createChat({ storage, toast }) {
     profile: emptyProfile(),
     generation: null,
     memory: null,
+    rooms: null,
     profileListeners: new Set(),
     runSettings: () => storage.read().runControl,
   };
@@ -239,6 +240,7 @@ export function createChat({ storage, toast }) {
     ui.mic = q('#micButton');
     ui.status = q('#chatStatus');
     ui.modelName = q('#modelName');
+    ui.dogtalk = q('#mainDogtalkComposer');
   }
 
   function setStatus(message = '', kind = 'error') {
@@ -337,6 +339,9 @@ export function createChat({ storage, toast }) {
       const user = branch.user && !branch.user.hidden ? `<article class="message user" data-turn="${escapeAttribute(turn.id)}">
         <div class="content">
           <div class="user-bubble">${escapeHtml(branch.user.content)}</div>
+          ${branch.user.dogtalk_snapshot_id
+            ? '<span class="message-dogtalk-mark">神秘狗话 · 随本轮</span>'
+            : ''}
           <div class="message-actions">
             ${actionButton('edit-user', '编辑')}${actionButton('delete-user', '删除')}
             ${variantControl('user', turn.id, branch.userIndex, turn.user.variants.length)}
@@ -456,6 +461,7 @@ export function createChat({ storage, toast }) {
   async function loadConversation(value) {
     const conversationId = sanitizeId(value, 'conversation');
     if (runtime.deletedIds.has(conversationId)) return false;
+    runtime.rooms?.activateMain();
     runtime.currentId = conversationId;
     storage.setCurrentConversation(conversationId);
     renderConversationList();
@@ -471,6 +477,10 @@ export function createChat({ storage, toast }) {
       setStatus('');
       renderMessages(conversationId);
       runtime.memory?.onConversationChanged(conversationId)?.catch((error) => console.warn('[memory:conversation]', error));
+      dogtalk?.mount(ui.dogtalk, {
+        room_scope: 'conversation',
+        conversation_id: conversationId,
+      });
       return true;
     } catch (error) {
       setStatus(`聊天记录载入失败：${error.message}`, 'error');
@@ -563,7 +573,7 @@ export function createChat({ storage, toast }) {
     return latest;
   }
 
-  async function generate(conversationId, turnId) {
+  async function generate(conversationId, turnId, { dogtalkSubmission = null } = {}) {
     if (runtime.generation || runtime.deletedIds.has(conversationId)) return;
     const original = runtime.histories.get(conversationId);
     const appended = appendAssistantVariant(original, turnId, { content: CONNECTING_TEXT });
@@ -592,6 +602,7 @@ export function createChat({ storage, toast }) {
       messages: contextMessages(appended.state, turnId),
       recent_entry_ids: requestContext.recentEntryIds,
       settings: requestContext.settings,
+      ...(dogtalkSubmission ? { dogtalk: dogtalkSubmission } : {}),
     };
     let patch;
     let generated = false;
@@ -805,19 +816,29 @@ export function createChat({ storage, toast }) {
     }
   }
 
-  function send(text) {
+  async function send(text) {
     const content = String(text || '').trim();
     if (!content || !runtime.currentId || runtime.generation) return;
     if (isImageModel(runtime.profile.current_chat_model, runtime.profile.model_box.image)) {
       toast('当前是生图模型，不能用于文字聊天。请切换聊天模型。');
       return;
     }
-    const appended = appendTurn(currentHistory(), content);
+    const dogtalkSubmission = dogtalk?.submission({
+      room_scope: 'conversation',
+      conversation_id: runtime.currentId,
+    }, ui.dogtalk);
+    const appended = appendTurn(currentHistory(), content, {
+      dogtalk_snapshot_id: dogtalkSubmission?.snapshot_id,
+    });
     setHistory(runtime.currentId, appended.state);
     ui.input.value = '';
     composerState();
     renderMessages();
-    generate(runtime.currentId, appended.turn.id);
+    await generate(runtime.currentId, appended.turn.id, { dogtalkSubmission });
+    dogtalk?.mount(ui.dogtalk, {
+      room_scope: 'conversation',
+      conversation_id: runtime.currentId,
+    });
   }
 
   async function newConversation() {
@@ -1067,6 +1088,9 @@ export function createChat({ storage, toast }) {
     },
     setMemoryController(controller) {
       runtime.memory = controller;
+    },
+    setRoomController(controller) {
+      runtime.rooms = controller;
     },
   });
 }

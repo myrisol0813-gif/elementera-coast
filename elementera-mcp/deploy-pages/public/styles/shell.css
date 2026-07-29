@@ -7,10 +7,21 @@
 
 .main-panel {
   display: grid;
-  grid-template-rows: calc(var(--topbar-height) + var(--safe-top)) minmax(0, 1fr) auto;
+  grid-template-rows: calc(var(--topbar-height) + var(--safe-top)) minmax(0, 1fr);
   width: 100%;
   height: 100%;
   min-width: 0;
+}
+
+.window-surface {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.window-surface[hidden] {
+  display: none;
 }
 
 .topbar {
@@ -63,6 +74,41 @@
   background: transparent;
   text-align: left;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.room-heading {
+  min-width: 0;
+  padding: 3px 4px;
+}
+
+.room-heading strong,
+.room-heading small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-heading strong {
+  font-size: 16px;
+  font-weight: 680;
+}
+
+.room-heading small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.room-top-action {
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text-soft);
+  font-size: 11px;
   cursor: pointer;
 }
 

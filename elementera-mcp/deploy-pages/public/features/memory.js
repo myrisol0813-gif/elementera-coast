@@ -89,11 +89,12 @@ function parsePocketCandidateLines(value, existing) {
   });
 }
 
-export function createMemory({ chat, router, toast, storage, dogtalk }) {
+export function createMemory({ chat, router, toast, storage, rooms }) {
   const runtime = {
     soils: new Map(),
     pockets: new Map(),
-    entries: { conversation: [], global: [] },
+    entries: { conversation: [], global: [], radio: [], lighthouse: [] },
+    roomMemory: { radio: null, lighthouse: null },
     officialSoils: [],
     officialSoilsStatus: 'idle',
     libraryTab: 'conversation',
@@ -139,6 +140,16 @@ export function createMemory({ chat, router, toast, storage, dogtalk }) {
   }
 
   async function fetchEntries(scope = runtime.libraryTab) {
+    if (scope === 'radio' || scope === 'lighthouse') {
+      const data = await requestJson(scope === 'radio' ? API.radioMemory : API.lighthouseMemory);
+      runtime.roomMemory[scope] = data.memory || null;
+      runtime.entries[scope] = [
+        ...(data.memory?.seeds || []),
+        ...(data.memory?.memories || []),
+        ...(data.memory?.stones || []),
+      ];
+      return runtime.entries[scope];
+    }
     let data;
     if (runtime.filters.query) {
       data = await requestJson(API.memorySearch, {
@@ -286,6 +297,12 @@ export function createMemory({ chat, router, toast, storage, dogtalk }) {
         <button type="button" data-action="memory:pocket-stone" data-id="${escapeAttribute(pocket.id)}">转石头</button>
         <button type="button" data-action="memory:pocket-discard" data-id="${escapeAttribute(pocket.id)}">丢弃</button>
       </div>
+      <details class="memory-more-targets"><summary>更多目标</summary><div class="button-row">
+        <button type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="radio_seed">电波库种子</button>
+        <button type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="radio_memory">电波库记忆</button>
+        <button type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="lighthouse_seed">灯塔库种子</button>
+        <button type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="lighthouse_memory">灯塔库记忆</button>
+      </div></details>
     </article>`;
   }
 
@@ -394,10 +411,73 @@ export function createMemory({ chat, router, toast, storage, dogtalk }) {
       : `<div class="feature-card"><p class="feature-empty">${escapeHtml(empty)}</p></div>`}</section>`;
   }
 
+  function roomSourceLabel(value = {}) {
+    return value.source_label || {
+      coast_api: '海岸 API ✦',
+      official_mcp: '官端灯塔侧 ≋',
+    }[value.source_surface] || '房间来源';
+  }
+
+  function roomSoilCard(source) {
+    const soil = source.soil || {};
+    const seeds = Array.isArray(soil.hand_seeds) ? soil.hand_seeds : [];
+    const candidates = Array.isArray(soil.pocket_candidates) ? soil.pocket_candidates : [];
+    return `<article class="feature-card feature-prose room-library-soil">
+      <div class="memory-entry-meta"><span>${escapeHtml(roomSourceLabel(source))}</span><span>${escapeHtml(source.source_surface || '')}</span></div>
+      <h2>当前</h2>${textBlock(soil.current_text, '暂无')}
+      <h2>手持种 · ${seeds.length}</h2>${seeds.length
+        ? `<ul>${seeds.map((seed) => `<li>${escapeHtml(seed.name || seed.life_core || '未命名种子')} · ${escapeHtml(seed.life_core || '')}</li>`).join('')}</ul>`
+        : '<p>暂无</p>'}
+      <h2>勿复读</h2>${textBlock(soil.do_not_repeat, '暂无')}
+      <h2>可落袋</h2>${candidates.length
+        ? `<ul>${candidates.map((item) => `<li>${escapeHtml(pocketCandidate(item).life_core || pocketCandidate(item).title)}</li>`).join('')}</ul>`
+        : '<p>暂无</p>'}
+    </article>`;
+  }
+
+  function roomPendingCard(scope, pocket) {
+    const id = escapeAttribute(pocket.id);
+    const local = scope === 'radio' ? '电波库' : '灯塔库';
+    const other = scope === 'radio' ? 'lighthouse' : 'radio';
+    const otherLabel = other === 'radio' ? '电波库' : '灯塔库';
+    return `<article class="feature-card feature-prose room-pocket-card">
+      <div class="memory-entry-meta"><span>${escapeHtml(roomSourceLabel(pocket))}</span><span>确认前不召回</span></div>
+      <h2>${escapeHtml(pocket.title || pocket.suggested_title || '待确认内容')}</h2>
+      ${textBlock(pocket.life_core || pocket.source_text || '')}
+      <div class="button-row">
+        <button type="button" data-action="memory:room-pocket-resolve" data-scope="${scope}" data-id="${id}" data-destination="conversation_seed">${local}种子</button>
+        <button type="button" data-action="memory:room-pocket-resolve" data-scope="${scope}" data-id="${id}" data-destination="conversation_memory">${local}记忆</button>
+        <button type="button" data-action="memory:room-pocket-resolve" data-scope="${scope}" data-id="${id}" data-destination="global_seed">总库种子</button>
+        <button type="button" data-action="memory:room-pocket-resolve" data-scope="${scope}" data-id="${id}" data-destination="global_memory">总库记忆</button>
+        <button type="button" data-action="memory:room-pocket-resolve" data-scope="${scope}" data-id="${id}" data-destination="stone">转石头</button>
+        <button type="button" data-action="memory:room-pocket-resolve" data-scope="${scope}" data-id="${id}" data-destination="discard">丢弃</button>
+      </div>
+      <details class="memory-more-targets"><summary>更多目标</summary><div class="button-row">
+        <button type="button" data-action="memory:room-pocket-resolve" data-scope="${scope}" data-id="${id}" data-destination="current_seed">当前窗口种子</button>
+        <button type="button" data-action="memory:room-pocket-resolve" data-scope="${scope}" data-id="${id}" data-destination="current_memory">当前窗口记忆</button>
+        <button type="button" data-action="memory:room-pocket-resolve" data-scope="${scope}" data-id="${id}" data-destination="${other}_seed">${otherLabel}种子</button>
+        <button type="button" data-action="memory:room-pocket-resolve" data-scope="${scope}" data-id="${id}" data-destination="${other}_memory">${otherLabel}记忆</button>
+      </div></details>
+    </article>`;
+  }
+
+  function filteredRoomRecords(records = []) {
+    const query = runtime.filters.query.toLocaleLowerCase('zh-CN');
+    return records.filter((entry) => {
+      if (runtime.filters.entryType && entry.entry_type !== runtime.filters.entryType) return false;
+      if (runtime.filters.status && entry.status !== runtime.filters.status) return false;
+      if (!query) return true;
+      return [entry.title, entry.life_core, entry.content, entry.usage_hint, entry.avoid_hint]
+        .some((value) => String(value || '').toLocaleLowerCase('zh-CN').includes(query));
+    });
+  }
+
   function libraryControls() {
     const { entryType, status, query } = runtime.filters;
-    return `<div class="memory-tabs" role="tablist" aria-label="记忆范围">
+    return `<div class="memory-tabs memory-tabs-four" role="tablist" aria-label="记忆范围">
       <button class="${runtime.libraryTab === 'conversation' ? 'is-active' : ''}" type="button" data-action="memory:tab" data-scope="conversation">当前窗口</button>
+      <button class="${runtime.libraryTab === 'radio' ? 'is-active' : ''}" type="button" data-action="memory:tab" data-scope="radio">电波库</button>
+      <button class="${runtime.libraryTab === 'lighthouse' ? 'is-active' : ''}" type="button" data-action="memory:tab" data-scope="lighthouse">灯塔库</button>
       <button class="${runtime.libraryTab === 'global' ? 'is-active' : ''}" type="button" data-action="memory:tab" data-scope="global">总库</button>
     </div>
     <form class="form-stack memory-search-form" data-submit="memory:search">
@@ -414,39 +494,74 @@ export function createMemory({ chat, router, toast, storage, dogtalk }) {
   }
 
   function memoryView() {
-    const entries = runtime.entries[runtime.libraryTab] || [];
-    const seeds = entries.filter((entry) => entry.entry_type === 'seed');
-    const memories = entries.filter((entry) => entry.entry_type === 'memory');
+    const roomScope = ['radio', 'lighthouse'].includes(runtime.libraryTab)
+      ? runtime.libraryTab
+      : '';
+    const entries = roomScope
+      ? filteredRoomRecords(runtime.entries[roomScope] || [])
+      : runtime.entries[runtime.libraryTab] || [];
+    const activeEntries = entries.filter((entry) => !['stone', 'archived', 'discarded'].includes(entry.status));
+    const seeds = activeEntries.filter((entry) => entry.entry_type === 'seed');
+    const memories = activeEntries.filter((entry) => entry.entry_type === 'memory');
+    const stones = entries.filter((entry) => ['stone', 'archived'].includes(entry.status));
     const current = runtime.libraryTab === 'conversation';
+    const global = runtime.libraryTab === 'global';
     const local = current ? `<section class="feature-group"><div class="feature-card">
-      <button class="feature-row" type="button" data-action="memory:soil"><span><strong>思维壤 · ${currentSoil().hand_seeds.length} 粒手持种</strong><small>${escapeHtml(currentSoil().current_text || '当前窗口还没有整理方向。')}</small></span><span>›</span></button>
+      <button class="feature-row" type="button" data-action="memory:soil"><span><strong>当前窗口思维壤 · ${currentSoil().hand_seeds.length} 粒手持种</strong><small>${escapeHtml(currentSoil().current_text || '当前窗口还没有整理方向。')}</small></span><span>›</span></button>
       <button class="feature-row" type="button" data-action="memory:pockets"><span><strong>待确认袋 · ${currentPockets().length}</strong><small>只有确认后才会进入正式库。</small></span><span>›</span></button>
-      ${dogtalk.entryButton({ room_scope: 'conversation', conversation_id: currentId() })}
     </div></section>` : '';
+    const roomMemory = roomScope ? runtime.roomMemory[roomScope] : null;
+    const roomLabel = roomScope === 'radio' ? '电波房' : '灯塔来信';
+    const roomLocal = roomScope && roomMemory
+      ? `<section class="feature-group"><h2>${roomLabel}思维壤</h2><div class="room-library-soils">${Object.values(roomMemory.sources || {}).map(roomSoilCard).join('') || '<div class="feature-card"><p class="feature-empty">这个房间还没有模型思维壤。</p></div>'}</div></section>
+        <section class="feature-group"><h2>${roomLabel}待确认袋</h2>${(roomMemory.pending_pockets || []).length
+          ? `<div class="memory-pocket-list">${roomMemory.pending_pockets.map((pocket) => roomPendingCard(roomScope, pocket)).join('')}</div>`
+          : '<div class="feature-card"><p class="feature-empty">待确认袋是空的。</p></div>'}</section>`
+      : '';
+    const labels = {
+      conversation: '当前窗口',
+      radio: '电波房',
+      lighthouse: '灯塔来信',
+      global: '总',
+    };
+    const prefix = labels[runtime.libraryTab] || '当前窗口';
     return {
       title: '轨迹记忆',
-      subtitle: current ? '当前窗口 · 近岸苗圃与本窗家具' : '总库 · 远岸苗圃与公共家具',
+      subtitle: current
+        ? '当前窗口 · 近岸苗圃与本窗家具'
+        : global
+          ? '总库 · 跨房间低频远岸记忆'
+          : `${prefix} · 独立房间作用域`,
       className: 'memory-library',
       headerAction: '<button class="feature-head-action" type="button" data-action="memory:entry-new">新增</button>',
-      body: `${libraryControls()}${local}
-        ${officialSoilGroup()}
-        ${entryGroup(current ? '当前窗口种子' : '总种子库', seeds, '这里还没有种子。')}
-        ${entryGroup(current ? '当前窗口记忆' : '总记忆库', memories, '这里还没有记忆。')}`,
+      body: `${libraryControls()}${local}${roomLocal}
+        ${roomScope === 'lighthouse' ? officialSoilGroup() : ''}
+        ${entryGroup(`${prefix}种子`, seeds, '这里还没有种子。')}
+        ${entryGroup(`${prefix}记忆`, memories, '这里还没有记忆。')}
+        ${entryGroup(`${prefix}石头 / 封存项`, stones, '这里还没有石头或封存项。')}`,
     };
   }
 
   function findEntry(id) {
-    return [...runtime.entries.conversation, ...runtime.entries.global].find((entry) => entry.id === id) || null;
+    return Object.values(runtime.entries).flat().find((entry) => entry.id === id) || null;
   }
 
   function entryEditView({ id = '', scope = runtime.libraryTab } = {}) {
     const entry = id ? findEntry(id) : null;
     const entryType = entry?.entry_type || 'memory';
+    const libraryScope = ['conversation', 'radio', 'lighthouse', 'global'].includes(scope)
+      ? scope
+      : runtime.libraryTab;
+    const storageScope = libraryScope === 'global' ? 'global' : 'conversation';
     return {
       title: entry ? '编辑种子 / 记忆' : '新增种子 / 记忆',
-      subtitle: scope === 'global' ? '总库' : '当前窗口',
+      subtitle: {
+        global: '总库',
+        radio: '电波库',
+        lighthouse: '灯塔库',
+      }[scope] || '当前窗口',
       className: 'memory-entry-edit',
-      body: `<form class="form-stack" data-submit="memory:entry-save" data-id="${escapeAttribute(entry?.id || '')}" data-scope="${escapeAttribute(entry?.scope || scope)}">
+      body: `<form class="form-stack" data-submit="memory:entry-save" data-id="${escapeAttribute(entry?.id || '')}" data-scope="${escapeAttribute(entry?.scope || storageScope)}" data-library="${escapeAttribute(libraryScope)}">
         <label>类型<select name="entry_type" ${entry ? 'disabled' : ''}><option value="seed" ${entryType === 'seed' ? 'selected' : ''}>种子</option><option value="memory" ${entryType === 'memory' ? 'selected' : ''}>记忆</option></select></label>
         <label>标题<input name="title" maxlength="120" value="${escapeAttribute(entry?.title || '')}" required></label>
         <label>生命核<textarea name="life_core" rows="5" required>${escapeHtml(entry?.life_core || '')}</textarea></label>
@@ -501,17 +616,23 @@ export function createMemory({ chat, router, toast, storage, dogtalk }) {
   }
 
   async function openLibrary(scope = runtime.libraryTab) {
-    runtime.libraryTab = scope === 'global' ? 'global' : 'conversation';
+    runtime.libraryTab = ['conversation', 'radio', 'lighthouse', 'global'].includes(scope)
+      ? scope
+      : 'conversation';
     if (runtime.libraryTab === 'conversation') {
       await Promise.all([
         fetchSoil(currentId()),
         fetchPockets(currentId()),
         fetchEntries('conversation'),
-        fetchOfficialSoils(),
         fetchVectorStatus(),
-        dogtalk.fetchScope({ room_scope: 'conversation', conversation_id: currentId() }),
       ]);
-    } else await Promise.all([fetchEntries('global'), fetchOfficialSoils(), fetchVectorStatus()]);
+    } else if (runtime.libraryTab === 'global') {
+      await Promise.all([fetchEntries('global'), fetchVectorStatus()]);
+    } else {
+      const tasks = [fetchEntries(runtime.libraryTab), fetchVectorStatus()];
+      if (runtime.libraryTab === 'lighthouse') tasks.push(fetchOfficialSoils());
+      await Promise.all(tasks);
+    }
     return router.open('memory');
   }
 
@@ -561,10 +682,20 @@ export function createMemory({ chat, router, toast, storage, dogtalk }) {
   async function resolveCurrentPocket(id, action) {
     const pocket = currentPockets().find((item) => item.id === id);
     if (!pocket) return;
+    let resolvedAction = action;
+    let targetConversationId = '';
+    const roomDestination = action.match(/^(radio|lighthouse)_(seed|memory)$/);
+    if (roomDestination) {
+      const roomScope = roomDestination[1];
+      if (!runtime.roomMemory[roomScope]) await fetchEntries(roomScope);
+      resolvedAction = `conversation_${roomDestination[2]}`;
+      targetConversationId = runtime.roomMemory[roomScope]?.library_conversation_id || '';
+    }
     await requestJson(`${API.memoryPockets}/${encodeURIComponent(id)}/resolve`, {
       method: 'POST',
       body: JSON.stringify({
-        action,
+        action: resolvedAction,
+        ...(targetConversationId ? { target_conversation_id: targetConversationId } : {}),
         title: pocket.title || pocket.suggested_title,
         life_core: pocket.life_core || pocket.suggested_life_core || pocket.source_text,
         content: pocket.content || pocket.source_text,
@@ -577,6 +708,7 @@ export function createMemory({ chat, router, toast, storage, dogtalk }) {
     runtime.pockets.set(currentId(), currentPockets().filter((item) => item.id !== id));
     if (['conversation_seed', 'conversation_memory'].includes(action)) await fetchEntries('conversation');
     if (['global_seed', 'global_memory'].includes(action)) await fetchEntries('global');
+    if (roomDestination) await fetchEntries(roomDestination[1]);
     await router.refresh();
     toast(action === 'stone'
       ? '已经转成石头。'
@@ -597,7 +729,9 @@ export function createMemory({ chat, router, toast, storage, dogtalk }) {
   }
 
   async function handleAction(name, target) {
-    if (name === 'open') return openLibrary('conversation');
+    if (name === 'open') {
+      return openLibrary(target.dataset.scope || rooms?.getActiveScope?.() || 'conversation');
+    }
     if (name === 'soil') return openSoil();
     if (name === 'done') return router.back();
     if (name === 'soil-edit') return router.open('thought-soil-edit');
@@ -645,9 +779,32 @@ export function createMemory({ chat, router, toast, storage, dogtalk }) {
       return resolveCurrentPocket(target.dataset.id, name === 'pocket-stone' ? 'stone' : 'discard');
     }
     if (name === 'tab') {
-      runtime.libraryTab = target.dataset.scope === 'global' ? 'global' : 'conversation';
-      await Promise.all([fetchEntries(runtime.libraryTab), fetchOfficialSoils()]);
+      runtime.libraryTab = ['conversation', 'radio', 'lighthouse', 'global'].includes(target.dataset.scope)
+        ? target.dataset.scope
+        : 'conversation';
+      const tasks = [fetchEntries(runtime.libraryTab)];
+      if (runtime.libraryTab === 'conversation') tasks.push(fetchSoil(currentId()), fetchPockets(currentId()));
+      if (runtime.libraryTab === 'lighthouse') tasks.push(fetchOfficialSoils());
+      await Promise.all(tasks);
       return router.refresh({ preserveScroll: false });
+    }
+    if (name === 'room-pocket-resolve') {
+      const scope = target.dataset.scope;
+      const base = scope === 'lighthouse' ? API.lighthouseMemory : API.radioMemory;
+      await requestJson(`${base}/pockets/${encodeURIComponent(target.dataset.id)}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: target.dataset.destination,
+          current_conversation_id: currentId(),
+        }),
+      });
+      await fetchEntries(scope);
+      toast(target.dataset.destination === 'discard'
+        ? '候选已经丢弃。'
+        : target.dataset.destination === 'stone'
+          ? '候选已经转成石头。'
+          : '已经放进对应的平行库。');
+      return router.refresh({ preserveScroll: true });
     }
     if (name === 'entry-new') return router.open('memory-entry-edit', { scope: runtime.libraryTab });
     if (name === 'vector-status') return showVectorStatus();
@@ -667,7 +824,9 @@ export function createMemory({ chat, router, toast, storage, dogtalk }) {
     const entry = findEntry(target.dataset.id);
     if (name === 'entry-search' && entry) {
       runtime.filters.query = entry.title || entry.life_core;
-      await Promise.all([fetchEntries(runtime.libraryTab), fetchOfficialSoils()]);
+      const tasks = [fetchEntries(runtime.libraryTab)];
+      if (runtime.libraryTab === 'lighthouse') tasks.push(fetchOfficialSoils());
+      await Promise.all(tasks);
       return router.refresh({ preserveScroll: false });
     }
     if (name === 'entry-archive') {
@@ -707,16 +866,27 @@ export function createMemory({ chat, router, toast, storage, dogtalk }) {
         entryType: field('entry_type'),
         status: field('status'),
       };
-      await Promise.all([fetchEntries(runtime.libraryTab), fetchOfficialSoils()]);
+      const tasks = [fetchEntries(runtime.libraryTab)];
+      if (runtime.libraryTab === 'lighthouse') tasks.push(fetchOfficialSoils());
+      await Promise.all(tasks);
       return router.refresh({ preserveScroll: false });
     }
     if (name === 'entry-save') {
       const id = form.dataset.id;
       const entryType = field('entry_type') || findEntry(id)?.entry_type || 'memory';
+      const libraryScope = form.dataset.library || runtime.libraryTab;
+      if (['radio', 'lighthouse'].includes(libraryScope) && !runtime.roomMemory[libraryScope]) {
+        await fetchEntries(libraryScope);
+      }
+      const conversationId = libraryScope === 'conversation'
+        ? currentId()
+        : ['radio', 'lighthouse'].includes(libraryScope)
+          ? runtime.roomMemory[libraryScope]?.library_conversation_id || ''
+          : null;
       const payload = {
         entry_type: entryType,
         scope: form.dataset.scope,
-        conversation_id: form.dataset.scope === 'conversation' ? currentId() : null,
+        conversation_id: form.dataset.scope === 'conversation' ? conversationId : null,
         title: field('title'),
         life_core: field('life_core'),
         content: field('content'),
@@ -729,7 +899,7 @@ export function createMemory({ chat, router, toast, storage, dogtalk }) {
         method: id ? 'PATCH' : 'POST',
         body: JSON.stringify(payload),
       });
-      await fetchEntries(runtime.libraryTab);
+      await fetchEntries(libraryScope);
       await router.back();
       toast('种子 / 记忆已保存。');
       return;

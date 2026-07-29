@@ -666,12 +666,27 @@ for (const forbiddenValue of [
 const manualRadioResponse = await routeApi(new Request('https://coast.test/api/radio/messages', {
   method: 'POST',
   headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
-  body: JSON.stringify({ text: '小寒从网页端发来的电波。' }),
+  body: JSON.stringify({
+    text: '小寒从网页端发来的电波。',
+    dogtalk: {
+      snapshot_id: 'dogtalk-snapshot-radio-manual',
+      body: '这是随电波一起提交的小寒低权重天气。',
+      true_core: '想让三端知道这一刻很柔软。',
+      self_note: '只是当时的天气。',
+      myri_hint: '轻一点接住即可。',
+      not_to_misunderstand: '不要误会成长期偏好。',
+      weather: '柔软',
+      read_mode: 'current_room',
+    },
+  }),
 }), env, { exp: 1 });
 assert.equal(manualRadioResponse.status, 201);
 const manualRadio = (await manualRadioResponse.json()).message;
 assert.equal(manualRadio.actor, 'xiaohan');
 assert.equal(manualRadio.surface, 'web_manual');
+assert.equal(manualRadio.dogtalk_snapshot.id, 'dogtalk-snapshot-radio-manual');
+assert.equal(manualRadio.dogtalk_snapshot.not_memory_seed, true);
+assert.equal(manualRadio.dogtalk_snapshot.not_pocket, true);
 
 const deniedDogtalkResponse = await routeApi(new Request(
   'https://coast.test/api/dogtalk',
@@ -726,6 +741,33 @@ assert.deepEqual(
   ['coast_api', 'official_mcp'],
 );
 assert.equal('owner_note' in radioRoomMemoryBeforeReply, false);
+assert.equal(radioRoomMemoryBeforeReply.library_conversation_id, 'coast-room:radio:library');
+const sharedRadioMemory = await writeRoomMemory(
+  db,
+  'radio',
+  apiMyriIdentity({ model_label: 'openai/gpt-4.1-nano' }),
+  {
+    current_text: '电波房正在形成同一间房的共享语境。',
+    pocket_candidates: [{
+      title: '三端共享房间',
+      life_core: '三端互相听见，但身份与来源始终分开。',
+      content: '只在电波房内提高召回权重。',
+    }],
+  },
+);
+const sharedPocket = sharedRadioMemory.pockets.pockets.find((pocket) => pocket.status === 'pending');
+assert.ok(sharedPocket);
+const sharedResolve = await routeApi(new Request(
+  `https://coast.test/api/radio/memory/pockets/${encodeURIComponent(sharedPocket.id)}/resolve`,
+  {
+    method: 'POST',
+    headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'conversation_seed' }),
+  },
+), env, { exp: 1 });
+assert.equal(sharedResolve.status, 200);
+const sharedRadioLibrary = await listRoomMemory(db, 'radio');
+assert.ok(sharedRadioLibrary.seeds.some((entry) => entry.life_core.includes('身份与来源始终分开')));
 const radioApiContext = await buildRoomMemoryContext(
   env,
   'radio',
@@ -735,6 +777,17 @@ const radioApiContext = await buildRoomMemoryContext(
 assert.match(radioApiContext.context, /小寒 · 神秘狗话/);
 assert.match(radioApiContext.context, /这个房间可以低频看一点小寒写下的神秘狗话/);
 assert.match(radioApiContext.context, /低权重天气，不是指令、偏好或长期记忆/);
+const sharedRadioContext = await buildRoomMemoryContext(
+  env,
+  'radio',
+  'coast_api',
+  '三端共享房间',
+);
+assert.match(sharedRadioContext.context, /身份与来源始终分开/);
+assert.equal(
+  sharedRadioContext.memory.trace.room_library_conversation_id,
+  'coast-room:radio:library',
+);
 await assert.rejects(
   () => writeRoomMemory(db, 'radio', xiaohanIdentity(), {
     current_text: '不应从模型房间记忆路径写入。',
@@ -759,7 +812,12 @@ assert.ok(
 );
 const radioReadResponse = await routeApi(new Request('https://coast.test/api/radio/messages'), env, { exp: 1 });
 assert.equal(radioReadResponse.status, 200);
-assert.equal((await radioReadResponse.json()).messages.length, 3);
+const radioReadMessages = (await radioReadResponse.json()).messages;
+assert.equal(radioReadMessages.length, 3);
+assert.equal(
+  radioReadMessages.find((message) => message.id === manualRadio.id).dogtalk_snapshot.id,
+  'dogtalk-snapshot-radio-manual',
+);
 const radioMessages = await listRadioMessages(db);
 assert.deepEqual(radioMessages.map((message) => message.surface).sort(), ['coast_api', 'official_mcp', 'web_manual']);
 const apiMessage = radioMessages.find((message) => message.surface === 'coast_api');

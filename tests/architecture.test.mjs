@@ -13,7 +13,7 @@ const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 const headers = await read(join(pages, '_headers'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-19"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-20"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 
@@ -73,7 +73,7 @@ for (const [filename, dimensions] of expectedIconSizes) {
   assert.deepEqual([...icon.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], `${filename} must be a PNG`);
   assert.deepEqual([icon.readUInt32BE(16), icon.readUInt32BE(20)], dimensions, `${filename} has the wrong dimensions`);
 }
-for (const id of ['coastStatus', 'mainRooms', 'localRoomWindows', 'localRoomWindowList', 'chatConversationSection', 'chatConversationList', 'modelQuickPicker']) {
+for (const id of ['coastStatus', 'mainRooms', 'chatConversationSection', 'chatConversationList', 'modelQuickPicker', 'chatWindow', 'roomWindow', 'mainDogtalkComposer', 'roomDogtalkComposer']) {
   assert.equal((index.match(new RegExp(`id="${id}"`, 'g')) || []).length, 1, `${id} must have one owner`);
 }
 for (const label of ['同轨第', '距 8.12', '距 8.13', '无线电波的两端', '灯塔来信', '轨迹 / 记忆', '海岸日报', '主聊天窗口']) {
@@ -84,7 +84,7 @@ assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(join(pages, 'service-worker.js'));
-assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-19';$/m);
+assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-20';$/m);
 assert.ok(worker.includes("url.pathname.startsWith('/api/')"));
 assert.ok(worker.includes("url.pathname.startsWith('/mcp')"));
 assert.ok(worker.includes("url.pathname.startsWith('/.well-known/')"));
@@ -162,9 +162,14 @@ for (const action of ['memory:soil-edit', 'memory:soil-clear', 'memory:soil-auto
 }
 assert.equal(roomsSource.includes('room-memory-drawer'), false, 'room memory cannot sit inside a chat flow');
 assert.equal(roomsSource.includes('owner-note'), false, 'retired room owner-note UI must stay removed');
-for (const route of ["router.register('room-memory'", "router.register('room-soil'"]) {
-  assert.ok(roomsSource.includes(route), `rooms are missing the independent route: ${route}`);
+for (const route of ["router.register('server-room'", "router.register('room-memory'", "router.register('room-soil'"]) {
+  assert.equal(roomsSource.includes(route), false, `room chat cannot remain an overlay route: ${route}`);
 }
+for (const scope of ['conversation', 'radio', 'lighthouse', 'global']) {
+  assert.ok(memorySource.includes(`data-scope="${scope}"`), `parallel memory tab is missing: ${scope}`);
+}
+assert.ok(roomsSource.includes('activateRoom(kind)'), 'radio and lighthouse must use the peer chat-window shell');
+assert.ok(roomsSource.includes('room-soil-tip'), 'room model messages must expose their rolling soil nearby');
 for (const copy of [
   '小寒 · 神秘狗话',
   '小寒这轮很放松，因此偷懒中。',
@@ -183,7 +188,8 @@ assert.match(tokenStyles, /--composer-height:\s*62px;/);
 assert.match(shellStyles, /\.topbar\s*\{[\s\S]*?align-items:\s*center;/);
 const featureStyles = await read(join(moduleRoot, 'styles/features.css'));
 assert.match(featureStyles, /\.feature-head\s*\{[\s\S]*?height:\s*calc\(var\(--topbar-height\) \+ var\(--safe-top\)\)/);
-assert.match(featureStyles, /\.local-room-composer\s*\{[\s\S]*?min-height:\s*calc\(var\(--composer-height\) \+ var\(--safe-bottom\)\)/);
+const chatStyles = await read(join(moduleRoot, 'styles/chat.css'));
+assert.match(chatStyles, /\.room-composer\s*\{[\s\S]*?grid-template-columns:/);
 assert.equal(/action-(copy|edit|heart|like|refresh|trash)\.svg/.test(iconSource + shellStyles), false, 'icons cannot fall back to retired assets');
 assert.equal(/stroke=["']#000/i.test(iconSource), false, 'inline icons must inherit the active theme color');
 for (const historicalPath of ['M12.2 6.4H25.2', 'M8 24l2-6', 'r="10.7"', 'M9.5 27H6.5', 'M23.8 13.3', 'M10.4 10.8']) {

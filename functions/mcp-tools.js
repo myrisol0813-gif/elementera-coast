@@ -606,6 +606,7 @@ function mcpReadableRoomMemory(memory) {
     title: memory?.title || '',
     soil_label: memory?.soil_label || '',
     local_label: memory?.local_label || '',
+    library_conversation_id: memory?.library_conversation_id || '',
     participants: Array.isArray(memory?.participants) ? memory.participants : [],
     sources,
     pending_pocket_count: Array.isArray(memory?.pending_pockets)
@@ -613,11 +614,14 @@ function mcpReadableRoomMemory(memory) {
       : 0,
     seeds: Array.isArray(memory?.seeds) ? memory.seeds : [],
     memories: Array.isArray(memory?.memories) ? memory.memories : [],
+    stones: Array.isArray(memory?.stones) ? memory.stones : [],
     global: {
       seed_count: Array.isArray(memory?.global?.seeds) ? memory.global.seeds.length : 0,
       memory_count: Array.isArray(memory?.global?.memories) ? memory.global.memories.length : 0,
+      stone_count: Array.isArray(memory?.global?.stones) ? memory.global.stones.length : 0,
       seeds: [],
       memories: [],
+      stones: [],
       recall_policy: '总库不随房间消息列表倾倒；请按明确主题使用授权记忆搜索。',
     },
   };

@@ -107,6 +107,9 @@ function normalizeVariant(value = {}, prefix = 'variant') {
   const modelId = String(value.model_id || '').trim().slice(0, 180);
   const usage = normalizeUsage(value.usage);
   const generationSource = GENERATION_SOURCES.has(value.generation_source) ? value.generation_source : '';
+  const dogtalkSnapshotId = value.dogtalk_snapshot_id
+    ? sanitizeId(value.dogtalk_snapshot_id, 'dogtalk_snapshot')
+    : '';
   return {
     id: sanitizeId(value.id || crypto.randomUUID(), prefix),
     content: String(value.content),
@@ -119,6 +122,7 @@ function normalizeVariant(value = {}, prefix = 'variant') {
     ...(usage ? { usage } : {}),
     ...(finishReason ? { finish_reason: finishReason } : {}),
     ...(generationSource ? { generation_source: generationSource } : {}),
+    ...(dogtalkSnapshotId ? { dogtalk_snapshot_id: dogtalkSnapshotId } : {}),
     ...(errorDetail ? { errorDetail } : {}),
   };
 }

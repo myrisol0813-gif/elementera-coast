@@ -1182,10 +1182,14 @@ export async function resolvePocket(db, id, value = {}) {
   if (!destination) throw new MemoryStoreError('invalid_pocket_action', '待确认袋去向无效。');
   const [entryType, scope] = destination;
   const current = pocketFromRow(pocket);
+  const targetConversationId = scope === 'conversation'
+    ? sanitizeId(value.target_conversation_id || pocket.conversation_id, 'conversation')
+    : null;
+  if (targetConversationId) await getConversation(db, targetConversationId);
   const entry = await normalizedEntry(db, {
     entry_type: entryType,
     scope,
-    conversation_id: scope === 'conversation' ? pocket.conversation_id : null,
+    conversation_id: targetConversationId,
     title: value.title || current.title,
     life_core: value.life_core || current.life_core,
     content: value.content ?? current.content,

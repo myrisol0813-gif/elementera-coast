@@ -30,18 +30,19 @@ const shell = createShell({ storage });
 const router = createRouter(q('#overlayRoot'), {
   onOpen: () => shell.closeSidebar(),
 });
-const chat = createChat({ storage, toast });
-const dogtalk = createDogtalk({ router, toast });
-const memory = createMemory({ chat, router, toast, storage, dogtalk });
+const dogtalk = createDogtalk({ toast });
+const chat = createChat({ storage, toast, dogtalk });
+const rooms = createRooms({ chat, router, toast, dogtalk });
+const memory = createMemory({ chat, router, toast, storage, rooms });
 const models = createModels({ chat, router, toast });
 const tools = createTools({ storage, router, toast, memory });
 const settings = createSettings({ storage, shell, chat, router, toast });
-const rooms = createRooms({ chat, router, toast, dogtalk });
 const daily = createDaily({ storage, router, toast, chat });
 const letters = createLetters({ storage, chat, models, router, toast });
 
 chat.setRunSettingsProvider(tools.getSettings);
 chat.setMemoryController(memory);
+chat.setRoomController(rooms);
 
 const controllers = Object.freeze({
   chat,
@@ -80,7 +81,9 @@ document.addEventListener('click', async (event) => {
     const danger = dangerConfirmationFor(`${namespace}:${name}`);
     if (danger && !await confirmDanger(danger)) return;
     await controller.handleAction(name, target, event);
-    if ((namespace === 'chat' || namespace === 'memory') && name === 'open') shell.closeSidebar();
+    if ((namespace === 'chat' || namespace === 'memory' || namespace === 'rooms') && name === 'open') {
+      shell.closeSidebar();
+    }
   } catch (error) {
     console.error(`[${namespace}:${name}]`, error);
     toast(error?.message || '操作失败，请稍后重试。');
