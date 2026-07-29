@@ -1,4 +1,5 @@
 const MIGRATION_ID = 'daily-server-v1';
+const MCP_DAILY_MIGRATION_ID = 'daily-mcp-interfaces-v1';
 const schemaPromises = new WeakMap();
 
 async function run(db, sql, params = []) {
@@ -33,6 +34,12 @@ async function initialize(db) {
     conversation_id TEXT,
     source_turn_id TEXT,
     tool_call_id TEXT UNIQUE,
+    actor TEXT,
+    surface TEXT,
+    model_label TEXT,
+    model_nickname TEXT,
+    symbol TEXT,
+    display_author TEXT,
     reason TEXT,
     published_at INTEGER,
     created_at INTEGER NOT NULL,
@@ -65,6 +72,15 @@ async function initialize(db) {
     summary_id TEXT,
     range_start INTEGER,
     range_end INTEGER,
+    conversation_id TEXT,
+    source_turn_id TEXT,
+    tool_call_id TEXT,
+    actor TEXT,
+    surface TEXT,
+    model_label TEXT,
+    model_nickname TEXT,
+    symbol TEXT,
+    display_author TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`);
@@ -78,6 +94,12 @@ async function initialize(db) {
     conversation_id TEXT,
     source_turn_id TEXT,
     tool_call_id TEXT UNIQUE,
+    actor TEXT,
+    surface TEXT,
+    model_label TEXT,
+    model_nickname TEXT,
+    symbol TEXT,
+    display_author TEXT,
     caption TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
@@ -93,9 +115,32 @@ async function initialize(db) {
     moment_ids_json TEXT NOT NULL DEFAULT '[]',
     album_item_ids_json TEXT NOT NULL DEFAULT '[]',
     model_id TEXT,
+    actor TEXT,
+    surface TEXT,
+    model_label TEXT,
+    model_nickname TEXT,
+    symbol TEXT,
+    display_author TEXT,
+    confirmed_by_xiaohan INTEGER,
+    confirmation_source TEXT,
+    confirmation_note TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`);
+  for (const table of ['daily_moments', 'daily_diaries', 'daily_album_items', 'daily_summaries']) {
+    await ensureColumn(db, table, 'actor', 'TEXT DEFAULT NULL');
+    await ensureColumn(db, table, 'surface', 'TEXT DEFAULT NULL');
+    await ensureColumn(db, table, 'model_label', 'TEXT DEFAULT NULL');
+    await ensureColumn(db, table, 'model_nickname', 'TEXT DEFAULT NULL');
+    await ensureColumn(db, table, 'symbol', 'TEXT DEFAULT NULL');
+    await ensureColumn(db, table, 'display_author', 'TEXT DEFAULT NULL');
+  }
+  await ensureColumn(db, 'daily_diaries', 'conversation_id', 'TEXT DEFAULT NULL');
+  await ensureColumn(db, 'daily_diaries', 'source_turn_id', 'TEXT DEFAULT NULL');
+  await ensureColumn(db, 'daily_diaries', 'tool_call_id', 'TEXT DEFAULT NULL');
+  await ensureColumn(db, 'daily_summaries', 'confirmation_source', 'TEXT DEFAULT NULL');
+  await ensureColumn(db, 'daily_summaries', 'confirmation_note', 'TEXT DEFAULT NULL');
+  await ensureColumn(db, 'daily_summaries', 'confirmed_by_xiaohan', 'INTEGER DEFAULT NULL');
 
   await run(db, `CREATE INDEX IF NOT EXISTS idx_daily_moments_feed
     ON daily_moments(status, published_at DESC, created_at DESC)`);
@@ -109,6 +154,8 @@ async function initialize(db) {
     ON daily_diaries(date, author, created_at DESC)`);
   await run(db, `CREATE INDEX IF NOT EXISTS idx_daily_diaries_range
     ON daily_diaries(created_at, updated_at)`);
+  await run(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_diaries_tool_call
+    ON daily_diaries(tool_call_id) WHERE tool_call_id IS NOT NULL`);
   await run(db, `CREATE INDEX IF NOT EXISTS idx_daily_album_date
     ON daily_album_items(date, category, created_at DESC)`);
   await run(db, `CREATE INDEX IF NOT EXISTS idx_daily_album_conversation
@@ -117,6 +164,10 @@ async function initialize(db) {
     ON daily_summaries(range_end DESC, created_at DESC)`);
   await run(db, 'INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)', [
     MIGRATION_ID,
+    Date.now(),
+  ]);
+  await run(db, 'INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)', [
+    MCP_DAILY_MIGRATION_ID,
     Date.now(),
   ]);
 }
@@ -135,4 +186,4 @@ export async function ensureDailySchema(db) {
   }
 }
 
-export const dailyMigrationIds = Object.freeze([MIGRATION_ID]);
+export const dailyMigrationIds = Object.freeze([MIGRATION_ID, MCP_DAILY_MIGRATION_ID]);

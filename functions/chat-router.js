@@ -230,6 +230,7 @@ async function formalChat(request, env) {
     conversation_id: conversationId,
     source_turn_id: sourceTurnId,
     local_date: localDate(value.local_date),
+    model_label: value.model,
   });
   if (value.stream === true) {
     return streamFormalChat(request, env, {

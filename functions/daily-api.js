@@ -17,6 +17,7 @@ import {
 } from './daily-store.js';
 import { dailySummaryRangeOptions, runDailySummary } from './daily-summary.js';
 import { createMyriMomentComment } from './daily-moment-comment.js';
+import { apiMyriIdentity, xiaohanIdentity } from './coast-identity.js';
 import { apiError, json, readJson } from './http.js';
 import { MemoryStoreError } from './memory-store.js';
 import { ModelRequestError } from './models.js';
@@ -63,6 +64,7 @@ async function moments(request, env, url) {
           conversation_id: null,
           source_turn_id: null,
           tool_call_id: null,
+          identity: xiaohanIdentity(),
         }),
       }, 201);
     }
@@ -118,7 +120,12 @@ async function diaries(request, env, url) {
       return json({
         ok: true,
         diary: await createDiary(env.COAST_CHAT_DB, await body(request), {
+          author: 'xiaohan',
           source: 'manual',
+          conversation_id: null,
+          source_turn_id: null,
+          tool_call_id: null,
+          identity: xiaohanIdentity(),
         }),
       }, 201);
     }
@@ -148,6 +155,7 @@ async function albums(request, env, url) {
         conversation_id: null,
         source_turn_id: null,
         tool_call_id: null,
+        identity: xiaohanIdentity(),
       }),
     }, 201);
   }
@@ -174,7 +182,15 @@ async function summaries(request, env, url) {
   }
   if (url.pathname === `${DAILY_PATH}/summary/commit`) {
     if (request.method !== 'POST') return methodNotAllowed('POST');
-    return json({ ok: true, ...(await commitSummary(env.COAST_CHAT_DB, await body(request))) }, 201);
+    const value = await body(request);
+    const modelLabel = String(value.model_id || '').trim().slice(0, 180);
+    return json({
+      ok: true,
+      ...(await commitSummary(env.COAST_CHAT_DB, value, {
+        author: 'api',
+        ...(modelLabel ? { identity: apiMyriIdentity({ model_label: modelLabel }) } : {}),
+      })),
+    }, 201);
   }
   return apiError('not_found', 'Not found.', 404);
 }

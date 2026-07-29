@@ -8,7 +8,7 @@ import {
 } from './lighthouse-store.js';
 import { ModelRequestError } from './models.js';
 import { askApiMyriInRadio } from './radio-myri.js';
-import { listRadioMessages, sendRadioMessage } from './radio-store.js';
+import { listRadioMessages, sendRadioMessage, withdrawRadioMessage } from './radio-store.js';
 
 const RADIO_MESSAGES = '/api/radio/messages';
 const RADIO_ASK = '/api/radio/ask-api-myri';
@@ -20,12 +20,13 @@ function methodNotAllowed(allow) {
 
 export function isCoastRoomApiPath(pathname) {
   return pathname === RADIO_MESSAGES
+    || pathname.startsWith(`${RADIO_MESSAGES}/`)
     || pathname === RADIO_ASK
     || pathname === LIGHTHOUSE
     || pathname.startsWith(`${LIGHTHOUSE}/`);
 }
 
-export async function routeCoastRoomApi(request, env) {
+export async function routeCoastRoomApi(request, env, session = null) {
   if (!env?.COAST_CHAT_DB?.prepare) return apiError('coast_db_not_configured', '海岸 D1 存储未配置。', 503);
   const url = new URL(request.url);
   try {
@@ -49,6 +50,16 @@ export async function routeCoastRoomApi(request, env) {
         return json({ ok: true, message }, 201);
       }
       return methodNotAllowed('GET, POST');
+    }
+    const radioMessageMatch = url.pathname.match(/^\/api\/radio\/messages\/([^/]+)$/);
+    if (radioMessageMatch) {
+      if (request.method !== 'DELETE') return methodNotAllowed('DELETE');
+      if (!session) return apiError('unauthorized', '请先从海岸网页登录。', 401);
+      const message = await withdrawRadioMessage(
+        env.COAST_CHAT_DB,
+        decodeURIComponent(radioMessageMatch[1]),
+      );
+      return json({ ok: true, message });
     }
     if (url.pathname === RADIO_ASK) {
       if (request.method !== 'POST') return methodNotAllowed('POST');

@@ -9,11 +9,15 @@ import {
 } from './coast-records.js';
 
 function fromRow(row) {
+  const withdrawn = Number(row.withdrawn_at || 0) > 0;
   return {
     id: row.id,
     room_id: row.room_id,
-    text: row.text,
+    text: withdrawn ? '这条电波已撤回' : row.text,
     ...provenanceFromRow(row),
+    withdrawn,
+    withdrawn_at: withdrawn ? iso(row.withdrawn_at) : null,
+    withdrawn_by: withdrawn ? row.withdrawn_by || 'xiaohan' : null,
     created_at: iso(row.created_at),
   };
 }
@@ -65,4 +69,22 @@ export async function listRadioMessages(db, { limit = 100, before = '' } = {}) {
   const result = await db.prepare(`SELECT * FROM coast_radio_messages
     WHERE ${where} ORDER BY created_at DESC LIMIT ?`).bind(...params).all();
   return (result?.results || []).reverse().map(fromRow);
+}
+
+export async function withdrawRadioMessage(db, id) {
+  await ensureCoastSchema(db);
+  const messageId = String(id || '').trim().slice(0, 180);
+  const row = messageId
+    ? await first(db, 'SELECT * FROM coast_radio_messages WHERE id = ?', [messageId])
+    : null;
+  if (!row) throw new CoastStoreError('radio_message_not_found', '这条电波不存在。', 404);
+  if (row.actor !== 'xiaohan' || row.surface !== 'web_manual') {
+    throw new CoastStoreError('radio_withdraw_forbidden', '只能撤回小寒从网页手动发送的电波。', 403);
+  }
+  if (!row.withdrawn_at) {
+    await db.prepare(`UPDATE coast_radio_messages
+      SET withdrawn_at = ?, withdrawn_by = ?
+      WHERE id = ? AND withdrawn_at IS NULL`).bind(Date.now(), 'xiaohan', messageId).run();
+  }
+  return fromRow(await first(db, 'SELECT * FROM coast_radio_messages WHERE id = ?', [messageId]));
 }

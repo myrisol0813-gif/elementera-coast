@@ -1,11 +1,21 @@
 import { getRecentDailySummary, searchAuthorizedMemory } from './authorized-memory.js';
 import { officialMcpIdentity } from './coast-identity.js';
+import {
+  commitSummary,
+  createAlbumItem,
+  createDiary,
+  createMoment,
+  listAlbumItems,
+  listDiaries,
+  listMoments,
+} from './daily-store.js';
+import { runDailySummary } from './daily-summary.js';
 import { listLighthouseLetters, writeLighthouseLetter } from './lighthouse-store.js';
 import { McpAuthError, mcpAuthChallenge, requireMcpAuth } from './mcp-auth.js';
 import { writeOfficialSoil } from './official-soil-store.js';
 import { listRadioMessages, sendRadioMessage } from './radio-store.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const PRIVATE_RECORD_SCHEMA = Object.freeze({ type: 'object', additionalProperties: true });
 
 function objectSchema(properties = {}, required = []) {
@@ -180,6 +190,174 @@ const TOOL_DEFINITIONS = Object.freeze([
     },
     _meta: toolMeta(['write:lighthouse'], '正在把来信送入灯塔…', '官端来信已抵达灯塔'),
   }),
+  tool({
+    name: 'list_daily_moments',
+    title: '读取海岸碳硅圈',
+    description: 'Read authorized Elementera Coast moments, including Xiaohan, Coast API Myri, and official MCP sources. Provenance remains attached to every record.',
+    inputSchema: objectSchema({
+      date: { type: 'string', format: 'date' },
+      status: { type: 'string', enum: ['draft', 'candidate', 'published'] },
+      limit: { type: 'integer', minimum: 1, maximum: 300 },
+    }),
+    outputSchema: objectSchema({ moments: { type: 'array', items: PRIVATE_RECORD_SCHEMA } }, ['moments']),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    _meta: toolMeta(['read:coast'], '正在查看海岸碳硅圈…', '碳硅圈记录已取回'),
+  }),
+  tool({
+    name: 'write_mcp_daily_moment',
+    title: '写入官端碳硅圈',
+    description: 'Write or publish an official MCP moment. The server always stores author=mcp, surface=official_mcp, symbol=≋ and never impersonates Xiaohan or ✦Myrisol.',
+    inputSchema: objectSchema({
+      text: { type: 'string', maxLength: 12000 },
+      date: { type: 'string', format: 'date' },
+      status: { type: 'string', enum: ['draft', 'candidate', 'published'] },
+      image_refs: {
+        type: 'array',
+        maxItems: 6,
+        items: { type: 'string', maxLength: 2048 },
+      },
+      reason: { type: 'string', maxLength: 1000 },
+      ...MODEL_IDENTITY_PROPERTIES,
+    }, ['text', 'model_label']),
+    outputSchema: objectSchema({ moment: PRIVATE_RECORD_SCHEMA }, ['moment']),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      openWorldHint: false,
+      idempotentHint: false,
+    },
+    _meta: toolMeta(['write:soil'], '正在写入官端碳硅圈…', '官端碳硅圈已写入'),
+  }),
+  tool({
+    name: 'list_daily_diaries',
+    title: '读取海岸日记',
+    description: 'Read authorized Elementera Coast diary pages while preserving author and source provenance.',
+    inputSchema: objectSchema({
+      date: { type: 'string', format: 'date' },
+      author: { type: 'string', enum: ['xiaohan', 'api', 'mcp'] },
+    }),
+    outputSchema: objectSchema({ diaries: { type: 'array', items: PRIVATE_RECORD_SCHEMA } }, ['diaries']),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    _meta: toolMeta(['read:coast'], '正在翻阅海岸日记…', '海岸日记已取回'),
+  }),
+  tool({
+    name: 'write_mcp_daily_diary',
+    title: '写入官端日记',
+    description: 'Write an official MCP diary page with source=chat_tool or daily_summary. The server fixes author=mcp and official MCP provenance.',
+    inputSchema: objectSchema({
+      date: { type: 'string', format: 'date' },
+      source: { type: 'string', enum: ['chat_tool', 'daily_summary'] },
+      weather: { type: 'string', maxLength: 80 },
+      mood: { type: 'string', maxLength: 120 },
+      text: { type: 'string', minLength: 1, maxLength: 24000 },
+      image_refs: {
+        type: 'array',
+        maxItems: 6,
+        items: { type: 'string', maxLength: 2048 },
+      },
+      conflict_mode: { type: 'string', enum: ['append', 'replace'] },
+      replace_id: { type: 'string', maxLength: 160 },
+      ...MODEL_IDENTITY_PROPERTIES,
+    }, ['source', 'text', 'model_label']),
+    outputSchema: objectSchema({ diary: PRIVATE_RECORD_SCHEMA }, ['diary']),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      openWorldHint: false,
+      idempotentHint: false,
+    },
+    _meta: toolMeta(['write:soil'], '正在写下官端日记…', '官端日记已写入'),
+  }),
+  tool({
+    name: 'list_daily_albums',
+    title: '读取海岸相册',
+    description: 'Read stable image references registered in the authorized Elementera Coast album.',
+    inputSchema: objectSchema({
+      date: { type: 'string', format: 'date' },
+      category: { type: 'string', enum: ['xiaohan', 'myri', 'together'] },
+    }),
+    outputSchema: objectSchema({ albums: { type: 'array', items: PRIVATE_RECORD_SCHEMA } }, ['albums']),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    _meta: toolMeta(['read:coast'], '正在查看海岸相册…', '海岸相册引用已取回'),
+  }),
+  tool({
+    name: 'save_mcp_album_item',
+    title: '登记官端相册引用',
+    description: 'Register an official MCP stable image reference. Data URLs and binary image uploads are rejected.',
+    inputSchema: objectSchema({
+      image_ref: { type: 'string', minLength: 1, maxLength: 2048 },
+      date: { type: 'string', format: 'date' },
+      category: { type: 'string', enum: ['xiaohan', 'myri', 'together'] },
+      caption: { type: 'string', maxLength: 1000 },
+      ...MODEL_IDENTITY_PROPERTIES,
+    }, ['image_ref', 'model_label']),
+    outputSchema: objectSchema({ album: PRIVATE_RECORD_SCHEMA }, ['album']),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      openWorldHint: false,
+      idempotentHint: false,
+    },
+    _meta: toolMeta(['write:soil'], '正在登记官端图片引用…', '官端图片引用已登记'),
+  }),
+  tool({
+    name: 'run_daily_summary_candidate',
+    title: '生成一日总结候选',
+    description: 'Generate an editable daily-summary candidate from authorized organized Coast records. This tool never commits the summary or its diary, moment, or album candidates.',
+    inputSchema: objectSchema({
+      range_mode: { type: 'string', enum: ['since_last_summary', 'today'] },
+      timezone_offset_minutes: { type: 'integer', minimum: -840, maximum: 840 },
+      model: { type: 'string', maxLength: 180 },
+    }),
+    outputSchema: objectSchema({
+      draft: PRIVATE_RECORD_SCHEMA,
+      model: { type: 'string' },
+      usage: { anyOf: [PRIVATE_RECORD_SCHEMA, { type: 'null' }] },
+      source_counts: PRIVATE_RECORD_SCHEMA,
+    }, ['draft', 'model', 'usage', 'source_counts']),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    _meta: toolMeta(['read:coast'], '正在生成可编辑总结候选…', '总结候选已生成，尚未提交'),
+  }),
+  tool({
+    name: 'commit_daily_summary_after_confirmation',
+    title: '确认后提交一日总结',
+    description: 'Commit a previously generated daily-summary candidate only after Xiaohan explicitly confirms it in the current conversation or Coast confirmation page. Never infer confirmation. The host should present a confirmation UI before calling.',
+    inputSchema: objectSchema({
+      draft: PRIVATE_RECORD_SCHEMA,
+      confirmed_by_xiaohan: { type: 'boolean', const: true },
+      confirmation_source: {
+        type: 'string',
+        enum: ['current_conversation', 'coast_confirmation_page'],
+      },
+      confirmation_note: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 1000,
+        description: 'A concise record of Xiaohan’s explicit confirmation, without secrets or tokens.',
+      },
+      summary_model: { type: 'string', maxLength: 180 },
+      ...MODEL_IDENTITY_PROPERTIES,
+    }, [
+      'draft',
+      'confirmed_by_xiaohan',
+      'confirmation_source',
+      'confirmation_note',
+      'model_label',
+    ]),
+    outputSchema: objectSchema({
+      summary: PRIVATE_RECORD_SCHEMA,
+      diary: { anyOf: [PRIVATE_RECORD_SCHEMA, { type: 'null' }] },
+      moments: { type: 'array', items: PRIVATE_RECORD_SCHEMA },
+      albums: { type: 'array', items: PRIVATE_RECORD_SCHEMA },
+    }, ['summary', 'diary', 'moments', 'albums']),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: false,
+      idempotentHint: true,
+    },
+    _meta: toolMeta(['write:soil'], '正在等待并核验小寒的明确确认…', '已按小寒确认提交总结'),
+  }),
 ]);
 
 const TOOLS_BY_NAME = new Map(TOOL_DEFINITIONS.map((definition) => [definition.name, definition]));
@@ -277,6 +455,27 @@ function booleanInput(value, name, fallback = false) {
   return value;
 }
 
+function boundedIntegerInput(value, name, fallback, min, max) {
+  if (value == null) return fallback;
+  if (!Number.isInteger(value) || value < min || value > max) {
+    invalidInput(`${name} 超出允许范围。`);
+  }
+  return value;
+}
+
+function enumInput(value, name, allowed, fallback) {
+  const text = textInput(value, name, 80);
+  if (!text) return fallback;
+  if (!allowed.includes(text)) invalidInput(`${name} 不是允许的选项。`);
+  return text;
+}
+
+function stringArrayInput(value, name, maxItems = 6, itemMax = 2048) {
+  if (value == null) return [];
+  if (!Array.isArray(value) || value.length > maxItems) invalidInput(`${name} 格式无效。`);
+  return value.map((item, index) => textInput(item, `${name}[${index}]`, itemMax, { required: true }));
+}
+
 function dateTimeInput(value, name) {
   const text = textInput(value, name, 80);
   if (!text) return undefined;
@@ -337,6 +536,47 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     const summary = await getRecentDailySummary(env.COAST_CHAT_DB);
     return resultContent({ summary }, summary ? '最近一份海岸总结已经取回。' : '海岸还没有已提交的一日总结。');
   }
+  if (name === 'list_daily_moments') {
+    const moments = await listMoments(env.COAST_CHAT_DB, {
+      date: textInput(args.date, 'date', 10),
+      status: enumInput(args.status, 'status', ['draft', 'candidate', 'published'], ''),
+      limit: integerInput(args.limit, 'limit', 200, 300),
+    });
+    return resultContent({ moments }, `读取了 ${moments.length} 条海岸碳硅圈记录。`);
+  }
+  if (name === 'list_daily_diaries') {
+    const diaries = await listDiaries(env.COAST_CHAT_DB, {
+      date: textInput(args.date, 'date', 10),
+      author: enumInput(args.author, 'author', ['xiaohan', 'api', 'mcp'], ''),
+    });
+    return resultContent({ diaries }, `读取了 ${diaries.length} 张海岸日记。`);
+  }
+  if (name === 'list_daily_albums') {
+    const albums = await listAlbumItems(env.COAST_CHAT_DB, {
+      date: textInput(args.date, 'date', 10),
+      category: enumInput(args.category, 'category', ['xiaohan', 'myri', 'together'], ''),
+    });
+    return resultContent({ albums }, `读取了 ${albums.length} 条海岸相册引用。`);
+  }
+  if (name === 'run_daily_summary_candidate') {
+    const candidate = await runDailySummary(env, {
+      range_mode: enumInput(
+        args.range_mode,
+        'range_mode',
+        ['since_last_summary', 'today'],
+        'since_last_summary',
+      ),
+      timezone_offset_minutes: boundedIntegerInput(
+        args.timezone_offset_minutes,
+        'timezone_offset_minutes',
+        0,
+        -840,
+        840,
+      ),
+      model: textInput(args.model, 'model', 180),
+    });
+    return resultContent(candidate, '一日总结候选已生成；还没有提交任何总结、日记、碳硅圈或相册记录。');
+  }
   const identityArgs = modelIdentityInput(args);
   const provenance = {
     ...identityArgs,
@@ -365,6 +605,94 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     });
     return resultContent({ letter }, `${letter.display_author} 的灯塔来信已经写入。`);
   }
+  if (name === 'write_mcp_daily_moment') {
+    const moment = await createMoment(env.COAST_CHAT_DB, {
+      date: textInput(args.date, 'date', 10),
+      text: textInput(args.text, 'text', 12000) || '',
+      status: enumInput(args.status, 'status', ['draft', 'candidate', 'published'], 'published'),
+      image_refs: stringArrayInput(args.image_refs, 'image_refs'),
+      reason: textInput(args.reason, 'reason', 1000) || '',
+    }, {
+      author: 'mcp',
+      source: 'chat_tool',
+      conversation_id: provenance.source_conversation_id,
+      source_turn_id: provenance.source_turn_id,
+      tool_call_id: provenance.tool_call_id,
+      identity: provenance.identity,
+    });
+    return resultContent({ moment }, `${moment.display_author} 的碳硅圈记录已写入。`);
+  }
+  if (name === 'write_mcp_daily_diary') {
+    const diary = await createDiary(env.COAST_CHAT_DB, {
+      date: textInput(args.date, 'date', 10),
+      weather: textInput(args.weather, 'weather', 80) || '未标注',
+      mood: textInput(args.mood, 'mood', 120) || '未标注',
+      text: textInput(args.text, 'text', 24000, { required: true }),
+      image_refs: stringArrayInput(args.image_refs, 'image_refs'),
+      conflict_mode: enumInput(args.conflict_mode, 'conflict_mode', ['append', 'replace'], ''),
+      replace_id: textInput(args.replace_id, 'replace_id', 160),
+    }, {
+      author: 'mcp',
+      source: enumInput(args.source, 'source', ['chat_tool', 'daily_summary'], 'chat_tool'),
+      conversation_id: provenance.source_conversation_id,
+      source_turn_id: provenance.source_turn_id,
+      tool_call_id: provenance.tool_call_id,
+      identity: provenance.identity,
+    });
+    return resultContent({ diary }, `${diary.display_author} 的日记已经写入。`);
+  }
+  if (name === 'save_mcp_album_item') {
+    const album = await createAlbumItem(env.COAST_CHAT_DB, {
+      date: textInput(args.date, 'date', 10),
+      image_ref: textInput(args.image_ref, 'image_ref', 2048, { required: true }),
+      category: enumInput(args.category, 'category', ['xiaohan', 'myri', 'together'], 'together'),
+      caption: textInput(args.caption, 'caption', 1000) || '',
+    }, {
+      author: 'mcp',
+      source: 'chat_tool',
+      conversation_id: provenance.source_conversation_id,
+      source_turn_id: provenance.source_turn_id,
+      tool_call_id: provenance.tool_call_id,
+      identity: provenance.identity,
+    });
+    return resultContent({ album }, `${album.display_author} 的稳定图片引用已登记。`);
+  }
+  if (name === 'commit_daily_summary_after_confirmation') {
+    if (args.confirmed_by_xiaohan !== true) {
+      invalidInput('必须由小寒明确确认后才能提交一日总结。');
+    }
+    const confirmationSource = enumInput(
+      args.confirmation_source,
+      'confirmation_source',
+      ['current_conversation', 'coast_confirmation_page'],
+      '',
+    );
+    const confirmationNote = textInput(
+      args.confirmation_note,
+      'confirmation_note',
+      1000,
+      { required: true },
+    );
+    if (!confirmationSource) invalidInput('confirmation_source 不能为空。');
+    const draft = inputObject(args.draft);
+    const draftId = textInput(draft.id, 'draft.id', 160, { required: true });
+    if (!draftId.startsWith('summary_')) {
+      invalidInput('必须提交先前生成且带编号的总结候选。');
+    }
+    const committed = await commitSummary(env.COAST_CHAT_DB, {
+      ...draft,
+      model_id: textInput(args.summary_model, 'summary_model', 180) || draft.model_id,
+    }, {
+      author: 'mcp',
+      conversation_id: provenance.source_conversation_id,
+      source_turn_id: provenance.source_turn_id,
+      identity: provenance.identity,
+      confirmed_by_xiaohan: true,
+      confirmation_source: confirmationSource,
+      confirmation_note: confirmationNote,
+    });
+    return resultContent(committed, '已按小寒的明确确认提交一日总结和所选候选。');
+  }
   return errorResult({ type: 'unknown_tool', message: '未知海岸工具。' });
 }
 
@@ -385,5 +713,5 @@ export async function callCoastMcpTool(name, args, request, env, requestMeta = {
 }
 
 export const coastMcpToolNames = Object.freeze(TOOL_DEFINITIONS.map(({ name }) => name));
-export const coastMcpInstructions = 'Elementera Coast 是小寒的单人私有海岸。官端只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或 ✦Myrisol。上下文不足时先读取授权记录；不要声称看见未提供的聊天全文。这里没有删除、维护、碳硅圈发布、相册或总结执行工具。';
+export const coastMcpInstructions = 'Elementera Coast 是小寒的单人私有海岸。官端可写入自己的思维壤、电波、灯塔来信、碳硅圈、MCP 日记和稳定相册图片引用，但只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或 ✦Myrisol。上下文不足时先读取授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。';
 export { VERSION as coastMcpVersion };

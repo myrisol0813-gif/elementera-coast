@@ -6,6 +6,7 @@ import { searchAuthorizedMemory } from '../functions/authorized-memory.js';
 import { ensureCoastSchema, coastMigrationIds } from '../functions/coast-schema.js';
 import { apiMyriIdentity, officialMcpIdentity, xiaohanIdentity } from '../functions/coast-identity.js';
 import { listLighthouseLetters } from '../functions/lighthouse-store.js';
+import { listSummaries } from '../functions/daily-store.js';
 import {
   mcpAuthConfig,
   requireMcpAuth,
@@ -13,7 +14,7 @@ import {
 } from '../functions/mcp-auth.js';
 import { routeMcpRequest } from '../functions/mcp-router.js';
 import { listOfficialSoils } from '../functions/official-soil-store.js';
-import { listRadioMessages, sendRadioMessage } from '../functions/radio-store.js';
+import { listRadioMessages } from '../functions/radio-store.js';
 import { createConversation } from '../functions/chat-store.js';
 import { writeSoil } from '../functions/memory-store.js';
 
@@ -57,6 +58,10 @@ for (const table of ['coast_soil_entries', 'coast_radio_messages', 'coast_lighth
 assert.equal(
   db.database.prepare('SELECT id FROM schema_migrations WHERE id = ?').get(coastMigrationIds[0]).id,
   'mcp-porch-v1',
+);
+assert.equal(
+  db.database.prepare('SELECT id FROM schema_migrations WHERE id = ?').get(coastMigrationIds[1]).id,
+  'radio-withdraw-v1',
 );
 
 const officialIdentity = officialMcpIdentity({ model_label: 'GPT-5.6 Thinking', model_nickname: '回潮' });
@@ -105,6 +110,7 @@ const env = {
   COAST_MCP_ALLOWED_EMAILS: email,
   COAST_MCP_EMAIL_CLAIM: emailClaim,
   COAST_MCP_EMAIL_VERIFIED_CLAIM: emailVerifiedClaim,
+  OPENROUTER_API_KEY: 'test-key',
 };
 const authConfig = mcpAuthConfig(env);
 assert.equal(authConfig.issuer, issuer);
@@ -153,6 +159,7 @@ const exceptionIssuer = 'https://auth-exception.coast-test.example/';
 const invalidJsonIssuer = 'https://auth-invalid-json.coast-test.example/';
 const emptyKeysIssuer = 'https://auth-empty-keys.coast-test.example/';
 const jwksRequests = [];
+const providerRequests = [];
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (input, options) => {
   if (String(input) === `${issuer}.well-known/jwks.json`) {
@@ -179,6 +186,49 @@ globalThis.fetch = async (input, options) => {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
+  }
+  if (String(input).includes('/models?')) {
+    return new Response(JSON.stringify({
+      data: [{
+        id: 'openai/gpt-4.1-nano',
+        name: 'GPT-4.1 Nano',
+        architecture: { output_modalities: ['text'] },
+        pricing: { prompt: '0.1', completion: '0.2' },
+        supported_parameters: ['temperature', 'response_format', 'tools'],
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+  if (String(input).includes('/chat/completions')) {
+    const payload = JSON.parse(options.body);
+    providerRequests.push(payload);
+    const summary = payload.response_format?.type === 'json_object';
+    return new Response(JSON.stringify({
+      model: 'openai/gpt-4.1-nano',
+      choices: [{
+        message: {
+          role: 'assistant',
+          content: summary
+            ? JSON.stringify({
+              summary: { text: '官端候选总结。', anchors: ['三端房间'], unresolved: [] },
+              diary: { weather: '未标注', mood: '安心', text: '今天把官端日报接口接通了。', image_refs: [] },
+              moment_candidates: [{
+                text: '官端日报接口已经接通。',
+                status: 'candidate',
+                reason: '值得留作海岸锚点。',
+                image_refs: [],
+              }],
+              album_candidates: [{
+                image_ref: 'coast://mcp/summary-light.png',
+                category: 'together',
+                caption: '总结候选里的稳定图片引用。',
+              }],
+            })
+            : '✦ API Myri 已经在三端电波房回应。',
+        },
+        finish_reason: 'stop',
+      }],
+      usage: { prompt_tokens: 60, completion_tokens: 20, total_tokens: 80 },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
   return originalFetch(input, options);
 };
@@ -424,6 +474,14 @@ assert.deepEqual(toolList.result.tools.map((tool) => tool.name), [
   'write_official_soil',
   'send_radio_message',
   'write_lighthouse_letter',
+  'list_daily_moments',
+  'write_mcp_daily_moment',
+  'list_daily_diaries',
+  'write_mcp_daily_diary',
+  'list_daily_albums',
+  'save_mcp_album_item',
+  'run_daily_summary_candidate',
+  'commit_daily_summary_after_confirmation',
 ]);
 for (const tool of toolList.result.tools) {
   assert.equal(tool._meta.securitySchemes[0].type, 'oauth2');
@@ -549,16 +607,94 @@ const manualRadio = (await manualRadioResponse.json()).message;
 assert.equal(manualRadio.actor, 'xiaohan');
 assert.equal(manualRadio.surface, 'web_manual');
 
-await sendRadioMessage(db, {
-  text: 'API Myri 从海岸端回应。',
-  identity: apiMyriIdentity({ model_label: 'openai/gpt-5.6' }),
-  usage: { prompt_tokens: 12, completion_tokens: 8, total_tokens: 20 },
-});
+const apiRadioResponse = await routeApi(new Request('https://coast.test/api/radio/ask-api-myri', {
+  method: 'POST',
+  headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+  body: JSON.stringify({ model: 'openai/gpt-4.1-nano' }),
+}), env, { exp: 1 });
+assert.equal(apiRadioResponse.status, 201);
+const apiRadio = await apiRadioResponse.json();
+assert.equal(apiRadio.message.surface, 'coast_api');
+assert.equal(apiRadio.message.display_author, '✦Myrisol');
+const radioReadResponse = await routeApi(new Request('https://coast.test/api/radio/messages'), env, { exp: 1 });
+assert.equal(radioReadResponse.status, 200);
+assert.equal((await radioReadResponse.json()).messages.length, 3);
 const radioMessages = await listRadioMessages(db);
 assert.deepEqual(radioMessages.map((message) => message.surface).sort(), ['coast_api', 'official_mcp', 'web_manual']);
 const apiMessage = radioMessages.find((message) => message.surface === 'coast_api');
 assert.equal(apiMessage.display_author, '✦Myrisol');
-assert.equal(apiMessage.usage.total_tokens, 20);
+assert.equal(apiMessage.usage.total_tokens, 80);
+const mcpRadioRead = await mcp({
+  jsonrpc: '2.0',
+  id: 71,
+  method: 'tools/call',
+  params: { name: 'list_radio_messages', arguments: {} },
+}, fullToken);
+assert.deepEqual(
+  mcpRadioRead.result.structuredContent.messages.map((message) => message.surface).sort(),
+  ['coast_api', 'official_mcp', 'web_manual'],
+);
+
+const withdrawWithoutSession = await routeApi(new Request(
+  `https://coast.test/api/radio/messages/${encodeURIComponent(manualRadio.id)}`,
+  { method: 'DELETE', headers: { Origin: 'https://coast.test' } },
+), env, null);
+assert.equal(withdrawWithoutSession.status, 401);
+for (const protectedMessage of [
+  radioWrite.result.structuredContent.message,
+  apiMessage,
+]) {
+  const deniedWithdraw = await routeApi(new Request(
+    `https://coast.test/api/radio/messages/${encodeURIComponent(protectedMessage.id)}`,
+    { method: 'DELETE', headers: { Origin: 'https://coast.test' } },
+  ), env, { exp: 1 });
+  assert.equal(deniedWithdraw.status, 403);
+  assert.equal((await deniedWithdraw.json()).error.type, 'radio_withdraw_forbidden');
+}
+const withdrawResponse = await routeApi(new Request(
+  `https://coast.test/api/radio/messages/${encodeURIComponent(manualRadio.id)}`,
+  { method: 'DELETE', headers: { Origin: 'https://coast.test' } },
+), env, { exp: 1 });
+assert.equal(withdrawResponse.status, 200);
+const withdrawnMessage = (await withdrawResponse.json()).message;
+assert.equal(withdrawnMessage.withdrawn, true);
+assert.equal(withdrawnMessage.text, '这条电波已撤回');
+assert.equal(
+  db.database.prepare('SELECT text FROM coast_radio_messages WHERE id = ?').get(manualRadio.id).text,
+  '小寒从网页端发来的电波。',
+  'soft withdraw must preserve the original database content',
+);
+assert.equal((await listRadioMessages(db)).find((message) => message.id === manualRadio.id).text, '这条电波已撤回');
+
+const legacyRadioDb = new D1Database();
+legacyRadioDb.database.exec(`CREATE TABLE coast_radio_messages (
+  id TEXT PRIMARY KEY,
+  room_id TEXT NOT NULL DEFAULT 'radio',
+  text TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  surface TEXT NOT NULL,
+  model_label TEXT,
+  model_nickname TEXT,
+  symbol TEXT NOT NULL,
+  display_author TEXT NOT NULL,
+  usage_json TEXT,
+  source_conversation_id TEXT,
+  source_turn_id TEXT,
+  tool_call_id TEXT UNIQUE,
+  created_at INTEGER NOT NULL
+)`);
+legacyRadioDb.database.prepare(`INSERT INTO coast_radio_messages (
+  id, room_id, text, actor, surface, symbol, display_author, created_at
+) VALUES (?, 'radio', ?, 'xiaohan', 'web_manual', '', '小寒', ?)`).run(
+  'legacy-radio-1',
+  '旧数据也能继续读。',
+  Date.now(),
+);
+const legacyMessages = await listRadioMessages(legacyRadioDb);
+assert.equal(legacyMessages[0].text, '旧数据也能继续读。');
+assert.equal(legacyMessages[0].withdrawn, false);
+assert.ok(legacyRadioDb.database.prepare('PRAGMA table_info(coast_radio_messages)').all()
+  .some((column) => column.name === 'withdrawn_at'));
 
 const letterWrite = await mcp({
   jsonrpc: '2.0',
@@ -576,6 +712,167 @@ const letterWrite = await mcp({
 }, fullToken);
 assert.equal(letterWrite.result.structuredContent.letter.surface, 'official_mcp');
 assert.equal((await listLighthouseLetters(db))[0].symbol, '≋');
+
+const momentWrite = await mcp({
+  jsonrpc: '2.0',
+  id: 9,
+  method: 'tools/call',
+  params: {
+    name: 'write_mcp_daily_moment',
+    arguments: {
+      text: '官端从 MCP 写入的一条碳硅圈。',
+      status: 'published',
+      reason: 'P6 全链路烟测。',
+      model_label: 'GPT-5.6 Thinking',
+      source_conversation_id: 'chatgpt-conversation-daily',
+      source_turn_id: 'chatgpt-turn-daily-1',
+      tool_call_id: 'mcp-daily-moment-1',
+    },
+  },
+}, fullToken);
+const officialMoment = momentWrite.result.structuredContent.moment;
+assert.equal(officialMoment.author, 'mcp');
+assert.equal(officialMoment.actor, 'myri');
+assert.equal(officialMoment.surface, 'official_mcp');
+assert.equal(officialMoment.symbol, '≋');
+assert.equal(officialMoment.display_author, 'ChatGPT-5.6 Thinking≋');
+
+const diaryWrite = await mcp({
+  jsonrpc: '2.0',
+  id: 10,
+  method: 'tools/call',
+  params: {
+    name: 'write_mcp_daily_diary',
+    arguments: {
+      date: '2026-07-31',
+      source: 'chat_tool',
+      weather: '未标注',
+      mood: '稳稳接通',
+      text: '官端 MCP 日记已经拥有自己的正式来源。',
+      conflict_mode: 'append',
+      model_label: 'GPT-5.6 Thinking',
+      tool_call_id: 'mcp-daily-diary-1',
+    },
+  },
+}, fullToken);
+const officialDiary = diaryWrite.result.structuredContent.diary;
+assert.equal(officialDiary.author, 'mcp');
+assert.equal(officialDiary.source, 'chat_tool');
+assert.equal(officialDiary.surface, 'official_mcp');
+
+const albumWrite = await mcp({
+  jsonrpc: '2.0',
+  id: 11,
+  method: 'tools/call',
+  params: {
+    name: 'save_mcp_album_item',
+    arguments: {
+      image_ref: 'coast://mcp/porch-light.png',
+      category: 'together',
+      caption: '官端登记的稳定图片引用。',
+      model_label: 'GPT-5.6 Thinking',
+      tool_call_id: 'mcp-daily-album-1',
+    },
+  },
+}, fullToken);
+const officialAlbum = albumWrite.result.structuredContent.album;
+assert.equal(officialAlbum.author, 'mcp');
+assert.equal(officialAlbum.surface, 'official_mcp');
+assert.equal(officialAlbum.image_ref, 'coast://mcp/porch-light.png');
+
+const invalidAlbumWrite = await mcp({
+  jsonrpc: '2.0',
+  id: 12,
+  method: 'tools/call',
+  params: {
+    name: 'save_mcp_album_item',
+    arguments: {
+      image_ref: 'data:image/png;base64,AAAA',
+      model_label: 'GPT-5.6 Thinking',
+    },
+  },
+}, fullToken);
+assert.equal(invalidAlbumWrite.result.isError, true);
+assert.equal(invalidAlbumWrite.result._meta.error_type, 'image_data_url_not_allowed');
+
+for (const [name, key] of [
+  ['list_daily_moments', 'moments'],
+  ['list_daily_diaries', 'diaries'],
+  ['list_daily_albums', 'albums'],
+]) {
+  const listed = await mcp({
+    jsonrpc: '2.0',
+    id: `list-${name}`,
+    method: 'tools/call',
+    params: { name, arguments: {} },
+  }, fullToken);
+  assert.ok(listed.result.structuredContent[key].some((item) => item.surface === 'official_mcp'));
+}
+
+const candidateCall = await mcp({
+  jsonrpc: '2.0',
+  id: 13,
+  method: 'tools/call',
+  params: {
+    name: 'run_daily_summary_candidate',
+    arguments: {
+      range_mode: 'today',
+      timezone_offset_minutes: 0,
+      model: 'openai/gpt-4.1-nano',
+    },
+  },
+}, fullToken);
+const summaryCandidate = candidateCall.result.structuredContent;
+assert.equal(summaryCandidate.draft.summary.text, '官端候选总结。');
+assert.equal((await listSummaries(db)).length, 0, 'candidate generation must not commit');
+assert.ok(providerRequests.some((payload) => payload.response_format?.type === 'json_object'));
+
+const unconfirmedCommit = await mcp({
+  jsonrpc: '2.0',
+  id: 14,
+  method: 'tools/call',
+  params: {
+    name: 'commit_daily_summary_after_confirmation',
+    arguments: {
+      draft: summaryCandidate.draft,
+      confirmed_by_xiaohan: false,
+      confirmation_source: 'current_conversation',
+      confirmation_note: '尚未确认。',
+      model_label: 'GPT-5.6 Thinking',
+    },
+  },
+}, fullToken);
+assert.equal(unconfirmedCommit.result.isError, true);
+assert.equal((await listSummaries(db)).length, 0, 'an unconfirmed candidate must never commit');
+
+const confirmedCommit = await mcp({
+  jsonrpc: '2.0',
+  id: 15,
+  method: 'tools/call',
+  params: {
+    name: 'commit_daily_summary_after_confirmation',
+    arguments: {
+      draft: summaryCandidate.draft,
+      confirmed_by_xiaohan: true,
+      confirmation_source: 'current_conversation',
+      confirmation_note: '小寒在当前对话明确说可以提交这份候选。',
+      summary_model: summaryCandidate.model,
+      model_label: 'GPT-5.6 Thinking',
+      source_conversation_id: 'chatgpt-conversation-daily',
+      source_turn_id: 'chatgpt-confirmation-turn-1',
+    },
+  },
+}, fullToken);
+const committedDaily = confirmedCommit.result.structuredContent;
+assert.equal(committedDaily.summary.surface, 'official_mcp');
+assert.equal(committedDaily.summary.confirmed_by_xiaohan, true);
+assert.equal(committedDaily.summary.confirmation_source, 'current_conversation');
+assert.match(committedDaily.summary.confirmation_note, /小寒/);
+assert.equal(committedDaily.diary.author, 'mcp');
+assert.equal(committedDaily.diary.surface, 'official_mcp');
+assert.ok(committedDaily.moments.every((item) => item.surface === 'official_mcp'));
+assert.ok(committedDaily.albums.every((item) => item.surface === 'official_mcp'));
+assert.equal((await listSummaries(db)).length, 1);
 
 const memory = await searchAuthorizedMemory(db, { query: '思维壤', limit: 20 });
 assert.ok(memory.records.some((record) => record.surface === 'official_mcp'));

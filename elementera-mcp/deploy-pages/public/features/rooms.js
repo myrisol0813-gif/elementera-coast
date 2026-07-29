@@ -90,9 +90,15 @@ export function createRooms({ chat, router, toast }) {
         : message.surface === 'coast_api'
           ? 'is-api'
           : '';
-      return `<article class="local-message ${message.actor === 'xiaohan' ? 'is-user' : 'is-other'} ${sourceClass}">
+      const canWithdraw = message.actor === 'xiaohan'
+        && message.surface === 'web_manual'
+        && !message.withdrawn;
+      return `<article class="local-message ${message.actor === 'xiaohan' ? 'is-user' : 'is-other'} ${sourceClass} ${message.withdrawn ? 'is-withdrawn' : ''}">
         <div>${escapeHtml(message.text)}</div>
         <small>${escapeHtml(authorMeta(message))}</small>
+        ${canWithdraw
+          ? `<button class="local-message-withdraw" type="button" data-action="rooms:withdraw-radio" data-id="${escapeAttribute(message.id)}">撤回</button>`
+          : ''}
       </article>`;
     }).join('');
   }
@@ -200,11 +206,22 @@ export function createRooms({ chat, router, toast }) {
     await router.refresh({ preserveScroll: true });
   }
 
+  async function withdrawRadio(messageId) {
+    if (!globalThis.confirm('撤回这条电波吗？撤回后房间里将不再显示正文。')) return;
+    await requestJson(`${API.radioMessages}/${encodeURIComponent(messageId)}`, {
+      method: 'DELETE',
+    });
+    await load('radio');
+    await router.refresh({ preserveScroll: true });
+    toast('这条电波已撤回。');
+  }
+
   function handleAction(name, target) {
     if (name === 'open') return open(target.dataset.kind);
     if (name === 'retry') return retry(target.dataset.kind);
     if (name === 'ask-api') return askApiMyri();
     if (name === 'mark-read') return markRead(target.dataset.id);
+    if (name === 'withdraw-radio') return withdrawRadio(target.dataset.id);
   }
 
   function handleSubmit(name, form) {

@@ -1,9 +1,11 @@
 import { ensureDailySchema } from './daily-schema.js';
+import { validateCoastIdentity } from './coast-identity.js';
 
 const MOMENT_AUTHORS = new Set(['xiaohan', 'myri', 'api', 'mcp']);
 const DIARY_AUTHORS = new Set(['xiaohan', 'api', 'mcp']);
 const SOURCES = new Set(['manual', 'chat_tool', 'daily_summary']);
-const DIARY_SOURCES = new Set(['manual', 'daily_summary']);
+const DIARY_SOURCES = new Set(['manual', 'chat_tool', 'daily_summary']);
+const DIRECT_DIARY_SOURCES = new Set(['manual', 'daily_summary']);
 const MOMENT_STATUSES = new Set(['draft', 'candidate', 'published']);
 const ALBUM_CATEGORIES = new Set(['xiaohan', 'myri', 'together']);
 const COMMENT_AUTHORS = new Set(['xiaohan', 'myri', 'api', 'mcp']);
@@ -96,6 +98,42 @@ function parseList(value) {
   }
 }
 
+function normalizedIdentity(defaults = {}) {
+  if (!defaults.identity) {
+    return {
+      actor: null,
+      surface: null,
+      model_label: null,
+      model_nickname: null,
+      symbol: null,
+      display_author: null,
+    };
+  }
+  try {
+    return validateCoastIdentity(defaults.identity);
+  } catch {
+    throw new DailyStoreError('invalid_daily_identity', '日报来源身份无效。', 400);
+  }
+}
+
+function provenanceFromDailyRow(row, defaultSurface = '') {
+  const inferredSurface = defaultSurface || (row.author === 'mcp'
+    ? 'official_mcp'
+    : ['api', 'myri'].includes(row.author)
+      ? 'coast_api'
+      : 'web_manual');
+  const surface = row.surface || inferredSurface;
+  return {
+    actor: row.actor || (surface === 'web_manual' ? 'xiaohan' : 'myri'),
+    surface,
+    model_label: row.model_label || null,
+    model_nickname: row.model_nickname || null,
+    symbol: row.symbol ?? (surface === 'official_mcp' ? '≋' : surface === 'coast_api' ? '✦' : ''),
+    display_author: row.display_author
+      || (surface === 'official_mcp' ? 'ChatGPT≋' : surface === 'coast_api' ? '✦Myrisol' : '小寒'),
+  };
+}
+
 export function sanitizeImageRef(value) {
   const clean = String(value || '').trim().slice(0, MAX_IMAGE_REF);
   if (!clean) return '';
@@ -136,6 +174,7 @@ function momentFromRow(row, comments = [], like = {}) {
     conversation_id: row.conversation_id || null,
     source_turn_id: row.source_turn_id || null,
     tool_call_id: row.tool_call_id || null,
+    ...provenanceFromDailyRow(row),
     reason: row.reason || '',
     published_at: optionalIso(row.published_at),
     created_at: iso(row.created_at),
@@ -219,6 +258,7 @@ function normalizeMoment(value = {}, defaults = {}) {
     conversation_id: optionalId(trustedOrValue(defaults, 'conversation_id', value.conversation_id)),
     source_turn_id: optionalId(trustedOrValue(defaults, 'source_turn_id', value.source_turn_id)),
     tool_call_id: optionalId(trustedOrValue(defaults, 'tool_call_id', value.tool_call_id)),
+    ...normalizedIdentity(defaults),
     reason: clip(value.reason, 1000),
     published_at: status === 'published' ? now : null,
     created_at: now,
@@ -240,8 +280,9 @@ export async function createMoment(db, value = {}, defaults = {}) {
   try {
     await run(db, `INSERT INTO daily_moments (
     id, date, author, source, status, text, image_refs_json, conversation_id,
-    source_turn_id, tool_call_id, reason, published_at, created_at, updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+    source_turn_id, tool_call_id, actor, surface, model_label, model_nickname,
+    symbol, display_author, reason, published_at, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
       item.id,
       item.date,
       item.author,
@@ -252,6 +293,12 @@ export async function createMoment(db, value = {}, defaults = {}) {
       item.conversation_id,
       item.source_turn_id,
       item.tool_call_id,
+      item.actor,
+      item.surface,
+      item.model_label,
+      item.model_nickname,
+      item.symbol,
+      item.display_author,
       item.reason || null,
       item.published_at,
       item.created_at,
@@ -346,6 +393,10 @@ function diaryFromRow(row) {
     summary_id: row.summary_id || null,
     range_start: optionalIso(row.range_start),
     range_end: optionalIso(row.range_end),
+    conversation_id: row.conversation_id || null,
+    source_turn_id: row.source_turn_id || null,
+    tool_call_id: row.tool_call_id || null,
+    ...provenanceFromDailyRow(row),
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
   };
@@ -376,11 +427,17 @@ function normalizeDiary(value = {}, defaults = {}) {
   const imageRefs = sanitizeImageRefs(value.image_refs);
   if (!text && !imageRefs.length) throw new DailyStoreError('empty_diary', '日记需要正文或图片引用。', 400);
   const range = value.range || {};
+  const trustedSource = Object.prototype.hasOwnProperty.call(defaults, 'source');
   return {
     id: cleanId(value.id, 'diary'),
     date: dateKey(value.date, new Date(now)),
     author: enumValue(trustedOrValue(defaults, 'author', value.author), DIARY_AUTHORS, 'xiaohan', '日记作者'),
-    source: enumValue(trustedOrValue(defaults, 'source', value.source), DIARY_SOURCES, 'manual', '日记来源'),
+    source: enumValue(
+      trustedOrValue(defaults, 'source', value.source),
+      trustedSource ? DIARY_SOURCES : DIRECT_DIARY_SOURCES,
+      'manual',
+      '日记来源',
+    ),
     weather: clip(value.weather || '未标注', 80),
     mood: clip(value.mood || '未标注', 120),
     text,
@@ -388,6 +445,10 @@ function normalizeDiary(value = {}, defaults = {}) {
     summary_id: optionalId(value.summary_id || defaults.summary_id),
     range_start: range.from ? timestamp(range.from, '日记生成起点') : defaults.range_start || null,
     range_end: range.to ? timestamp(range.to, '日记生成终点') : defaults.range_end || null,
+    conversation_id: optionalId(trustedOrValue(defaults, 'conversation_id', value.conversation_id)),
+    source_turn_id: optionalId(trustedOrValue(defaults, 'source_turn_id', value.source_turn_id)),
+    tool_call_id: optionalId(trustedOrValue(defaults, 'tool_call_id', value.tool_call_id)),
+    ...normalizedIdentity(defaults),
     created_at: now,
     updated_at: now,
   };
@@ -406,6 +467,10 @@ export async function createDiary(db, value = {}, defaults = {}) {
     if (existingById) return diaryFromRow(existingById);
   }
   const item = normalizeDiary(value, defaults);
+  if (item.tool_call_id) {
+    const existingByToolCall = await first(db, 'SELECT * FROM daily_diaries WHERE tool_call_id = ?', [item.tool_call_id]);
+    if (existingByToolCall) return diaryFromRow(existingByToolCall);
+  }
   const existing = await matchingDiaries(db, item.date, item.author);
   const mode = String(value.conflict_mode || '').trim();
   if (existing.length && !['append', 'replace'].includes(mode)) {
@@ -417,7 +482,9 @@ export async function createDiary(db, value = {}, defaults = {}) {
     const target = existing.find((row) => row.id === value.replace_id) || existing[0];
     await run(db, `UPDATE daily_diaries SET
       source = ?, weather = ?, mood = ?, text = ?, image_refs_json = ?,
-      summary_id = ?, range_start = ?, range_end = ?, updated_at = ?
+      summary_id = ?, range_start = ?, range_end = ?, conversation_id = ?,
+      source_turn_id = ?, tool_call_id = ?, actor = ?, surface = ?, model_label = ?,
+      model_nickname = ?, symbol = ?, display_author = ?, updated_at = ?
       WHERE id = ?`, [
       item.source,
       item.weather,
@@ -427,6 +494,15 @@ export async function createDiary(db, value = {}, defaults = {}) {
       item.summary_id,
       item.range_start,
       item.range_end,
+      item.conversation_id,
+      item.source_turn_id,
+      item.tool_call_id,
+      item.actor,
+      item.surface,
+      item.model_label,
+      item.model_nickname,
+      item.symbol,
+      item.display_author,
       item.updated_at,
       target.id,
     ]);
@@ -434,8 +510,10 @@ export async function createDiary(db, value = {}, defaults = {}) {
   }
   await run(db, `INSERT INTO daily_diaries (
     id, date, author, source, weather, mood, text, image_refs_json, summary_id,
-    range_start, range_end, created_at, updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+    range_start, range_end, conversation_id, source_turn_id, tool_call_id,
+    actor, surface, model_label, model_nickname, symbol, display_author,
+    created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
     item.id,
     item.date,
     item.author,
@@ -447,6 +525,15 @@ export async function createDiary(db, value = {}, defaults = {}) {
     item.summary_id,
     item.range_start,
     item.range_end,
+    item.conversation_id,
+    item.source_turn_id,
+    item.tool_call_id,
+    item.actor,
+    item.surface,
+    item.model_label,
+    item.model_nickname,
+    item.symbol,
+    item.display_author,
     item.created_at,
     item.updated_at,
   ]);
@@ -492,6 +579,7 @@ function albumFromRow(row) {
     conversation_id: row.conversation_id || null,
     source_turn_id: row.source_turn_id || null,
     tool_call_id: row.tool_call_id || null,
+    ...provenanceFromDailyRow(row),
     caption: row.caption || '',
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
@@ -531,6 +619,7 @@ function normalizeAlbumItem(value = {}, defaults = {}) {
     conversation_id: optionalId(trustedOrValue(defaults, 'conversation_id', value.conversation_id)),
     source_turn_id: optionalId(trustedOrValue(defaults, 'source_turn_id', value.source_turn_id)),
     tool_call_id: optionalId(trustedOrValue(defaults, 'tool_call_id', value.tool_call_id)),
+    ...normalizedIdentity(defaults),
     caption: clip(value.caption, 1000),
     created_at: now,
     updated_at: now,
@@ -551,8 +640,9 @@ export async function createAlbumItem(db, value = {}, defaults = {}) {
   try {
     await run(db, `INSERT INTO daily_album_items (
       id, date, category, author, source, image_ref, conversation_id, source_turn_id,
-      tool_call_id, caption, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+      tool_call_id, actor, surface, model_label, model_nickname, symbol, display_author,
+      caption, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
       item.id,
       item.date,
       item.category,
@@ -562,6 +652,12 @@ export async function createAlbumItem(db, value = {}, defaults = {}) {
       item.conversation_id,
       item.source_turn_id,
       item.tool_call_id,
+      item.actor,
+      item.surface,
+      item.model_label,
+      item.model_nickname,
+      item.symbol,
+      item.display_author,
       item.caption || null,
       item.created_at,
       item.updated_at,
@@ -588,6 +684,10 @@ function summaryFromRow(row) {
     moment_ids: parseList(row.moment_ids_json),
     album_item_ids: parseList(row.album_item_ids_json),
     model_id: row.model_id || null,
+    ...provenanceFromDailyRow(row, 'coast_api'),
+    confirmed_by_xiaohan: Number(row.confirmed_by_xiaohan || 0) === 1,
+    confirmation_source: row.confirmation_source || null,
+    confirmation_note: row.confirmation_note || null,
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
   };
@@ -689,7 +789,7 @@ function stringList(value, max = 20, itemMax = 400) {
     .slice(0, max);
 }
 
-export async function commitSummary(db, value = {}) {
+export async function commitSummary(db, value = {}, defaults = {}) {
   await ensureDailySchema(db);
   const requestedId = value.id ? cleanId(value.id, 'summary') : '';
   if (requestedId) {
@@ -706,6 +806,8 @@ export async function commitSummary(db, value = {}) {
 
   const now = Date.now();
   const summaryId = requestedId || cleanId('', 'summary');
+  const author = trustedOrValue(defaults, 'author', 'api');
+  const identity = normalizedIdentity(defaults);
   const statements = [];
   let diaryId = null;
   const momentIds = [];
@@ -713,11 +815,15 @@ export async function commitSummary(db, value = {}) {
 
   if (value.diary && value.diary.enabled !== false) {
     const diary = normalizeDiary(value.diary, {
-      author: 'api',
+      author,
       source: 'daily_summary',
       summary_id: summaryId,
       range_start: rangeStart,
       range_end: rangeEnd,
+      conversation_id: defaults.conversation_id || null,
+      source_turn_id: defaults.source_turn_id || null,
+      tool_call_id: null,
+      identity: defaults.identity,
     });
     const existing = await matchingDiaries(db, diary.date, diary.author);
     const mode = String(value.diary.conflict_mode || '').trim();
@@ -731,7 +837,9 @@ export async function commitSummary(db, value = {}) {
       diaryId = target.id;
       statements.push(db.prepare(`UPDATE daily_diaries SET
         source = ?, weather = ?, mood = ?, text = ?, image_refs_json = ?,
-        summary_id = ?, range_start = ?, range_end = ?, updated_at = ?
+        summary_id = ?, range_start = ?, range_end = ?, conversation_id = ?,
+        source_turn_id = ?, actor = ?, surface = ?, model_label = ?, model_nickname = ?,
+        symbol = ?, display_author = ?, updated_at = ?
         WHERE id = ?`).bind(
         diary.source,
         diary.weather,
@@ -741,6 +849,14 @@ export async function commitSummary(db, value = {}) {
         summaryId,
         rangeStart,
         rangeEnd,
+        diary.conversation_id,
+        diary.source_turn_id,
+        diary.actor,
+        diary.surface,
+        diary.model_label,
+        diary.model_nickname,
+        diary.symbol,
+        diary.display_author,
         now,
         target.id,
       ));
@@ -748,8 +864,10 @@ export async function commitSummary(db, value = {}) {
       diaryId = diary.id;
       statements.push(db.prepare(`INSERT INTO daily_diaries (
         id, date, author, source, weather, mood, text, image_refs_json, summary_id,
-        range_start, range_end, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+        range_start, range_end, conversation_id, source_turn_id, tool_call_id,
+        actor, surface, model_label, model_nickname, symbol, display_author,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
         diary.id,
         diary.date,
         diary.author,
@@ -761,6 +879,15 @@ export async function commitSummary(db, value = {}) {
         summaryId,
         rangeStart,
         rangeEnd,
+        diary.conversation_id,
+        diary.source_turn_id,
+        null,
+        diary.actor,
+        diary.surface,
+        diary.model_label,
+        diary.model_nickname,
+        diary.symbol,
+        diary.display_author,
         now,
         now,
       ));
@@ -770,17 +897,19 @@ export async function commitSummary(db, value = {}) {
   for (const candidate of (Array.isArray(value.moment_candidates) ? value.moment_candidates : []).slice(0, 12)) {
     if (candidate?.selected === false) continue;
     const moment = normalizeMoment(candidate, {
-      author: 'api',
+      author,
       source: 'daily_summary',
-      conversation_id: null,
-      source_turn_id: null,
+      conversation_id: defaults.conversation_id || null,
+      source_turn_id: defaults.source_turn_id || null,
       tool_call_id: null,
+      identity: defaults.identity,
     });
     momentIds.push(moment.id);
     statements.push(db.prepare(`INSERT INTO daily_moments (
       id, date, author, source, status, text, image_refs_json, conversation_id,
-      source_turn_id, tool_call_id, reason, published_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+      source_turn_id, tool_call_id, actor, surface, model_label, model_nickname,
+      symbol, display_author, reason, published_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
       moment.id,
       moment.date,
       moment.author,
@@ -791,6 +920,12 @@ export async function commitSummary(db, value = {}) {
       moment.conversation_id,
       moment.source_turn_id,
       null,
+      moment.actor,
+      moment.surface,
+      moment.model_label,
+      moment.model_nickname,
+      moment.symbol,
+      moment.display_author,
       moment.reason || null,
       moment.status === 'published' ? now : null,
       now,
@@ -801,26 +936,34 @@ export async function commitSummary(db, value = {}) {
   for (const candidate of (Array.isArray(value.album_candidates) ? value.album_candidates : []).slice(0, 12)) {
     if (candidate?.selected === false || !candidate?.image_ref) continue;
     const album = normalizeAlbumItem(candidate, {
-      author: 'api',
+      author,
       source: 'daily_summary',
-      conversation_id: null,
-      source_turn_id: null,
+      conversation_id: defaults.conversation_id || null,
+      source_turn_id: defaults.source_turn_id || null,
       tool_call_id: null,
+      identity: defaults.identity,
     });
     albumItemIds.push(album.id);
     statements.push(db.prepare(`INSERT INTO daily_album_items (
       id, date, category, author, source, image_ref, conversation_id, source_turn_id,
-      tool_call_id, caption, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+      tool_call_id, actor, surface, model_label, model_nickname, symbol, display_author,
+      caption, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
       album.id,
       album.date,
       album.category,
       album.author,
       album.source,
       album.image_ref,
+      album.conversation_id,
+      album.source_turn_id,
       null,
-      null,
-      null,
+      album.actor,
+      album.surface,
+      album.model_label,
+      album.model_nickname,
+      album.symbol,
+      album.display_author,
       album.caption || null,
       now,
       now,
@@ -829,8 +972,10 @@ export async function commitSummary(db, value = {}) {
 
   statements.push(db.prepare(`INSERT INTO daily_summaries (
     id, range_start, range_end, summary_text, anchors_json, unresolved_json,
-    diary_id, moment_ids_json, album_item_ids_json, model_id, created_at, updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+    diary_id, moment_ids_json, album_item_ids_json, model_id, actor, surface,
+    model_label, model_nickname, symbol, display_author, confirmed_by_xiaohan,
+    confirmation_source, confirmation_note, created_at, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
     summaryId,
     rangeStart,
     rangeEnd,
@@ -841,6 +986,15 @@ export async function commitSummary(db, value = {}) {
     JSON.stringify(momentIds),
     JSON.stringify(albumItemIds),
     clip(value.model_id, 180) || null,
+    identity.actor,
+    identity.surface,
+    identity.model_label,
+    identity.model_nickname,
+    identity.symbol,
+    identity.display_author,
+    defaults.confirmed_by_xiaohan === true ? 1 : null,
+    clip(defaults.confirmation_source, 60) || null,
+    clip(defaults.confirmation_note, 1000) || null,
     now,
     now,
   ));

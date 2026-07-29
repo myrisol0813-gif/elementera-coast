@@ -4,6 +4,7 @@ import {
   createMoment,
   sanitizeImageRefs,
 } from './daily-store.js';
+import { apiMyriIdentity } from './coast-identity.js';
 
 const CREATE_MOMENT = {
   type: 'function',
@@ -123,6 +124,8 @@ export async function executeDailyModelTool(db, toolCall, context = {}) {
     source_turn_id: context.source_turn_id,
     tool_call_id: call.id,
   };
+  const modelLabel = String(context.model_label || '').trim().slice(0, 180);
+  if (modelLabel) trusted.identity = apiMyriIdentity({ model_label: modelLabel });
 
   if (call.name === 'create_moment') {
     const imageRefs = sanitizeImageRefs(args.image_refs);

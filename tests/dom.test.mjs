@@ -315,6 +315,15 @@ globalThis.fetch = async (input, options = {}) => {
     radioMessages.push(message);
     return response({ ok: true, message }, 201);
   }
+  const radioWithdrawMatch = url.pathname.match(/^\/api\/radio\/messages\/([^/]+)$/);
+  if (radioWithdrawMatch && method === 'DELETE') {
+    const message = radioMessages.find((item) => item.id === decodeURIComponent(radioWithdrawMatch[1]));
+    message.text = '这条电波已撤回';
+    message.withdrawn = true;
+    message.withdrawn_at = now();
+    message.withdrawn_by = 'xiaohan';
+    return response({ ok: true, message });
+  }
   if (url.pathname === '/api/radio/ask-api-myri') {
     const message = {
       id: `radio-${++roomSequence}`,
@@ -1089,6 +1098,9 @@ await waitFor(() => document.querySelector('.local-message-list')?.textContent.i
 assert.ok(document.querySelector('.local-message-list').textContent.includes('小寒'));
 document.querySelector('[data-action="rooms:ask-api"]').click();
 await waitFor(() => document.querySelector('.local-message-list')?.textContent.includes('API Myri 收到了这条电波'), 'api Myri radio reply');
+document.querySelector('.local-message.is-user [data-action="rooms:withdraw-radio"]').click();
+await waitFor(() => document.querySelector('.local-message-list')?.textContent.includes('这条电波已撤回'), 'withdraw own radio message');
+assert.equal(document.querySelectorAll('[data-action="rooms:withdraw-radio"]').length, 0);
 assert.ok(document.querySelector('.local-message-list').textContent.includes('✦Myrisol'));
 assert.ok(document.querySelector('.local-message.is-api small').textContent.toLocaleLowerCase('en-US')
   .includes(profile.current_chat_model.split('/').at(-1).split('-')[0].toLocaleLowerCase('en-US')));

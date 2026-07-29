@@ -17,7 +17,7 @@ export async function routeApi(request, env, session) {
   }
   if (isDailyApiPath(url.pathname)) return routeDailyApi(request, env);
   if (isMemoryApiPath(url.pathname)) return routeMemoryApi(request, env);
-  if (isCoastRoomApiPath(url.pathname)) return routeCoastRoomApi(request, env);
+  if (isCoastRoomApiPath(url.pathname)) return routeCoastRoomApi(request, env, session);
   if (url.pathname === '/api/models') return handleModels(request, env);
   if (url.pathname === '/api/chat-sandbox') return handleSandbox(request, env);
   return apiError('not_found', 'Not found.', 404);

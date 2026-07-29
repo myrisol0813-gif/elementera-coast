@@ -77,9 +77,18 @@ assert.equal(
   db.database.prepare('SELECT id FROM schema_migrations WHERE id = ?').get(dailyMigrationIds[0]).id,
   'daily-server-v1',
 );
+assert.equal(
+  db.database.prepare('SELECT id FROM schema_migrations WHERE id = ?').get(dailyMigrationIds[1]).id,
+  'daily-mcp-interfaces-v1',
+);
 assert.ok(db.database.prepare('PRAGMA table_info(daily_moments)').all().some((column) => column.name === 'tool_call_id'));
 assert.ok(db.database.prepare('PRAGMA table_info(daily_album_items)').all().some((column) => column.name === 'tool_call_id'));
 assert.ok(db.database.prepare('PRAGMA table_info(daily_moment_comments)').all().some((column) => column.name === 'model_id'));
+for (const table of ['daily_moments', 'daily_diaries', 'daily_album_items', 'daily_summaries']) {
+  assert.ok(db.database.prepare(`PRAGMA table_info(${table})`).all().some((column) => column.name === 'surface'));
+  assert.ok(db.database.prepare(`PRAGMA table_info(${table})`).all().some((column) => column.name === 'display_author'));
+}
+assert.ok(db.database.prepare('PRAGMA table_info(daily_summaries)').all().some((column) => column.name === 'confirmation_note'));
 
 const moment = await createMoment(db, {
   text: '海岸今天接上了服务器。',
@@ -121,11 +130,13 @@ const firstTool = await executeDailyModelTool(db, toolCall, {
   conversation_id: 'conversation-1',
   source_turn_id: 'turn-1',
   local_date: '2026-07-28',
+  model_label: 'openai/gpt-4.1-nano',
 });
 const repeatedTool = await executeDailyModelTool(db, toolCall, {
   conversation_id: 'conversation-1',
   source_turn_id: 'turn-1',
   local_date: '2026-07-28',
+  model_label: 'openai/gpt-4.1-nano',
 });
 assert.equal(firstTool.id, repeatedTool.id, 'tool retries must be idempotent');
 assert.equal(
@@ -138,6 +149,9 @@ assert.equal(modelMoment.source, 'chat_tool');
 assert.equal(modelMoment.date, '2026-07-28');
 assert.equal(modelMoment.conversation_id, 'conversation-1');
 assert.equal(modelMoment.source_turn_id, 'turn-1');
+assert.equal(modelMoment.surface, 'coast_api');
+assert.equal(modelMoment.symbol, '✦');
+assert.equal(modelMoment.model_label, 'openai/gpt-4.1-nano');
 await assert.rejects(
   () => executeDailyModelTool(db, {
     ...toolCall,
@@ -205,10 +219,12 @@ const albumToolCall = {
 const firstAlbumTool = await executeDailyModelTool(db, albumToolCall, {
   conversation_id: 'conversation-1',
   source_turn_id: 'turn-2',
+  model_label: 'openai/gpt-4.1-nano',
 });
 const repeatedAlbumTool = await executeDailyModelTool(db, albumToolCall, {
   conversation_id: 'conversation-1',
   source_turn_id: 'turn-2',
+  model_label: 'openai/gpt-4.1-nano',
 });
 assert.equal(firstAlbumTool.id, repeatedAlbumTool.id);
 assert.equal((await listAlbumItems(db)).length, 1);
@@ -395,6 +411,49 @@ assert.equal(manualMoment.source, 'manual');
 assert.equal(manualMoment.conversation_id, null);
 assert.equal(manualMoment.source_turn_id, null);
 assert.equal(manualMoment.tool_call_id, null);
+assert.equal(manualMoment.actor, 'xiaohan');
+assert.equal(manualMoment.surface, 'web_manual');
+assert.equal(manualMoment.display_author, '小寒');
+const apiMomentsRead = await routeApi(new Request('https://coast.test/api/daily/moments'), {
+  COAST_CHAT_DB: db,
+}, { exp: 1 });
+assert.equal(apiMomentsRead.status, 200);
+assert.ok((await apiMomentsRead.json()).moments.some((entry) => entry.id === manualMoment.id));
+const apiDiaryWrite = await routeApi(new Request('https://coast.test/api/daily/diaries', {
+  method: 'POST',
+  headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    date: '2026-07-30',
+    author: 'mcp',
+    source: 'daily_summary',
+    text: '网页端小寒写下的 API 烟测日记。',
+  }),
+}), { COAST_CHAT_DB: db }, { exp: 1 });
+assert.equal(apiDiaryWrite.status, 201);
+const apiDiary = (await apiDiaryWrite.json()).diary;
+assert.equal(apiDiary.author, 'xiaohan');
+assert.equal(apiDiary.surface, 'web_manual');
+const apiDiariesRead = await routeApi(new Request('https://coast.test/api/daily/diaries'), {
+  COAST_CHAT_DB: db,
+}, { exp: 1 });
+assert.ok((await apiDiariesRead.json()).diaries.some((entry) => entry.id === apiDiary.id));
+const apiAlbumWrite = await routeApi(new Request('https://coast.test/api/daily/albums', {
+  method: 'POST',
+  headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    date: '2026-07-30',
+    image_ref: 'coast://smoke/api-album.png',
+    category: 'together',
+    caption: '日报 API 相册烟测。',
+  }),
+}), { COAST_CHAT_DB: db }, { exp: 1 });
+assert.equal(apiAlbumWrite.status, 201);
+const apiAlbum = (await apiAlbumWrite.json()).album;
+assert.equal(apiAlbum.surface, 'web_manual');
+const apiAlbumsRead = await routeApi(new Request('https://coast.test/api/daily/albums'), {
+  COAST_CHAT_DB: db,
+}, { exp: 1 });
+assert.ok((await apiAlbumsRead.json()).albums.some((entry) => entry.id === apiAlbum.id));
 const unauthorized = await onRequest({
   request: new Request('https://coast.test/api/daily/moments'),
   env: {},
@@ -553,6 +612,22 @@ assert.ok(summaryProviderPayload.messages.at(-1).content.includes('日报岛种�
 assert.ok(summaryProviderPayload.messages.at(-1).content.includes('总记忆里的潮声'));
 assert.ok(summaryProviderPayload.messages.at(-1).content.includes('跨窗口记忆'));
 assert.equal(summaryProviderPayload.messages.at(-1).content.includes('今天把日报岛接到服务器。'), false);
+const summaryCommitResponse = await routeApi(new Request('https://coast.test/api/daily/summary/commit', {
+  method: 'POST',
+  headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    ...summaryData.draft,
+    model_id: summaryData.model,
+  }),
+}), { COAST_CHAT_DB: summaryDb }, { exp: 1 });
+assert.equal(summaryCommitResponse.status, 201);
+const summaryCommitData = await summaryCommitResponse.json();
+assert.equal(summaryCommitData.summary.id, summaryData.draft.id);
+assert.equal(summaryCommitData.summary.surface, 'coast_api');
+const summariesReadResponse = await routeApi(new Request('https://coast.test/api/daily/summaries'), {
+  COAST_CHAT_DB: summaryDb,
+}, { exp: 1 });
+assert.ok((await summariesReadResponse.json()).summaries.some((entry) => entry.id === summaryData.draft.id));
 
 await createDiary(summaryDb, {
   date: '2026-07-28',
@@ -576,7 +651,7 @@ const commentData = await commentResponse.json();
 assert.equal(commentData.comment.author, 'myri');
 assert.equal(commentData.comment.text, '我在这里，给这小小一瞬点一盏灯。');
 assert.equal(commentData.comment.model_id, 'openai/gpt-4.1-nano');
-assert.equal(commentData.source_counts.diaries, 1);
+assert.equal(commentData.source_counts.diaries, 2);
 assert.equal(commentData.source_counts.soils, 1);
 assert.ok(commentProviderPayload.messages.at(-1).content.includes('日记上下文：今天想让朋友圈像短短的海岸呼吸。'));
 assert.ok(commentProviderPayload.messages.at(-1).content.includes('已经整理过的潮线方向。'));

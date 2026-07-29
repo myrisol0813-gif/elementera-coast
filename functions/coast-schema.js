@@ -1,8 +1,21 @@
 const MIGRATION_ID = 'mcp-porch-v1';
+const RADIO_WITHDRAW_MIGRATION_ID = 'radio-withdraw-v1';
 const schemaPromises = new WeakMap();
 
 async function run(db, sql, params = []) {
   return db.prepare(sql).bind(...params).run();
+}
+
+async function all(db, sql, params = []) {
+  const result = await db.prepare(sql).bind(...params).all();
+  return result?.results || [];
+}
+
+async function ensureColumn(db, table, column, declaration) {
+  const columns = await all(db, `PRAGMA table_info(${table})`);
+  if (!columns.some((item) => item.name === column)) {
+    await run(db, `ALTER TABLE ${table} ADD COLUMN ${column} ${declaration}`);
+  }
 }
 
 async function initialize(db) {
@@ -40,8 +53,12 @@ async function initialize(db) {
     source_conversation_id TEXT,
     source_turn_id TEXT,
     tool_call_id TEXT UNIQUE,
+    withdrawn_at INTEGER,
+    withdrawn_by TEXT,
     created_at INTEGER NOT NULL
   )`);
+  await ensureColumn(db, 'coast_radio_messages', 'withdrawn_at', 'INTEGER DEFAULT NULL');
+  await ensureColumn(db, 'coast_radio_messages', 'withdrawn_by', 'TEXT DEFAULT NULL');
   await run(db, `CREATE TABLE IF NOT EXISTS coast_lighthouse_letters (
     id TEXT PRIMARY KEY,
     subject TEXT NOT NULL DEFAULT '',
@@ -70,6 +87,10 @@ async function initialize(db) {
     MIGRATION_ID,
     Date.now(),
   ]);
+  await run(db, 'INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)', [
+    RADIO_WITHDRAW_MIGRATION_ID,
+    Date.now(),
+  ]);
 }
 
 export async function ensureCoastSchema(db) {
@@ -86,4 +107,4 @@ export async function ensureCoastSchema(db) {
   }
 }
 
-export const coastMigrationIds = Object.freeze([MIGRATION_ID]);
+export const coastMigrationIds = Object.freeze([MIGRATION_ID, RADIO_WITHDRAW_MIGRATION_ID]);

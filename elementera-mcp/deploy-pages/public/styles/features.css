@@ -401,6 +401,24 @@
   font-size: 11px;
 }
 
+.local-message-withdraw {
+  padding: 2px 5px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.local-message-withdraw:hover {
+  color: var(--danger);
+}
+
+.local-message.is-withdrawn > div {
+  color: var(--muted);
+  font-style: italic;
+}
+
 .local-message.is-official > div {
   box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 65%, transparent);
 }
