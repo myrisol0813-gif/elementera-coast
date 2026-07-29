@@ -150,9 +150,13 @@ const kid = 'coast-test-key';
 const publicJwk = { ...publicKey.export({ format: 'jwk' }), alg: 'RS256', use: 'sig', kid };
 const unavailableIssuer = 'https://auth-unavailable.coast-test.example/';
 const exceptionIssuer = 'https://auth-exception.coast-test.example/';
+const invalidJsonIssuer = 'https://auth-invalid-json.coast-test.example/';
+const emptyKeysIssuer = 'https://auth-empty-keys.coast-test.example/';
+const jwksRequests = [];
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (input, options) => {
   if (String(input) === `${issuer}.well-known/jwks.json`) {
+    jwksRequests.push({ url: String(input), options });
     return new Response(JSON.stringify({ keys: [publicJwk] }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -163,6 +167,18 @@ globalThis.fetch = async (input, options) => {
   }
   if (String(input) === `${exceptionIssuer}.well-known/jwks.json`) {
     throw new DOMException('unavailable', 'AbortError');
+  }
+  if (String(input) === `${invalidJsonIssuer}.well-known/jwks.json`) {
+    return new Response('not-json', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+  if (String(input) === `${emptyKeysIssuer}.well-known/jwks.json`) {
+    return new Response(JSON.stringify({ keys: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
   return originalFetch(input, options);
 };
@@ -223,6 +239,10 @@ const malformedBearerError = await rejectedAuth({ authorization: 'Basic not-a-be
 assert.equal(malformedBearerError.failureCode, 'malformed_bearer_token');
 assert.equal(malformedBearerError.details.auth_diagnostic.authorization_header_present, true);
 assert.equal(malformedBearerError.details.auth_diagnostic.bearer_scheme_present, false);
+assert.equal(mcpAuthConfig({
+  ...env,
+  COAST_MCP_AUTH0_ISSUER: `${issuer}///`,
+}).issuer, issuer, 'issuer trailing slashes must normalize to one slash');
 
 const tokenShapeCases = [
   ['opaque-access-token', 'token_not_jwt', 0],
@@ -271,6 +291,10 @@ const jwksFetchError = await rejectedAuth({
 });
 assert.equal(jwksFetchError.failureCode, 'jwt_verify_failed');
 assert.equal(jwksFetchError.details.auth_diagnostic.jwt_verify_reason, 'jwks_fetch_failed');
+assert.equal(jwksFetchError.details.auth_diagnostic.jwks_failure_reason, 'jwks_http_status');
+assert.equal(jwksFetchError.details.auth_diagnostic.jwks_url_valid, true);
+assert.equal(jwksFetchError.details.auth_diagnostic.jwks_http_status, 503);
+assert.equal(jwksFetchError.details.auth_diagnostic.jwks_fetch_exception_name, null);
 assert.equal(jwksFetchError.details.auth_diagnostic.unverified_payload_iss_matches_expected, true);
 assert.equal(jwksFetchError.details.auth_diagnostic.unverified_payload_aud_matches_expected, true);
 const jwksException = await rejectedAuth({
@@ -281,12 +305,42 @@ const jwksException = await rejectedAuth({
   },
 });
 assert.equal(jwksException.details.auth_diagnostic.jwt_verify_reason, 'jwks_fetch_failed');
+assert.equal(jwksException.details.auth_diagnostic.jwks_failure_reason, 'jwks_fetch_exception_name');
+assert.equal(jwksException.details.auth_diagnostic.jwks_url_valid, true);
+assert.equal(jwksException.details.auth_diagnostic.jwks_http_status, null);
 assert.equal(jwksException.details.auth_diagnostic.verify_exception_name, 'AbortError');
+assert.equal(jwksException.details.auth_diagnostic.jwks_fetch_exception_name, 'AbortError');
+const jwksJsonError = await rejectedAuth({
+  authorization: `Bearer ${await token(['read:coast'], { issuer: invalidJsonIssuer })}`,
+  authEnv: {
+    ...env,
+    COAST_MCP_AUTH0_ISSUER: invalidJsonIssuer,
+  },
+});
+assert.equal(jwksJsonError.details.auth_diagnostic.jwt_verify_reason, 'jwks_fetch_failed');
+assert.equal(jwksJsonError.details.auth_diagnostic.jwks_failure_reason, 'jwks_json_parse_failed');
+assert.equal(jwksJsonError.details.auth_diagnostic.jwks_http_status, 200);
+assert.equal(jwksJsonError.details.auth_diagnostic.jwks_fetch_exception_name, 'SyntaxError');
+const jwksEmptyKeys = await rejectedAuth({
+  authorization: `Bearer ${await token(['read:coast'], { issuer: emptyKeysIssuer })}`,
+  authEnv: {
+    ...env,
+    COAST_MCP_AUTH0_ISSUER: emptyKeysIssuer,
+  },
+});
+assert.equal(jwksEmptyKeys.details.auth_diagnostic.jwt_verify_reason, 'jwks_fetch_failed');
+assert.equal(jwksEmptyKeys.details.auth_diagnostic.jwks_failure_reason, 'jwks_empty_keys');
+assert.equal(jwksEmptyKeys.details.auth_diagnostic.jwks_http_status, 200);
+assert.equal(jwksEmptyKeys.details.auth_diagnostic.jwks_usable_key_count, 0);
 
 const directAuth = await requireMcpAuth(new Request('https://coast.test/mcp', {
   headers: { Authorization: `Bearer ${fullToken}` },
 }), env, ['write:soil']);
 assert.equal(directAuth.subject, subject);
+assert.equal(jwksRequests[0].url, `${issuer}.well-known/jwks.json`);
+assert.deepEqual(jwksRequests[0].options, {
+  headers: { accept: 'application/json' },
+});
 await assert.rejects(
   () => requireMcpAuth(new Request('https://coast.test/mcp', {
     headers: { Authorization: `Bearer ${fullToken}` },

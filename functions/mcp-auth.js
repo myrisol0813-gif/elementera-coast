@@ -37,6 +37,11 @@ function createAuthDiagnostic(request, requiredScopes = []) {
     unverified_payload_aud_matches_expected: null,
     unverified_payload_scope_present: null,
     verify_exception_name: null,
+    jwks_failure_reason: null,
+    jwks_url_valid: null,
+    jwks_http_status: null,
+    jwks_fetch_exception_name: null,
+    jwks_usable_key_count: null,
     claim_checks: {
       iss_matches: null,
       aud_matches: null,
@@ -63,6 +68,11 @@ function diagnosticSnapshot(value) {
     unverified_payload_aud_matches_expected: value.unverified_payload_aud_matches_expected,
     unverified_payload_scope_present: value.unverified_payload_scope_present,
     verify_exception_name: value.verify_exception_name,
+    jwks_failure_reason: value.jwks_failure_reason,
+    jwks_url_valid: value.jwks_url_valid,
+    jwks_http_status: value.jwks_http_status,
+    jwks_fetch_exception_name: value.jwks_fetch_exception_name,
+    jwks_usable_key_count: value.jwks_usable_key_count,
     claim_checks: { ...value.claim_checks },
   };
 }
@@ -94,6 +104,13 @@ function jwtFailure(reason, message, diagnostic, { status = 401, exception = nul
   return authFailure('jwt_verify_failed', message, status, diagnostic);
 }
 
+function jwksFailure(reason, message, diagnostic, { httpStatus = null, exception = null } = {}) {
+  diagnostic.jwks_failure_reason = reason;
+  diagnostic.jwks_http_status = Number.isInteger(httpStatus) ? httpStatus : diagnostic.jwks_http_status;
+  diagnostic.jwks_fetch_exception_name = safeExceptionName(exception);
+  return jwtFailure('jwks_fetch_failed', message, diagnostic, { exception });
+}
+
 function safeJwtAlg(value) {
   const algorithm = typeof value === 'string' ? value.trim() : '';
   if (!algorithm) return null;
@@ -118,7 +135,7 @@ function issuerUrl(value) {
   if (url.protocol !== 'https:') throw new McpAuthError('mcp_auth_not_configured', 'MCP OAuth issuer 必须使用 HTTPS。', 503);
   url.hash = '';
   url.search = '';
-  if (!url.pathname.endsWith('/')) url.pathname += '/';
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/`;
   return url.href;
 }
 
@@ -306,38 +323,67 @@ export function validateMcpClaims(
   });
 }
 
+function jwksUrlForIssuer(issuer, diagnostic) {
+  const normalizedIssuer = String(issuer || '').replace(/\/+$/, '');
+  const value = `${normalizedIssuer}/.well-known/jwks.json`;
+  let url;
+  try {
+    url = new URL(value);
+  } catch (error) {
+    diagnostic.jwks_url_valid = false;
+    throw jwksFailure(
+      'jwks_url_invalid',
+      'Auth0 JWKS 地址无效。',
+      diagnostic,
+      { exception: error },
+    );
+  }
+  const valid = url.protocol === 'https:'
+    && !url.username
+    && !url.password
+    && !url.search
+    && !url.hash
+    && url.pathname.endsWith('/.well-known/jwks.json');
+  diagnostic.jwks_url_valid = valid;
+  if (!valid) {
+    throw jwksFailure('jwks_url_invalid', 'Auth0 JWKS 地址无效。', diagnostic);
+  }
+  return url.href;
+}
+
 async function remoteJwks(issuer, diagnostic, { refresh = false } = {}) {
   const cached = jwksByIssuer.get(issuer);
   if (!refresh && cached && cached.expires_at > Date.now()) return cached;
   if (refresh && cached && cached.refreshed_at + JWKS_REFRESH_COOLDOWN_MS > Date.now()) return cached;
+  const jwksUrl = jwksUrlForIssuer(issuer, diagnostic);
   let response;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5_000);
   try {
-    response = await fetch(new URL('.well-known/jwks.json', issuer), {
-      headers: { Accept: 'application/json' },
-      redirect: 'error',
-      signal: controller.signal,
+    response = await fetch(jwksUrl, {
+      headers: { accept: 'application/json' },
     });
   } catch (error) {
-    throw jwtFailure(
-      'jwks_fetch_failed',
+    throw jwksFailure(
+      'jwks_fetch_exception_name',
       '暂时无法读取海岸身份签名密钥。',
       diagnostic,
       { exception: error },
     );
-  } finally {
-    clearTimeout(timeout);
   }
+  diagnostic.jwks_http_status = response.status;
   if (!response.ok) {
-    throw jwtFailure('jwks_fetch_failed', '暂时无法读取海岸身份签名密钥。', diagnostic);
+    throw jwksFailure(
+      'jwks_http_status',
+      'Auth0 JWKS 请求返回了失败状态。',
+      diagnostic,
+      { httpStatus: response.status },
+    );
   }
   let body;
   try {
     body = await response.json();
   } catch (error) {
-    throw jwtFailure(
-      'jwks_fetch_failed',
+    throw jwksFailure(
+      'jwks_json_parse_failed',
       '海岸身份签名密钥响应格式无效。',
       diagnostic,
       { exception: error },
@@ -346,8 +392,9 @@ async function remoteJwks(issuer, diagnostic, { refresh = false } = {}) {
   const keys = Array.isArray(body?.keys)
     ? body.keys.filter((key) => key?.kty === 'RSA' && key?.kid && (!key.use || key.use === 'sig'))
     : [];
+  diagnostic.jwks_usable_key_count = keys.length;
   if (!keys.length) {
-    throw jwtFailure('no_matching_jwk', '没有可用于验证海岸连接的签名密钥。', diagnostic);
+    throw jwksFailure('jwks_empty_keys', 'Auth0 JWKS 没有可用的 RSA 签名密钥。', diagnostic);
   }
   const value = {
     keys,

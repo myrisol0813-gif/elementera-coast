@@ -273,6 +273,18 @@ for (const jwtVerifyReason of [
     `missing safe JWT verify reason: ${jwtVerifyReason}`,
   );
 }
+for (const jwksFailureReason of [
+  'jwks_url_invalid',
+  'jwks_http_status',
+  'jwks_json_parse_failed',
+  'jwks_empty_keys',
+  'jwks_fetch_exception_name',
+]) {
+  assert.ok(
+    mcpOwnerSource.includes(`'${jwksFailureReason}'`),
+    `missing safe JWKS failure reason: ${jwksFailureReason}`,
+  );
+}
 for (const deferredTool of [
   'create_moment_from_mcp',
   'save_album_reference_from_mcp',

@@ -217,6 +217,11 @@ function authErrorResult(request, error, scopes, toolName) {
     unverified_payload_aud_matches_expected: null,
     unverified_payload_scope_present: null,
     verify_exception_name: null,
+    jwks_failure_reason: null,
+    jwks_url_valid: null,
+    jwks_http_status: null,
+    jwks_fetch_exception_name: null,
+    jwks_usable_key_count: null,
     claim_checks: {},
   };
   console.warn('[mcp-auth-failed]', JSON.stringify({
