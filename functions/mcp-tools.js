@@ -16,7 +16,7 @@ import { writeOfficialSoil } from './official-soil-store.js';
 import { listRadioMessages, sendRadioMessage } from './radio-store.js';
 import { listRoomMemory, writeRoomMemory } from './room-memory.js';
 
-const VERSION = '1.2.0';
+const VERSION = '1.2.1';
 const PRIVATE_RECORD_SCHEMA = Object.freeze({ type: 'object', additionalProperties: true });
 
 function objectSchema(properties = {}, required = []) {
@@ -126,12 +126,15 @@ const TOOL_DEFINITIONS = Object.freeze([
   tool({
     name: 'list_lighthouse_letters',
     title: '读取灯塔来信',
-    description: 'Use this when the user wants to read low-frequency letters stored in the private Elementera Coast lighthouse.',
+    description: 'Read the private low-frequency letter room shared only by Xiaohan and official ChatGPT≋. Coast API ✦ is not a participant. The response includes the two-side room memory, with Xiaohan’s handwritten 神秘狗话 marked as higher-priority room guidance.',
     inputSchema: objectSchema({
       limit: { type: 'integer', minimum: 1, maximum: 100 },
       unread_only: { type: 'boolean' },
     }),
-    outputSchema: objectSchema({ letters: { type: 'array', items: PRIVATE_RECORD_SCHEMA } }, ['letters']),
+    outputSchema: objectSchema({
+      letters: { type: 'array', items: PRIVATE_RECORD_SCHEMA },
+      room_memory: PRIVATE_RECORD_SCHEMA,
+    }, ['letters', 'room_memory']),
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     _meta: toolMeta(['read:coast'], '正在查看灯塔来信…', '灯塔来信已展开'),
   }),
@@ -566,7 +569,12 @@ function mcpReadableRoomMemory(memory) {
       pending_pockets: [],
     };
   }
-  return { room_id: memory?.room_id || '', sources };
+  return {
+    room_id: memory?.room_id || '',
+    participants: Array.isArray(memory?.participants) ? memory.participants : [],
+    owner_note: memory?.owner_note || null,
+    sources,
+  };
 }
 
 async function executeTool(name, rawArgs, request, env, requestMeta) {
@@ -595,11 +603,17 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     );
   }
   if (name === 'list_lighthouse_letters') {
-    const letters = await listLighthouseLetters(env.COAST_CHAT_DB, {
-      limit: integerInput(args.limit, 'limit', 50, 100),
-      unread_only: booleanInput(args.unread_only, 'unread_only'),
-    });
-    return resultContent({ letters }, `读取了 ${letters.length} 封灯塔来信。`);
+    const [letters, roomMemory] = await Promise.all([
+      listLighthouseLetters(env.COAST_CHAT_DB, {
+        limit: integerInput(args.limit, 'limit', 50, 100),
+        unread_only: booleanInput(args.unread_only, 'unread_only'),
+      }),
+      listRoomMemory(env.COAST_CHAT_DB, 'lighthouse'),
+    ]);
+    return resultContent(
+      { letters, room_memory: mcpReadableRoomMemory(roomMemory) },
+      `读取了 ${letters.length} 封小寒与官端 ChatGPT≋ 之间的灯塔来信；海岸 API ✦ 不属于这个房间。`,
+    );
   }
   if (name === 'search_authorized_memory') {
     const result = await searchAuthorizedMemory(env.COAST_CHAT_DB, {
@@ -812,5 +826,5 @@ export async function callCoastMcpTool(name, args, request, env, requestMeta = {
 }
 
 export const coastMcpToolNames = Object.freeze(TOOL_DEFINITIONS.map(({ name }) => name));
-export const coastMcpInstructions = 'Elementera Coast 是小寒的单人私有海岸。官端可留下自己的灯塔巡迹，也可写入电波、灯塔来信、创建碳硅圈候选、创建 MCP 日记草稿和登记稳定相册图片引用，但只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或海岸 API ✦。灯塔巡迹是官端读取授权内容后留下的只读跨端足迹，不是施工日志池、草稿箱，也不是贴着当前对话持续更新的思维壤。日记与碳硅圈草稿必须由小寒在海岸前端确认后才会发布，不能塞进电波房或灯塔巡迹，也不能由官端自行发布或丢弃。上下文不足时先读取授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。';
+export const coastMcpInstructions = 'Elementera Coast 是小寒的单人私有海岸。官端可留下自己的灯塔巡迹，也可写入电波、灯塔来信、创建碳硅圈候选、创建 MCP 日记草稿和登记稳定相册图片引用，但只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或海岸 API ✦。三端电波房属于小寒、海岸 API ✦、官端 ChatGPT≋；灯塔来信只属于小寒与官端 ChatGPT≋，海岸 API ✦ 不是灯塔来信参与者。房间中的“小寒侧 · 神秘狗话”是小寒手写的高优先级当前理解与召回提示，官端只能读取，不能写改删，也不能把它擅自升级成长期记忆。灯塔巡迹是官端读取授权内容后留下的只读跨端足迹，不是施工日志池、草稿箱，也不是贴着当前对话持续更新的思维壤。日记与碳硅圈草稿必须由小寒在海岸前端确认后才会发布，不能塞进电波房或灯塔巡迹，也不能由官端自行发布或丢弃。上下文不足时先读取授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。';
 export { VERSION as coastMcpVersion };

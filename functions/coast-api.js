@@ -11,7 +11,12 @@ import { MemoryStoreError } from './memory-store.js';
 import { askApiMyriInRadio } from './radio-myri.js';
 import { requireOwnerSession, OwnerAccessError } from './owner-access.js';
 import { listRadioMessages, sendRadioMessage, withdrawRadioMessageByOwner } from './radio-store.js';
-import { listRoomMemory, resolveRoomPocketByOwner } from './room-memory.js';
+import {
+  deleteOwnerRoomNote,
+  listRoomMemory,
+  resolveRoomPocketByOwner,
+  writeOwnerRoomNote,
+} from './room-memory.js';
 
 const RADIO_MESSAGES = '/api/radio/messages';
 const RADIO_ASK = '/api/radio/ask-api-myri';
@@ -85,6 +90,19 @@ export async function routeCoastRoomApi(request, env, session = null) {
           url.pathname === RADIO_MEMORY ? 'radio' : 'lighthouse',
         ),
       });
+    }
+    const ownerNoteMatch = url.pathname.match(/^\/api\/(radio|lighthouse)\/memory\/owner-note$/);
+    if (ownerNoteMatch) {
+      if (!['PUT', 'DELETE'].includes(request.method)) return methodNotAllowed('PUT, DELETE');
+      requireOwnerSession(session);
+      const ownerNote = request.method === 'DELETE'
+        ? await deleteOwnerRoomNote(env.COAST_CHAT_DB, ownerNoteMatch[1])
+        : await writeOwnerRoomNote(
+          env.COAST_CHAT_DB,
+          ownerNoteMatch[1],
+          await readJson(request),
+        );
+      return json({ ok: true, owner_note: ownerNote });
     }
     const roomPocketMatch = url.pathname.match(/^\/api\/(radio|lighthouse)\/memory\/pockets\/([^/]+)\/resolve$/);
     if (roomPocketMatch) {

@@ -11,7 +11,7 @@ const ROOM_COPY = Object.freeze({
   lighthouse: {
     title: '灯塔来信',
     sidebar: '【同步·】灯塔来信',
-    subtitle: '低频长信 · 服务器同步',
+    subtitle: '小寒 ↔ 官端灯塔侧 ≋',
     empty: '灯塔已经亮起，暂时还没有来信。',
   },
 });
@@ -127,18 +127,42 @@ export function createRooms({ chat, router, toast }) {
 
   function roomMemoryBody(kind) {
     const memory = state[kind].memory;
+    const drawerTitle = kind === 'radio'
+      ? '房间记忆 · 三侧分开'
+      : '房间记忆 · 两侧分开';
     if (!memory?.sources) {
-      return '<section class="feature-card feature-prose room-memory-summary"><p class="feature-note">房间记忆暂时没有同步；消息本身仍可正常读取。</p></section>';
+      return `<section class="room-memory-drawer"><details class="room-memory-summary">
+        <summary>${escapeHtml(drawerTitle)}</summary>
+        <div class="room-memory-content"><p class="feature-note">房间记忆暂未同步，消息与来信仍可正常读取。</p></div>
+      </details></section>`;
     }
-    const sources = [
-      ['web_manual', '小寒侧'],
-      ['coast_api', '海岸 API ✦'],
-      ['official_mcp', '官端灯塔侧 ≋'],
-    ];
+    const sources = kind === 'radio'
+      ? [
+        ['web_manual', '小寒侧 · 神秘狗话'],
+        ['coast_api', '海岸 API ✦ · 自动滚动壤'],
+        ['official_mcp', '官端灯塔侧 ≋ · 自动滚动壤'],
+      ]
+      : [
+        ['web_manual', '小寒侧 · 神秘狗话'],
+        ['official_mcp', '官端灯塔侧 ≋ · 自动滚动壤'],
+      ];
+    const ownerNote = String(memory.owner_note?.text
+      ?? memory.sources.web_manual?.soil?.current_text
+      ?? '').trim();
     const soils = sources.map(([source, label]) => {
       const soil = memory.sources[source]?.soil || {};
       const text = String(soil.current_text || '').trim();
-      return `<div class="feature-row static"><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(text || '这一侧还没有滚动思维壤。')}</small></span></div>`;
+      if (source === 'web_manual') {
+        return `<section class="room-memory-source is-owner-note">
+          <label for="roomOwnerNote-${kind}"><strong>${escapeHtml(label)}</strong><small>小寒亲手写给本房间的理解与召回提示，优先于自动滚动壤，但不会自动变成长久记忆。</small></label>
+          <textarea id="roomOwnerNote-${kind}" maxlength="4000" rows="4" placeholder="在这里写一点神秘狗话……">${escapeHtml(ownerNote)}</textarea>
+          <div class="button-row">
+            ${ownerNote ? `<button type="button" data-action="rooms:delete-owner-note" data-kind="${kind}">清除</button>` : ''}
+            <button class="primary" type="button" data-action="rooms:save-owner-note" data-kind="${kind}">保存神秘狗话</button>
+          </div>
+        </section>`;
+      }
+      return `<div class="feature-row static room-memory-source"><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(text || '暂无')}</small></span></div>`;
     }).join('');
     const pockets = sources.flatMap(([source, label]) => (
       (memory.sources[source]?.pending_pockets || []).map((pocket) => ({ pocket, label }))
@@ -155,14 +179,13 @@ export function createRooms({ chat, router, toast }) {
             <button type="button" data-action="rooms:resolve-pocket" data-kind="${kind}" data-id="${escapeAttribute(pocket.id)}" data-destination="confirm_pocket">确认落袋</button>
           </div>
         </article>`).join('')}</div>`
-      : '<p class="feature-note">房间待确认袋现在是空的；候选不会在确认前参与事实召回。</p>';
-    return `<details class="feature-card feature-prose room-memory-summary">
-      <summary>房间记忆 · 三侧分开</summary>
-      <p class="feature-note">${kind === 'radio'
-        ? '这里是与官端通信的聊天室 / 灯塔侧入口。底层与普通窗口一样拥有思维壤、待确认袋、种子和记忆，但三侧不会互相覆盖。'
-        : '灯塔来信是低频长信窗口；它有自己的灯塔侧记忆分区，不会混成即时电波或巡迹。'}</p>
-      ${soils}${pending}
-    </details>`;
+      : '<p class="feature-note room-memory-empty">待确认袋：暂无。候选在确认前不参与事实召回。</p>';
+    return `<section class="room-memory-drawer"><details class="room-memory-summary">
+      <summary>${escapeHtml(drawerTitle)}</summary>
+      <div class="room-memory-content">
+        ${soils}${pending}
+      </div>
+    </details></section>`;
   }
 
   function roomView({ kind }) {
@@ -272,12 +295,34 @@ export function createRooms({ chat, router, toast }) {
     toast(action === 'discard' ? '候选已经丢弃。' : '已经放进对应的房间记忆分区。');
   }
 
+  async function saveOwnerNote(kind) {
+    const text = q(`#roomOwnerNote-${kind}`)?.value || '';
+    const base = kind === 'lighthouse' ? API.lighthouseMemory : API.radioMemory;
+    await requestJson(`${base}/owner-note`, {
+      method: 'PUT',
+      body: JSON.stringify({ text }),
+    });
+    await load(kind);
+    await router.refresh({ preserveScroll: true });
+    toast('神秘狗话已经写进这个房间。');
+  }
+
+  async function deleteOwnerNote(kind) {
+    const base = kind === 'lighthouse' ? API.lighthouseMemory : API.radioMemory;
+    await requestJson(`${base}/owner-note`, { method: 'DELETE' });
+    await load(kind);
+    await router.refresh({ preserveScroll: true });
+    toast('这段神秘狗话已经清除。');
+  }
+
   function handleAction(name, target) {
     if (name === 'open') return open(target.dataset.kind);
     if (name === 'retry') return retry(target.dataset.kind);
     if (name === 'ask-api') return askApiMyri();
     if (name === 'mark-read') return markRead(target.dataset.id);
     if (name === 'withdraw-radio') return withdrawRadio(target.dataset.id);
+    if (name === 'save-owner-note') return saveOwnerNote(target.dataset.kind);
+    if (name === 'delete-owner-note') return deleteOwnerNote(target.dataset.kind);
     if (name === 'resolve-pocket') {
       return resolvePocket(target.dataset.kind, target.dataset.id, target.dataset.destination);
     }

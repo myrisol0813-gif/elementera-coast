@@ -23,6 +23,11 @@ import { listRadioMessages } from '../functions/radio-store.js';
 import { createConversation, listConversations } from '../functions/chat-store.js';
 import { writeSoil } from '../functions/memory-store.js';
 import { buildCrossSurfaceContext } from '../functions/cross-surface-recall.js';
+import {
+  buildRoomMemoryContext,
+  listRoomMemory,
+  writeRoomMemory,
+} from '../functions/room-memory.js';
 
 class D1Statement {
   constructor(database, sql, params = []) {
@@ -667,6 +672,55 @@ const manualRadio = (await manualRadioResponse.json()).message;
 assert.equal(manualRadio.actor, 'xiaohan');
 assert.equal(manualRadio.surface, 'web_manual');
 
+const deniedOwnerNoteResponse = await routeApi(new Request(
+  'https://coast.test/api/radio/memory/owner-note',
+  {
+    method: 'PUT',
+    headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: '模型不可以替小寒写神秘狗话。' }),
+  },
+), env, null);
+assert.equal(deniedOwnerNoteResponse.status, 401);
+
+const radioOwnerNoteResponse = await routeApi(new Request(
+  'https://coast.test/api/radio/memory/owner-note',
+  {
+    method: 'PUT',
+    headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: '这个房间先按小寒写下的神秘狗话理解。' }),
+  },
+), env, { exp: 1 });
+assert.equal(radioOwnerNoteResponse.status, 200);
+const radioOwnerNote = (await radioOwnerNoteResponse.json()).owner_note;
+assert.equal(radioOwnerNote.label, '小寒侧 · 神秘狗话');
+assert.equal(radioOwnerNote.text, '这个房间先按小寒写下的神秘狗话理解。');
+assert.equal(radioOwnerNote.handwritten, true);
+assert.equal(radioOwnerNote.priority, 'before_automatic_soil');
+assert.equal(radioOwnerNote.becomes_long_term_memory, false);
+
+const radioRoomMemoryBeforeReply = await listRoomMemory(db, 'radio');
+assert.deepEqual(
+  radioRoomMemoryBeforeReply.participants,
+  ['web_manual', 'coast_api', 'official_mcp'],
+);
+assert.equal(radioRoomMemoryBeforeReply.sources.web_manual.soil.manual_locked, true);
+assert.equal(radioRoomMemoryBeforeReply.sources.web_manual.soil.auto_refresh_enabled, false);
+const radioApiContext = await buildRoomMemoryContext(
+  env,
+  'radio',
+  'coast_api',
+  '小寒从网页端发来的电波。',
+);
+assert.match(radioApiContext.context, /小寒侧 · 神秘狗话/);
+assert.match(radioApiContext.context, /这个房间先按小寒写下的神秘狗话理解/);
+assert.match(radioApiContext.context, /优先于模型自动滚动思维壤/);
+await assert.rejects(
+  () => writeRoomMemory(db, 'radio', xiaohanIdentity(), {
+    current_text: '不应从模型房间记忆路径写入。',
+  }),
+  (error) => error.type === 'owner_note_endpoint_required' && error.status === 403,
+);
+
 const apiRadioResponse = await routeApi(new Request('https://coast.test/api/radio/ask-api-myri', {
   method: 'POST',
   headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
@@ -677,6 +731,11 @@ const apiRadio = await apiRadioResponse.json();
 assert.equal(apiRadio.message.surface, 'coast_api');
 assert.equal(apiRadio.message.display_author, '海岸 API ✦');
 assert.equal(apiRadio.room_memory_updated, true);
+assert.ok(
+  providerRequests.some((payload) => JSON.stringify(payload.messages)
+    .includes('这个房间先按小寒写下的神秘狗话理解')),
+  'radio API reply context must include Xiaohan’s higher-priority handwritten note',
+);
 const radioReadResponse = await routeApi(new Request('https://coast.test/api/radio/messages'), env, { exp: 1 });
 assert.equal(radioReadResponse.status, 200);
 assert.equal((await radioReadResponse.json()).messages.length, 3);
@@ -704,6 +763,14 @@ assert.deepEqual(
   [],
   'unconfirmed room pockets must not be returned as factual MCP context',
 );
+assert.deepEqual(
+  mcpRadioRead.result.structuredContent.room_memory.participants,
+  ['web_manual', 'coast_api', 'official_mcp'],
+);
+assert.equal(
+  mcpRadioRead.result.structuredContent.room_memory.owner_note.text,
+  '这个房间先按小寒写下的神秘狗话理解。',
+);
 assert.equal((await listConversations(db)).length, 1, 'room memory windows must stay out of the normal chat list');
 const ordinaryCrossSurface = await buildCrossSurfaceContext(db, '今天晚饭吃什么');
 assert.equal(ordinaryCrossSurface.triggered, false);
@@ -716,6 +783,17 @@ assert.doesNotMatch(
   /三端互相听见但身份分开/,
   'pending room pockets must not enter main-chat cross-surface recall',
 );
+
+const clearRadioOwnerNoteResponse = await routeApi(new Request(
+  'https://coast.test/api/radio/memory/owner-note',
+  {
+    method: 'DELETE',
+    headers: { Origin: 'https://coast.test' },
+  },
+), env, { exp: 1 });
+assert.equal(clearRadioOwnerNoteResponse.status, 200);
+assert.equal((await clearRadioOwnerNoteResponse.json()).owner_note.text, '');
+assert.equal((await listRoomMemory(db, 'radio')).owner_note.text, '');
 
 const withdrawWithoutSession = await routeApi(new Request(
   `https://coast.test/api/radio/messages/${encodeURIComponent(manualRadio.id)}`,
@@ -806,14 +884,80 @@ const letterWrite = await mcp({
       body: '这是一封官端写给海岸的低频长信。',
       model_label: 'GPT-5.6 Thinking',
       tool_call_id: 'lighthouse-call-1',
+      room_memory: {
+        current_text: '官端灯塔侧记得这是一封只在小寒与官端之间往返的长信。',
+      },
     },
   },
 }, fullToken);
 assert.equal(letterWrite.result.structuredContent.letter.surface, 'official_mcp');
+assert.equal(letterWrite.result.structuredContent.room_memory.soil.surface, 'official_mcp');
 assert.equal((await listLighthouseLetters(db))[0].symbol, '≋');
 assert.match(
   (await buildCrossSurfaceContext(db, '想读一读官端的灯塔来信')).context,
   /这是一封官端写给海岸的低频长信/,
+);
+
+const lighthouseOwnerNoteResponse = await routeApi(new Request(
+  'https://coast.test/api/lighthouse/memory/owner-note',
+  {
+    method: 'PUT',
+    headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: '灯塔来信里只和官端慢慢写信，不叫海岸 API 进来。' }),
+  },
+), env, { exp: 1 });
+assert.equal(lighthouseOwnerNoteResponse.status, 200);
+const lighthouseMemoryResponse = await routeApi(
+  new Request('https://coast.test/api/lighthouse/memory'),
+  env,
+  { exp: 1 },
+);
+assert.equal(lighthouseMemoryResponse.status, 200);
+const lighthouseMemory = (await lighthouseMemoryResponse.json()).memory;
+assert.deepEqual(lighthouseMemory.participants, ['web_manual', 'official_mcp']);
+assert.deepEqual(Object.keys(lighthouseMemory.sources).sort(), ['official_mcp', 'web_manual']);
+assert.equal(lighthouseMemory.owner_note.text, '灯塔来信里只和官端慢慢写信，不叫海岸 API 进来。');
+assert.equal('coast_api' in lighthouseMemory.sources, false);
+await assert.rejects(
+  () => writeRoomMemory(
+    db,
+    'lighthouse',
+    apiMyriIdentity({ model_label: 'openai/gpt-5.6' }),
+    { current_text: '海岸 API 不属于灯塔来信。' },
+  ),
+  (error) => error.type === 'room_surface_forbidden' && error.status === 403,
+);
+const lighthouseOfficialContext = await buildRoomMemoryContext(
+  env,
+  'lighthouse',
+  'official_mcp',
+  '读一读灯塔来信。',
+);
+assert.match(lighthouseOfficialContext.context, /小寒侧 · 神秘狗话/);
+assert.match(lighthouseOfficialContext.context, /只和官端慢慢写信/);
+assert.match(lighthouseOfficialContext.context, /不等同于已确认长期记忆/);
+
+const mcpLighthouseRead = await mcp({
+  jsonrpc: '2.0',
+  id: 81,
+  method: 'tools/call',
+  params: { name: 'list_lighthouse_letters', arguments: {} },
+}, fullToken);
+assert.deepEqual(
+  mcpLighthouseRead.result.structuredContent.room_memory.participants,
+  ['web_manual', 'official_mcp'],
+);
+assert.deepEqual(
+  Object.keys(mcpLighthouseRead.result.structuredContent.room_memory.sources).sort(),
+  ['official_mcp', 'web_manual'],
+);
+assert.equal(
+  mcpLighthouseRead.result.structuredContent.room_memory.owner_note.text,
+  '灯塔来信里只和官端慢慢写信，不叫海岸 API 进来。',
+);
+assert.match(
+  mcpLighthouseRead.result.content[0].text,
+  /海岸 API ✦ 不属于这个房间/,
 );
 
 const momentWrite = await mcp({

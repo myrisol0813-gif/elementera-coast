@@ -129,6 +129,7 @@ const dailyDrafts = [{
 }];
 const radioMessages = [];
 const lighthouseLetters = [];
+const roomOwnerNotes = { radio: '', lighthouse: '' };
 let roomSequence = 0;
 
 function mockMoment(value = {}, author = 'xiaohan', source = 'manual') {
@@ -457,13 +458,30 @@ globalThis.fetch = async (input, options = {}) => {
     lighthouseLetters.unshift(letter);
     return response({ ok: true, letter }, 201);
   }
+  const ownerNoteMatch = url.pathname.match(/^\/api\/(radio|lighthouse)\/memory\/owner-note$/);
+  if (ownerNoteMatch) {
+    const kind = ownerNoteMatch[1];
+    if (method === 'PUT') roomOwnerNotes[kind] = String(body.text || '').trim();
+    if (method === 'DELETE') roomOwnerNotes[kind] = '';
+    return response({
+      ok: true,
+      owner_note: {
+        label: '小寒侧 · 神秘狗话',
+        text: roomOwnerNotes[kind],
+        handwritten: true,
+        priority: 'before_automatic_soil',
+        becomes_long_term_memory: false,
+        updated_at: now(),
+      },
+    });
+  }
   if (url.pathname === '/api/radio/memory' || url.pathname === '/api/lighthouse/memory') {
     const kind = url.pathname.includes('/radio/') ? 'radio' : 'lighthouse';
-    const blank = (surface, author) => ({
+    const blank = (surface, author, text = '') => ({
       conversation_id: `${kind}-${surface}`,
       soil: {
         conversation_id: `${kind}-${surface}`,
-        current_text: '',
+        current_text: text,
         hand_seeds: [],
         do_not_repeat: '',
         pocket_candidates: [],
@@ -474,15 +492,27 @@ globalThis.fetch = async (input, options = {}) => {
       seeds: [],
       memories: [],
     });
+    const sources = {
+      web_manual: blank('web_manual', '小寒', roomOwnerNotes[kind]),
+      official_mcp: blank('official_mcp', 'ChatGPT≋'),
+    };
+    if (kind === 'radio') sources.coast_api = blank('coast_api', '海岸 API ✦');
     return response({
       ok: true,
       memory: {
         room_id: kind,
-        sources: {
-          web_manual: blank('web_manual', '小寒'),
-          coast_api: blank('coast_api', '海岸 API ✦'),
-          official_mcp: blank('official_mcp', 'ChatGPT≋'),
+        participants: kind === 'radio'
+          ? ['web_manual', 'coast_api', 'official_mcp']
+          : ['web_manual', 'official_mcp'],
+        owner_note: {
+          label: '小寒侧 · 神秘狗话',
+          text: roomOwnerNotes[kind],
+          handwritten: true,
+          priority: 'before_automatic_soil',
+          becomes_long_term_memory: false,
+          updated_at: now(),
         },
+        sources,
       },
     });
   }
@@ -1266,6 +1296,34 @@ assert.equal(histories.get(landingConversationId).turns.length, 3, 'soil failure
 document.querySelector('[data-action="rooms:open"][data-kind="radio"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'server-room', 'server radio route');
 await waitFor(() => document.querySelector('.local-message-list')?.textContent.includes('暂时还没有消息'), 'server radio loaded');
+let roomMemoryDrawer = document.querySelector('.room-memory-drawer');
+let roomMemoryDetails = roomMemoryDrawer.querySelector('details');
+assert.equal(roomMemoryDetails.open, false, 'radio room memory must be collapsed by default');
+assert.ok(roomMemoryDrawer.querySelector('summary').textContent.includes('房间记忆 · 三侧分开'));
+assert.equal(roomMemoryDrawer.nextElementSibling, document.querySelector('.local-message-list'));
+roomMemoryDetails.open = true;
+assert.ok(roomMemoryDetails.textContent.includes('小寒侧 · 神秘狗话'));
+assert.ok(roomMemoryDetails.textContent.includes('海岸 API ✦ · 自动滚动壤'));
+assert.ok(roomMemoryDetails.textContent.includes('官端灯塔侧 ≋ · 自动滚动壤'));
+assert.ok(roomMemoryDetails.textContent.includes('待确认袋：暂无'));
+assert.equal(roomMemoryDetails.textContent.includes('这一侧还没有滚动思维壤'), false);
+document.querySelector('#roomOwnerNote-radio').value = '三端房间先听小寒这句神秘狗话。';
+const radioDetailsBeforeSave = roomMemoryDetails;
+document.querySelector('[data-action="rooms:save-owner-note"][data-kind="radio"]').click();
+await waitFor(() => roomOwnerNotes.radio === '三端房间先听小寒这句神秘狗话。', 'save radio owner note');
+await waitFor(
+  () => document.querySelector('.room-memory-summary') !== radioDetailsBeforeSave
+    && document.querySelector('#roomOwnerNote-radio')?.value === roomOwnerNotes.radio,
+  'reload radio owner note',
+);
+roomMemoryDetails = document.querySelector('.room-memory-summary');
+assert.equal(roomMemoryDetails.open, false, 'room memory remains collapsed after refresh');
+roomMemoryDetails.open = true;
+document.querySelector('[data-action="rooms:delete-owner-note"][data-kind="radio"]').click();
+danger = await waitForDanger('清除这段神秘狗话？');
+acceptDanger(danger);
+await waitFor(() => roomOwnerNotes.radio === '', 'clear radio owner note');
+assert.equal(document.querySelector('#toastRoot').textContent, '这段神秘狗话已经清除。');
 document.querySelector('#localRoomInput').value = 'radio test';
 document.querySelector('.local-room-composer').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
 await waitFor(() => document.querySelector('.local-message-list')?.textContent.includes('radio test'), 'server radio send');
@@ -1291,6 +1349,29 @@ await waitFor(() => document.querySelector('#overlayRoot').hidden, 'close server
 document.querySelector('[data-action="rooms:open"][data-kind="lighthouse"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'server-room', 'server lighthouse route');
 await waitFor(() => document.querySelector('.lighthouse-letter-list')?.textContent.includes('暂时还没有来信'), 'server lighthouse loaded');
+const lighthouseRoot = document.querySelector('#overlayRoot');
+assert.ok(lighthouseRoot.querySelector('.feature-head p').textContent.includes('小寒 ↔ 官端灯塔侧 ≋'));
+assert.equal(lighthouseRoot.querySelector('[data-action="rooms:ask-api"]'), null);
+assert.equal(lighthouseRoot.textContent.includes('海岸 API ✦'), false);
+roomMemoryDetails = lighthouseRoot.querySelector('.room-memory-summary');
+assert.equal(roomMemoryDetails.open, false, 'lighthouse memory must be collapsed by default');
+assert.ok(roomMemoryDetails.querySelector('summary').textContent.includes('房间记忆 · 两侧分开'));
+roomMemoryDetails.open = true;
+assert.ok(roomMemoryDetails.textContent.includes('小寒侧 · 神秘狗话'));
+assert.ok(roomMemoryDetails.textContent.includes('官端灯塔侧 ≋ · 自动滚动壤'));
+assert.equal(roomMemoryDetails.textContent.includes('海岸 API ✦'), false);
+document.querySelector('#roomOwnerNote-lighthouse').value = '灯塔来信只在小寒和官端之间慢慢往返。';
+const lighthouseDetailsBeforeSave = roomMemoryDetails;
+document.querySelector('[data-action="rooms:save-owner-note"][data-kind="lighthouse"]').click();
+await waitFor(
+  () => roomOwnerNotes.lighthouse === '灯塔来信只在小寒和官端之间慢慢往返。',
+  'save lighthouse owner note',
+);
+await waitFor(
+  () => document.querySelector('.room-memory-summary') !== lighthouseDetailsBeforeSave
+    && document.querySelector('#roomOwnerNote-lighthouse')?.value === roomOwnerNotes.lighthouse,
+  'reload lighthouse owner note',
+);
 document.querySelector('#lighthouseSubject').value = 'DOM 灯塔';
 document.querySelector('#localRoomInput').value = '这是一封低频长信。';
 document.querySelector('.lighthouse-composer').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));

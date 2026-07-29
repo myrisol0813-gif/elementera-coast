@@ -99,6 +99,13 @@ const DANGER_ACTIONS = Object.freeze({
     cancelText: '取消',
     dangerLevel: 'warning',
   }),
+  'rooms:delete-owner-note': Object.freeze({
+    title: '清除这段神秘狗话？',
+    message: '清除后，它不再参与这个房间的理解与召回；已确认的长期记忆不会受到影响。',
+    confirmText: '清除',
+    cancelText: '取消',
+    dangerLevel: 'danger',
+  }),
   'daily:publish-content-draft': Object.freeze({
     title: '确认发布这份草稿？',
     message: '发布后它会进入正式日记或碳硅圈，并保留原始来源署名。',

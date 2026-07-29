@@ -53,6 +53,7 @@ export async function askApiMyriInRadio(env, value = {}) {
       '不要替小寒做决定。',
       '只根据下方电波房消息和授权记忆回应，不要假装看见未提供的聊天全文。',
       '这是三方交接与交流房间；可以回应信息、记忆交接和心情，但不要写成系统报告。',
+      '如果“小寒侧 · 神秘狗话”存在，先按它修正本房间的理解；它高于模型自动滚动思维壤，但不是已确认长期记忆。',
       '只输出本次消息正文，不要添加署名或 metadata。',
     ],
     recent_messages: messages.map(messageSnapshot),
