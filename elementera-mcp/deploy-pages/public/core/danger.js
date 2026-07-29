@@ -99,12 +99,19 @@ const DANGER_ACTIONS = Object.freeze({
     cancelText: '取消',
     dangerLevel: 'warning',
   }),
-  'rooms:delete-owner-note': Object.freeze({
-    title: '清除这段神秘狗话？',
-    message: '清除后，它不再参与这个房间的理解与召回；已确认的长期记忆不会受到影响。',
-    confirmText: '清除',
+  'dogtalk:clear': Object.freeze({
+    title: '清空这条神秘狗话草稿？',
+    message: '本条草稿会收进归档，不再作为当前房间最近的神秘狗话；思维壤、落袋、种子和记忆不会受到影响。',
+    confirmText: '清空草稿',
     cancelText: '取消',
     dangerLevel: 'danger',
+  }),
+  'dogtalk:archive': Object.freeze({
+    title: '把这条神秘狗话收进归档？',
+    message: '归档后它不再作为当前房间最近的神秘狗话，也不会被低频读取；之后仍可由数据层保留。',
+    confirmText: '归档',
+    cancelText: '取消',
+    dangerLevel: 'warning',
   }),
   'daily:publish-content-draft': Object.freeze({
     title: '确认发布这份草稿？',

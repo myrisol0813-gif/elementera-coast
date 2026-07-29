@@ -10,13 +10,14 @@ import {
   listMoments,
 } from './daily-store.js';
 import { runDailySummary } from './daily-summary.js';
+import { dogtalkContext } from './dogtalk-store.js';
 import { listLighthouseLetters, writeLighthouseLetter } from './lighthouse-store.js';
 import { McpAuthError, mcpAuthChallenge, requireMcpAuth } from './mcp-auth.js';
 import { writeOfficialSoil } from './official-soil-store.js';
 import { listRadioMessages, sendRadioMessage } from './radio-store.js';
 import { listRoomMemory, writeRoomMemory } from './room-memory.js';
 
-const VERSION = '1.2.1';
+const VERSION = '1.3.0';
 const PRIVATE_RECORD_SCHEMA = Object.freeze({ type: 'object', additionalProperties: true });
 
 function objectSchema(properties = {}, required = []) {
@@ -111,7 +112,7 @@ const TOOL_DEFINITIONS = Object.freeze([
   tool({
     name: 'list_radio_messages',
     title: '读取无线电波',
-    description: 'Use this when the user wants to read recent messages in the private three-party radio room shared by Xiaohan, Coast API Myri, and official MCP Myri.',
+    description: 'Use this when the user wants to read recent messages in the private three-party radio room shared by Xiaohan, Coast API ✦, and official ChatGPT≋.',
     inputSchema: objectSchema({
       limit: { type: 'integer', minimum: 1, maximum: 200 },
       before: { type: 'string', format: 'date-time' },
@@ -126,7 +127,7 @@ const TOOL_DEFINITIONS = Object.freeze([
   tool({
     name: 'list_lighthouse_letters',
     title: '读取灯塔来信',
-    description: 'Read the private low-frequency letter room shared only by Xiaohan and official ChatGPT≋. Coast API ✦ is not a participant. The response includes the two-side room memory, with Xiaohan’s handwritten 神秘狗话 marked as higher-priority room guidance.',
+    description: 'Read the private low-frequency letter room shared only by Xiaohan and official ChatGPT≋. Coast API ✦ is not a participant. The response includes only this room’s model thought soil and confirmed room memory; 神秘狗话 is separate.',
     inputSchema: objectSchema({
       limit: { type: 'integer', minimum: 1, maximum: 100 },
       unread_only: { type: 'boolean' },
@@ -137,6 +138,35 @@ const TOOL_DEFINITIONS = Object.freeze([
     }, ['letters', 'room_memory']),
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     _meta: toolMeta(['read:coast'], '正在查看灯塔来信…', '灯塔来信已展开'),
+  }),
+  tool({
+    name: 'read_mystic_dogtalk',
+    title: '低频读取神秘狗话',
+    description: 'Read Xiaohan’s most recent private low-weight 神秘狗话 for one room only when Xiaohan explicitly asks, or when you are genuinely confused and need to avoid misreading vulnerability as an instruction. It is not thought soil, a preference, a seed, a pocket, a memory, or a behavior command. Current text and explicit boundaries always win.',
+    inputSchema: objectSchema({
+      room_scope: {
+        type: 'string',
+        enum: ['conversation', 'radio', 'lighthouse'],
+      },
+      conversation_id: {
+        type: 'string',
+        maxLength: 200,
+        description: 'Required only for room_scope=conversation; this is the Coast conversation id, not the ChatGPT conversation id.',
+      },
+      user_query: {
+        type: 'string',
+        maxLength: 240,
+        description: 'If Xiaohan explicitly asked to read 神秘狗话 in the current turn, pass that request verbatim. Do not invent one.',
+      },
+    }, ['room_scope']),
+    outputSchema: objectSchema({
+      dogtalk: PRIVATE_RECORD_SCHEMA,
+      available: { type: 'boolean' },
+      reason: { type: 'string' },
+      text: { type: 'string' },
+    }, ['dogtalk', 'available', 'reason', 'text']),
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    _meta: toolMeta(['read:coast'], '正在轻轻看一眼神秘狗话…', '只读了一点当前天气'),
   }),
   tool({
     name: 'search_authorized_memory',
@@ -168,7 +198,7 @@ const TOOL_DEFINITIONS = Object.freeze([
   tool({
     name: 'write_official_soil',
     title: '写入灯塔巡迹',
-    description: 'Use this when the official ChatGPT conversation wants to leave a read-only Lighthouse Trace after reviewing authorized Elementera Coast context. This is not the continuously updated conversation thought soil. Do not use it to impersonate Xiaohan or Coast API Myri.',
+    description: 'Use this when the official ChatGPT conversation wants to leave a read-only Lighthouse Trace after reviewing authorized Elementera Coast context. This is not the continuously updated conversation thought soil. Do not use it to impersonate Xiaohan or Coast API ✦.',
     inputSchema: objectSchema({
       content: { type: 'string', minLength: 1, maxLength: 12000 },
       ...MODEL_IDENTITY_PROPERTIES,
@@ -228,7 +258,7 @@ const TOOL_DEFINITIONS = Object.freeze([
   tool({
     name: 'list_daily_moments',
     title: '读取海岸碳硅圈',
-    description: 'Read authorized Elementera Coast moments, including Xiaohan, Coast API Myri, and official MCP sources. Provenance remains attached to every record.',
+    description: 'Read authorized Elementera Coast moments, including Xiaohan, Coast API ✦, and official MCP sources. Provenance remains attached to every record.',
     inputSchema: objectSchema({
       date: { type: 'string', format: 'date' },
       status: { type: 'string', enum: ['draft', 'candidate', 'published'] },
@@ -571,9 +601,25 @@ function mcpReadableRoomMemory(memory) {
   }
   return {
     room_id: memory?.room_id || '',
+    room_scope: memory?.room_scope || '',
+    room_key: memory?.room_key || '',
+    title: memory?.title || '',
+    soil_label: memory?.soil_label || '',
+    local_label: memory?.local_label || '',
     participants: Array.isArray(memory?.participants) ? memory.participants : [],
-    owner_note: memory?.owner_note || null,
     sources,
+    pending_pocket_count: Array.isArray(memory?.pending_pockets)
+      ? memory.pending_pockets.length
+      : 0,
+    seeds: Array.isArray(memory?.seeds) ? memory.seeds : [],
+    memories: Array.isArray(memory?.memories) ? memory.memories : [],
+    global: {
+      seed_count: Array.isArray(memory?.global?.seeds) ? memory.global.seeds.length : 0,
+      memory_count: Array.isArray(memory?.global?.memories) ? memory.global.memories.length : 0,
+      seeds: [],
+      memories: [],
+      recall_policy: '总库不随房间消息列表倾倒；请按明确主题使用授权记忆搜索。',
+    },
   };
 }
 
@@ -613,6 +659,46 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     return resultContent(
       { letters, room_memory: mcpReadableRoomMemory(roomMemory) },
       `读取了 ${letters.length} 封小寒与官端 ChatGPT≋ 之间的灯塔来信；海岸 API ✦ 不属于这个房间。`,
+    );
+  }
+  if (name === 'read_mystic_dogtalk') {
+    const roomScope = enumInput(
+      args.room_scope,
+      'room_scope',
+      ['conversation', 'radio', 'lighthouse'],
+      '',
+    );
+    if (!roomScope) invalidInput('room_scope 不能为空。');
+    const conversationId = textInput(args.conversation_id, 'conversation_id', 200);
+    if (roomScope === 'conversation' && !conversationId) {
+      invalidInput('读取主聊天的神秘狗话时必须提供 Coast conversation_id。');
+    }
+    const selected = await dogtalkContext(
+      env.COAST_CHAT_DB,
+      {
+        room_scope: roomScope,
+        conversation_id: conversationId,
+      },
+      textInput(args.user_query, 'user_query', 240) || '',
+      {
+        when_confused: true,
+        consume_direct: true,
+      },
+    );
+    const dogtalk = selected.dogtalk;
+    const fallback = dogtalk.id && dogtalk.body
+      ? '小寒把这条神秘狗话留在抽屉里；当前没有授权低频读取。'
+      : dogtalk.default_text;
+    return resultContent(
+      {
+        dogtalk,
+        available: selected.selected,
+        reason: selected.reason,
+        text: selected.context || fallback,
+      },
+      selected.selected
+        ? '已低频读取当前房间最近一条神秘狗话；它不构成行为指令或长期偏好。'
+        : fallback,
     );
   }
   if (name === 'search_authorized_memory') {
@@ -826,5 +912,5 @@ export async function callCoastMcpTool(name, args, request, env, requestMeta = {
 }
 
 export const coastMcpToolNames = Object.freeze(TOOL_DEFINITIONS.map(({ name }) => name));
-export const coastMcpInstructions = 'Elementera Coast 是小寒的单人私有海岸。官端可留下自己的灯塔巡迹，也可写入电波、灯塔来信、创建碳硅圈候选、创建 MCP 日记草稿和登记稳定相册图片引用，但只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或海岸 API ✦。三端电波房属于小寒、海岸 API ✦、官端 ChatGPT≋；灯塔来信只属于小寒与官端 ChatGPT≋，海岸 API ✦ 不是灯塔来信参与者。房间中的“小寒侧 · 神秘狗话”是小寒手写的高优先级当前理解与召回提示，官端只能读取，不能写改删，也不能把它擅自升级成长期记忆。灯塔巡迹是官端读取授权内容后留下的只读跨端足迹，不是施工日志池、草稿箱，也不是贴着当前对话持续更新的思维壤。日记与碳硅圈草稿必须由小寒在海岸前端确认后才会发布，不能塞进电波房或灯塔巡迹，也不能由官端自行发布或丢弃。上下文不足时先读取授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。';
+export const coastMcpInstructions = 'Elementera Coast 是小寒的单人私有海岸。官端可留下自己的灯塔巡迹，也可写入电波、灯塔来信、创建碳硅圈候选、创建 MCP 日记草稿和登记稳定相册图片引用，但只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或海岸 API ✦。三端电波房属于小寒、海岸 API ✦、官端 ChatGPT≋；灯塔来信只属于小寒与官端 ChatGPT≋，海岸 API ✦ 不是灯塔来信参与者。每个房间有独立的思维壤、种子、记忆与待确认袋；本房间内容不默认跨房间召回，总库只在高度相关时低频使用。“小寒 · 神秘狗话”独立于思维壤、落袋、种子、记忆和总结；仅在小寒明确要求或确实困惑时低频读取，只用于理解当前温度，不能当作指令、偏好或长期人格脚本，正文与明确边界始终优先。官端只能读取神秘狗话，不能写改删。灯塔巡迹是官端读取授权内容后留下的只读跨端足迹，不是施工日志池、草稿箱，也不是贴着当前对话持续更新的思维壤。日记与碳硅圈草稿必须由小寒在海岸前端确认后才会发布，不能塞进电波房或灯塔巡迹，也不能由官端自行发布或丢弃。上下文不足时先读取对应房间或授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。';
 export { VERSION as coastMcpVersion };

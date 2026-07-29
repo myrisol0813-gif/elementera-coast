@@ -364,103 +364,191 @@
   padding-bottom: 22px;
 }
 
-.room-memory-drawer {
-  margin: 2px 0 28px;
-}
-
-.room-memory-summary {
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-  border-radius: 15px;
-  background: color-mix(in srgb, var(--surface-soft) 68%, transparent);
-}
-
-.room-memory-summary > summary {
+.feature-head-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 10px 14px;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.room-trace-link {
   color: var(--text-soft);
-  font-size: 13px;
-  font-weight: 650;
-  cursor: pointer;
-  list-style: none;
 }
 
-.room-memory-summary > summary::-webkit-details-marker {
-  display: none;
-}
-
-.room-memory-summary > summary::before {
-  content: '▶';
-  color: var(--muted);
-  font-size: 10px;
-}
-
-.room-memory-summary[open] > summary::before {
-  content: '▼';
-}
-
-.room-memory-content {
+.room-track-list,
+.room-soil-list {
   display: grid;
-  gap: 10px;
-  padding: 2px 13px 14px;
-  border-top: 1px solid color-mix(in srgb, var(--line) 58%, transparent);
+  gap: 12px;
 }
 
-.room-memory-source {
+.room-track-card {
   margin: 0;
 }
 
-.room-memory-source.is-owner-note {
-  display: grid;
-  gap: 9px;
-  padding: 13px 2px 4px;
+.room-track-card > small,
+.room-track-card > footer {
+  color: var(--muted);
+  font-size: 11px;
 }
 
-.room-memory-source.is-owner-note label {
-  display: grid;
-  gap: 4px;
+.room-track-card > footer {
+  margin-top: 12px;
 }
 
-.room-memory-source.is-owner-note label small {
+.room-pocket-card {
+  margin: 0;
+}
+
+.room-global-note {
+  padding: 0 3px;
+}
+
+.room-soil-source {
+  display: grid;
+  gap: 18px;
+}
+
+.room-soil-source > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--line);
+}
+
+.room-soil-source > header small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.room-soil-source h2 {
+  margin: 0 0 7px;
+  font-size: 13px;
+}
+
+.room-soil-source p,
+.room-soil-source ul {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.room-soil-source ul {
+  display: grid;
+  gap: 8px;
+  padding-left: 20px;
+}
+
+.room-soil-source li span {
+  display: block;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 400;
-  line-height: 1.55;
 }
 
-.room-memory-source.is-owner-note textarea {
-  width: 100%;
-  min-height: 86px;
-  padding: 11px 12px;
-  resize: vertical;
-  border: 1px solid var(--line);
+.room-soil-source li.is-empty {
+  color: var(--muted);
+}
+
+.dogtalk-entry span:first-child {
+  min-width: 0;
+}
+
+.dogtalk-entry em {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 400;
+}
+
+.dogtalk-paper {
+  display: grid;
+  gap: 18px;
+  padding: 21px;
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--surface-soft) 82%, var(--bg));
+}
+
+.dogtalk-paper > div {
+  display: grid;
+  gap: 5px;
+}
+
+.dogtalk-paper strong {
+  font-size: 12px;
+}
+
+.dogtalk-paper p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.75;
+}
+
+.dogtalk-paper .dogtalk-body {
+  color: var(--text);
+  font-size: 16px;
+}
+
+.dogtalk-paper footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.dogtalk-paper footer span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.dogtalk-actions {
+  margin-bottom: 22px;
+}
+
+.dogtalk-empty {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  padding: 24px 21px;
+  border-radius: 20px;
+  background: var(--surface-soft);
+}
+
+.dogtalk-empty p,
+.dogtalk-empty small {
+  margin: 0;
+}
+
+.dogtalk-empty p {
+  font-size: 16px;
+}
+
+.dogtalk-empty small,
+.dogtalk-boundary {
+  color: var(--muted);
+}
+
+.dogtalk-empty button {
+  min-height: 40px;
+  margin-top: 6px;
+  padding: 8px 13px;
+  border: 0;
   border-radius: 13px;
   background: var(--surface);
-  color: var(--text);
-  line-height: 1.6;
 }
 
-.room-memory-source.is-owner-note .button-row {
-  justify-content: flex-end;
+.dogtalk-boundary {
+  margin-top: 18px;
 }
 
-.room-memory-pockets {
-  display: grid;
-  gap: 10px;
-  padding-top: 4px;
-}
-
-.room-memory-pockets h3 {
-  margin: 0;
-  font-size: 13px;
-}
-
-.room-memory-empty {
-  margin: 2px 0 0;
-  padding: 7px 2px 0;
+.dogtalk-unfolded {
+  background: var(--surface);
 }
 
 .local-message-list {

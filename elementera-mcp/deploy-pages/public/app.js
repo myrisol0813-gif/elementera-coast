@@ -5,6 +5,7 @@ import { createRouter } from './core/router.js';
 import { createStorage } from './core/storage.js';
 import { createChat } from './features/chat.js';
 import { createDaily } from './features/daily.js';
+import { createDogtalk } from './features/dogtalk.js';
 import { createLetters } from './features/letters.js';
 import { createMemory } from './features/memory.js';
 import { createModels } from './features/models.js';
@@ -30,18 +31,29 @@ const router = createRouter(q('#overlayRoot'), {
   onOpen: () => shell.closeSidebar(),
 });
 const chat = createChat({ storage, toast });
-const memory = createMemory({ chat, router, toast, storage });
+const dogtalk = createDogtalk({ router, toast });
+const memory = createMemory({ chat, router, toast, storage, dogtalk });
 const models = createModels({ chat, router, toast });
 const tools = createTools({ storage, router, toast, memory });
 const settings = createSettings({ storage, shell, chat, router, toast });
-const rooms = createRooms({ chat, router, toast });
+const rooms = createRooms({ chat, router, toast, dogtalk });
 const daily = createDaily({ storage, router, toast, chat });
 const letters = createLetters({ storage, chat, models, router, toast });
 
 chat.setRunSettingsProvider(tools.getSettings);
 chat.setMemoryController(memory);
 
-const controllers = Object.freeze({ chat, memory, models, tools, settings, rooms, daily, letters });
+const controllers = Object.freeze({
+  chat,
+  dogtalk,
+  memory,
+  models,
+  tools,
+  settings,
+  rooms,
+  daily,
+  letters,
+});
 
 document.addEventListener('click', async (event) => {
   if (!event.target.closest('[data-conversation-id]')) chat.closeMenu();

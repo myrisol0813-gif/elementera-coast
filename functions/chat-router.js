@@ -1,5 +1,11 @@
 import { apiError, json, readJson, sameOrigin } from './http.js';
 import { DAILY_MODEL_TOOLS, executeDailyModelTool } from './daily-model-tools.js';
+import {
+  DOGTALK_MODEL_TOOL,
+  executeDogtalkModelTool,
+  isDogtalkModelTool,
+} from './dogtalk-model-tool.js';
+import { dogtalkContext } from './dogtalk-store.js';
 import { buildCrossSurfaceContext } from './cross-surface-recall.js';
 import { buildMemoryContext, formatMemoryContext } from './memory-recall.js';
 import { MEMORY_OWNER_ID } from './memory-store.js';
@@ -35,6 +41,7 @@ const BODY_LIMIT = 2 * 1024 * 1024;
 const CONVERSATIONS_PATH = '/api/chat/conversations';
 const FORMAL_CHAT_PATH = '/api/chat';
 const LANDING_LETTER_PATH = '/api/chat/landing-letter';
+const CHAT_MODEL_TOOLS = Object.freeze([...DAILY_MODEL_TOOLS, DOGTALK_MODEL_TOOL]);
 
 function methodNotAllowed(allow) {
   return apiError('method_not_allowed', 'Method not allowed.', 405, { allow });
@@ -169,7 +176,7 @@ function streamFormalChat(request, env, input, assembled, memory, executeTool) {
           model: input.model,
           messages: assembled.messages,
           settings: input.settings,
-          tools: DAILY_MODEL_TOOLS,
+          tools: CHAT_MODEL_TOOLS,
         }, {
           allowSystem: assembled.messages[0]?.role === 'system',
           signal: request.signal,
@@ -215,8 +222,9 @@ async function formalChat(request, env) {
   let memory = null;
   let softContext = '';
   let crossSurface = { context: '', selected: [], triggered: false };
+  let dogtalk = { context: '', selected: false };
   try {
-    [memory, crossSurface] = await Promise.all([
+    [memory, crossSurface, dogtalk] = await Promise.all([
       buildMemoryContext(env, MEMORY_OWNER_ID, conversationId, lastUser.content, {
         recent_entry_ids: value.recent_entry_ids,
         mode: 'chat',
@@ -224,22 +232,39 @@ async function formalChat(request, env) {
         conversation_turns: messages.filter((message) => message?.role === 'user').length,
       }),
       buildCrossSurfaceContext(env.COAST_CHAT_DB, lastUser.content),
+      dogtalkContext(env.COAST_CHAT_DB, {
+        room_scope: 'conversation',
+        conversation_id: conversationId,
+      }, lastUser.content, { consume_direct: true }).catch((error) => {
+        console.warn('[chat-dogtalk:recall]', String(error?.message || error).slice(0, 160));
+        return { context: '', selected: false };
+      }),
     ]);
     softContext = [
       formatMemoryContext(memory, requestSettings),
       crossSurface.context,
+      dogtalk.context,
     ].filter(Boolean).join('\n\n');
   } catch (error) {
     console.error('[chat-memory:recall]', error);
   }
 
   const assembled = budgetChatMessages(messages, softContext, requestSettings);
-  const executeTool = (toolCall) => executeDailyModelTool(env.COAST_CHAT_DB, toolCall, {
-    conversation_id: conversationId,
-    source_turn_id: sourceTurnId,
-    local_date: localDate(value.local_date),
-    model_label: value.model,
-  });
+  const executeTool = (toolCall) => {
+    const toolName = String(toolCall?.function?.name || toolCall?.name || '');
+    if (isDogtalkModelTool(toolName)) {
+      return executeDogtalkModelTool(env.COAST_CHAT_DB, toolCall, {
+        conversation_id: conversationId,
+        user_query: lastUser.content,
+      });
+    }
+    return executeDailyModelTool(env.COAST_CHAT_DB, toolCall, {
+      conversation_id: conversationId,
+      source_turn_id: sourceTurnId,
+      local_date: localDate(value.local_date),
+      model_label: value.model,
+    });
+  };
   if (value.stream === true) {
     return streamFormalChat(request, env, {
       model: value.model,
@@ -250,7 +275,7 @@ async function formalChat(request, env) {
     model: value.model,
     messages: assembled.messages,
     settings: requestSettings,
-    tools: DAILY_MODEL_TOOLS,
+    tools: CHAT_MODEL_TOOLS,
   }, {
     allowSystem: assembled.messages[0]?.role === 'system',
     executeTool,
@@ -263,6 +288,7 @@ async function formalChat(request, env) {
       selected_entry_ids: memory?.trace?.selected || [],
       selected_cross_surface_ids: crossSurface.selected,
       cross_surface_triggered: crossSurface.triggered,
+      dogtalk_selected: dogtalk.selected,
       vector_enabled: Boolean(memory?.trace?.vector_enabled),
     },
   });
@@ -400,14 +426,27 @@ async function landingLetter(request, env) {
   const lastUser = messages.at(-1);
   let memory = null;
   let softContext = '';
+  let dogtalk = { context: '', selected: false };
   try {
-    memory = await buildMemoryContext(env, MEMORY_OWNER_ID, targetConversationId, lastUser.content, {
-      recent_entry_ids: value.recent_entry_ids,
-      mode: 'chat',
-      settings: requestSettings,
-      conversation_turns: messages.filter((message) => message.role === 'user').length,
-    });
-    softContext = formatMemoryContext(memory, requestSettings);
+    [memory, dogtalk] = await Promise.all([
+      buildMemoryContext(env, MEMORY_OWNER_ID, targetConversationId, lastUser.content, {
+        recent_entry_ids: value.recent_entry_ids,
+        mode: 'chat',
+        settings: requestSettings,
+        conversation_turns: messages.filter((message) => message.role === 'user').length,
+      }),
+      dogtalkContext(env.COAST_CHAT_DB, {
+        room_scope: 'conversation',
+        conversation_id: targetConversationId,
+      }, lastUser.content, { consume_direct: true }).catch((error) => {
+        console.warn('[chat-dogtalk:landing-recall]', String(error?.message || error).slice(0, 160));
+        return { context: '', selected: false };
+      }),
+    ]);
+    softContext = [
+      formatMemoryContext(memory, requestSettings),
+      dogtalk.context,
+    ].filter(Boolean).join('\n\n');
   } catch (error) {
     console.error('[chat-memory:landing-recall]', error);
   }
@@ -444,6 +483,7 @@ async function landingLetter(request, env) {
     context: assembled.trace,
     memory: {
       selected_entry_ids: memory?.trace?.selected || [],
+      dogtalk_selected: dogtalk.selected,
       vector_enabled: Boolean(memory?.trace?.vector_enabled),
     },
   });

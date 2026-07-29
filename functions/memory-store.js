@@ -779,6 +779,7 @@ export async function earliestOrganizedMemoryTimestamp(db) {
     FROM conversation_soils s
     INNER JOIN conversations c ON c.id = s.conversation_id
     WHERE c.user_id = ? AND c.deleted_at IS NULL
+      AND NOT (c.conversation_kind IN ('radio', 'lighthouse') AND s.surface = 'web_manual')
       AND (
         s.current_text <> ''
         OR s.hand_seeds_json <> '[]'
@@ -822,6 +823,7 @@ export async function organizedMemoryRecordsInRange(db, value = {}) {
       FROM conversation_soils s
       INNER JOIN conversations c ON c.id = s.conversation_id
       WHERE c.user_id = ? AND c.deleted_at IS NULL
+        AND NOT (c.conversation_kind IN ('radio', 'lighthouse') AND s.surface = 'web_manual')
         AND (
           s.current_text <> ''
           OR s.hand_seeds_json <> '[]'

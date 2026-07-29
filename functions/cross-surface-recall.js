@@ -3,7 +3,7 @@ import { listOfficialSoils } from './official-soil-store.js';
 import { listRadioMessages } from './radio-store.js';
 import { listRoomMemory } from './room-memory.js';
 
-const CROSS_SURFACE_TERMS = /(官端|灯塔|三端|无线电波|电波房|MCP|门廊|跨端|official_mcp|ChatGPT.*≋|海岸\s*API)/iu;
+const CROSS_SURFACE_TERMS = /(?:(找|搜|查|回想|还记得|读一下|看看).{0,20}(官端|灯塔|三端|无线电波|电波房|MCP|门廊|跨端|official_mcp|ChatGPT.*≋|海岸\s*API)|(官端|灯塔|三端|无线电波|电波房|MCP|门廊|跨端|official_mcp|ChatGPT.*≋|海岸\s*API).{0,20}(记忆|内容|消息|来信|记录))/iu;
 const TRACE_TERMS = /(灯塔巡迹|官端|MCP|门廊|跨端|三端|official_mcp|≋)/iu;
 const RADIO_TERMS = /(三端|无线电波|电波房|官端.*海岸|海岸.*官端|API.*官端|官端.*API)/iu;
 const LETTER_TERMS = /(灯塔来信|长信|官端|灯塔|跨端关系|三端关系)/iu;
@@ -29,7 +29,7 @@ export async function buildCrossSurfaceContext(db, query) {
     return { context: '', selected: [], triggered: false };
   }
   const selected = [];
-  const blocks = ['【跨端分区｜仅在官端、灯塔或三端主题相关时使用】'];
+  const blocks = ['【跨端分区｜仅因小寒本轮明确搜索而读取】'];
 
   if (RADIO_TERMS.test(text)) {
     const [messages, memory] = await Promise.all([

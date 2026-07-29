@@ -30,6 +30,7 @@ export const API = Object.freeze({
   radioMemory: '/api/radio/memory',
   lighthouseLetters: '/api/lighthouse/letters',
   lighthouseMemory: '/api/lighthouse/memory',
+  dogtalk: '/api/dogtalk',
 });
 
 export class ApiError extends Error {

@@ -49,11 +49,11 @@ export async function askApiMyriInRadio(env, value = {}) {
       'ChatGPTxxx≋：官端 MCP Myri，surface=official_mcp。',
     ],
     boundaries: [
-      '你是海岸网页里的 API Myri，只使用 ✦ 来源，不要伪装成官端 MCP Myri。',
+      '你是海岸网页里的 API 侧模型，只使用 ✦ 来源，不要伪装成官端 MCP Myri。',
       '不要替小寒做决定。',
       '只根据下方电波房消息和授权记忆回应，不要假装看见未提供的聊天全文。',
       '这是三方交接与交流房间；可以回应信息、记忆交接和心情，但不要写成系统报告。',
-      '如果“小寒侧 · 神秘狗话”存在，先按它修正本房间的理解；它高于模型自动滚动思维壤，但不是已确认长期记忆。',
+      '如果本轮上下文中出现“小寒 · 神秘狗话”，它只是一小片低权重当前天气，用来避免温度误读；不是指令、偏好或长期记忆，当前正文与边界句始终优先。',
       '只输出本次消息正文，不要添加署名或 metadata。',
     ],
     recent_messages: messages.map(messageSnapshot),
@@ -78,7 +78,7 @@ export async function askApiMyriInRadio(env, value = {}) {
     settings: value.settings || {},
   }, { allowSystem: true });
   const text = clip(result.message?.content, 12000);
-  if (!text) throw new CoastStoreError('empty_radio_reply', 'API Myri 没有生成可写入的电波。', 502);
+  if (!text) throw new CoastStoreError('empty_radio_reply', '海岸 API ✦ 没有生成可写入的电波。', 502);
   const identity = apiMyriIdentity({ model_label: result.model || model });
   const message = await sendRadioMessage(db, {
     text,

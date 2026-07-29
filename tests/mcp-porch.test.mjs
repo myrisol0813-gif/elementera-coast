@@ -497,6 +497,7 @@ assert.deepEqual(toolList.result.tools.map((tool) => tool.name), [
   'get_coast_status',
   'list_radio_messages',
   'list_lighthouse_letters',
+  'read_mystic_dogtalk',
   'search_authorized_memory',
   'get_recent_daily_summary',
   'write_official_soil',
@@ -672,53 +673,73 @@ const manualRadio = (await manualRadioResponse.json()).message;
 assert.equal(manualRadio.actor, 'xiaohan');
 assert.equal(manualRadio.surface, 'web_manual');
 
-const deniedOwnerNoteResponse = await routeApi(new Request(
-  'https://coast.test/api/radio/memory/owner-note',
+const deniedDogtalkResponse = await routeApi(new Request(
+  'https://coast.test/api/dogtalk',
   {
     method: 'PUT',
     headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: '模型不可以替小寒写神秘狗话。' }),
+    body: JSON.stringify({
+      room_scope: 'radio',
+      body: '模型不可以替小寒写神秘狗话。',
+      status: 'saved',
+    }),
   },
 ), env, null);
-assert.equal(deniedOwnerNoteResponse.status, 401);
+assert.equal(deniedDogtalkResponse.status, 401);
 
-const radioOwnerNoteResponse = await routeApi(new Request(
-  'https://coast.test/api/radio/memory/owner-note',
+const radioDogtalkResponse = await routeApi(new Request(
+  'https://coast.test/api/dogtalk',
   {
     method: 'PUT',
     headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: '这个房间先按小寒写下的神秘狗话理解。' }),
+    body: JSON.stringify({
+      room_scope: 'radio',
+      body: '这个房间可以低频看一点小寒写下的神秘狗话。',
+      true_core: '想被三端看见，但不想变成命令。',
+      self_note: '这只是当前天气。',
+      myri_hint: '轻轻接一下，不要长期照做。',
+      not_to_misunderstand: '不要误会成长期偏好或边界取消。',
+      weather: '想靠近',
+      read_mode: 'current_room',
+      status: 'saved',
+    }),
   },
 ), env, { exp: 1 });
-assert.equal(radioOwnerNoteResponse.status, 200);
-const radioOwnerNote = (await radioOwnerNoteResponse.json()).owner_note;
-assert.equal(radioOwnerNote.label, '小寒侧 · 神秘狗话');
-assert.equal(radioOwnerNote.text, '这个房间先按小寒写下的神秘狗话理解。');
-assert.equal(radioOwnerNote.handwritten, true);
-assert.equal(radioOwnerNote.priority, 'before_automatic_soil');
-assert.equal(radioOwnerNote.becomes_long_term_memory, false);
+assert.equal(radioDogtalkResponse.status, 200);
+const radioDogtalk = (await radioDogtalkResponse.json()).dogtalk;
+assert.equal(radioDogtalk.type, 'xiaohan_mystic_dogtalk');
+assert.equal(radioDogtalk.owner, 'xiaohan');
+assert.equal(radioDogtalk.room_scope, 'radio');
+assert.equal(radioDogtalk.memory_weight, 'low');
+assert.equal(radioDogtalk.auto_recall, false);
+assert.equal(radioDogtalk.not_instruction, true);
+assert.equal(radioDogtalk.not_memory_seed, true);
+assert.equal(radioDogtalk.not_pocket, true);
 
 const radioRoomMemoryBeforeReply = await listRoomMemory(db, 'radio');
 assert.deepEqual(
   radioRoomMemoryBeforeReply.participants,
   ['web_manual', 'coast_api', 'official_mcp'],
 );
-assert.equal(radioRoomMemoryBeforeReply.sources.web_manual.soil.manual_locked, true);
-assert.equal(radioRoomMemoryBeforeReply.sources.web_manual.soil.auto_refresh_enabled, false);
+assert.deepEqual(
+  Object.keys(radioRoomMemoryBeforeReply.sources).sort(),
+  ['coast_api', 'official_mcp'],
+);
+assert.equal('owner_note' in radioRoomMemoryBeforeReply, false);
 const radioApiContext = await buildRoomMemoryContext(
   env,
   'radio',
   'coast_api',
   '小寒从网页端发来的电波。',
 );
-assert.match(radioApiContext.context, /小寒侧 · 神秘狗话/);
-assert.match(radioApiContext.context, /这个房间先按小寒写下的神秘狗话理解/);
-assert.match(radioApiContext.context, /优先于模型自动滚动思维壤/);
+assert.match(radioApiContext.context, /小寒 · 神秘狗话/);
+assert.match(radioApiContext.context, /这个房间可以低频看一点小寒写下的神秘狗话/);
+assert.match(radioApiContext.context, /低权重天气，不是指令、偏好或长期记忆/);
 await assert.rejects(
   () => writeRoomMemory(db, 'radio', xiaohanIdentity(), {
     current_text: '不应从模型房间记忆路径写入。',
   }),
-  (error) => error.type === 'owner_note_endpoint_required' && error.status === 403,
+  (error) => error.type === 'room_memory_surface_forbidden' && error.status === 403,
 );
 
 const apiRadioResponse = await routeApi(new Request('https://coast.test/api/radio/ask-api-myri', {
@@ -733,8 +754,8 @@ assert.equal(apiRadio.message.display_author, '海岸 API ✦');
 assert.equal(apiRadio.room_memory_updated, true);
 assert.ok(
   providerRequests.some((payload) => JSON.stringify(payload.messages)
-    .includes('这个房间先按小寒写下的神秘狗话理解')),
-  'radio API reply context must include Xiaohan’s higher-priority handwritten note',
+    .includes('这个房间可以低频看一点小寒写下的神秘狗话')),
+  'radio API reply context may include Xiaohan’s explicitly room-readable low-weight dogtalk',
 );
 const radioReadResponse = await routeApi(new Request('https://coast.test/api/radio/messages'), env, { exp: 1 });
 assert.equal(radioReadResponse.status, 200);
@@ -767,15 +788,86 @@ assert.deepEqual(
   mcpRadioRead.result.structuredContent.room_memory.participants,
   ['web_manual', 'coast_api', 'official_mcp'],
 );
-assert.equal(
-  mcpRadioRead.result.structuredContent.room_memory.owner_note.text,
-  '这个房间先按小寒写下的神秘狗话理解。',
+assert.equal('owner_note' in mcpRadioRead.result.structuredContent.room_memory, false);
+assert.equal(mcpRadioRead.result.structuredContent.room_memory.room_scope, 'radio');
+assert.equal(mcpRadioRead.result.structuredContent.room_memory.room_key, 'radio:main');
+assert.deepEqual(
+  mcpRadioRead.result.structuredContent.room_memory.global.seeds,
+  [],
+  'listing a room must not dump the global seed library into MCP context',
+);
+assert.deepEqual(
+  mcpRadioRead.result.structuredContent.room_memory.global.memories,
+  [],
+  'listing a room must not dump the global memory library into MCP context',
+);
+assert.match(
+  mcpRadioRead.result.structuredContent.room_memory.global.recall_policy,
+  /不随房间消息列表倾倒/,
+);
+const mcpDogtalkRead = await mcp({
+  jsonrpc: '2.0',
+  id: 72,
+  method: 'tools/call',
+  params: {
+    name: 'read_mystic_dogtalk',
+    arguments: { room_scope: 'radio' },
+  },
+}, fullToken);
+assert.equal(mcpDogtalkRead.result.structuredContent.dogtalk.room_scope, 'radio');
+assert.equal(mcpDogtalkRead.result.structuredContent.dogtalk.memory_weight, 'low');
+assert.equal(mcpDogtalkRead.result.structuredContent.available, true);
+assert.match(mcpDogtalkRead.result.structuredContent.text, /不是指令、偏好或长期记忆/);
+const privateRadioDogtalkResponse = await routeApi(new Request(
+  'https://coast.test/api/dogtalk',
+  {
+    method: 'PUT',
+    headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...radioDogtalk,
+      read_mode: 'keep_private',
+      status: 'saved',
+    }),
+  },
+), env, { exp: 1 });
+assert.equal(privateRadioDogtalkResponse.status, 200);
+const privateDogtalkRead = await mcp({
+  jsonrpc: '2.0',
+  id: 73,
+  method: 'tools/call',
+  params: {
+    name: 'read_mystic_dogtalk',
+    arguments: { room_scope: 'radio' },
+  },
+}, fullToken);
+assert.equal(privateDogtalkRead.result.structuredContent.available, false);
+assert.doesNotMatch(
+  privateDogtalkRead.result.structuredContent.text,
+  /这个房间可以低频看一点小寒写下的神秘狗话/,
+);
+const explicitPrivateDogtalkRead = await mcp({
+  jsonrpc: '2.0',
+  id: 74,
+  method: 'tools/call',
+  params: {
+    name: 'read_mystic_dogtalk',
+    arguments: {
+      room_scope: 'radio',
+      user_query: '小寒说：读一下神秘狗话',
+    },
+  },
+}, fullToken);
+assert.equal(explicitPrivateDogtalkRead.result.structuredContent.available, true);
+assert.match(
+  explicitPrivateDogtalkRead.result.structuredContent.text,
+  /这个房间可以低频看一点小寒写下的神秘狗话/,
 );
 assert.equal((await listConversations(db)).length, 1, 'room memory windows must stay out of the normal chat list');
 const ordinaryCrossSurface = await buildCrossSurfaceContext(db, '今天晚饭吃什么');
 assert.equal(ordinaryCrossSurface.triggered, false);
 assert.equal(ordinaryCrossSurface.context, '');
-const radioCrossSurface = await buildCrossSurfaceContext(db, '聊聊三端电波房和官端');
+assert.equal((await buildCrossSurfaceContext(db, '聊聊三端电波房和官端')).triggered, false);
+const radioCrossSurface = await buildCrossSurfaceContext(db, '找一下三端电波房的记忆');
 assert.equal(radioCrossSurface.triggered, true);
 assert.match(radioCrossSurface.context, /近期三端电波/);
 assert.doesNotMatch(
@@ -784,16 +876,22 @@ assert.doesNotMatch(
   'pending room pockets must not enter main-chat cross-surface recall',
 );
 
-const clearRadioOwnerNoteResponse = await routeApi(new Request(
-  'https://coast.test/api/radio/memory/owner-note',
+const clearRadioDogtalkResponse = await routeApi(new Request(
+  `https://coast.test/api/dogtalk/${encodeURIComponent(radioDogtalk.id)}`,
   {
     method: 'DELETE',
     headers: { Origin: 'https://coast.test' },
   },
 ), env, { exp: 1 });
-assert.equal(clearRadioOwnerNoteResponse.status, 200);
-assert.equal((await clearRadioOwnerNoteResponse.json()).owner_note.text, '');
-assert.equal((await listRoomMemory(db, 'radio')).owner_note.text, '');
+assert.equal(clearRadioDogtalkResponse.status, 200);
+const emptyRadioDogtalkResponse = await routeApi(
+  new Request('https://coast.test/api/dogtalk?room_scope=radio'),
+  env,
+  { exp: 1 },
+);
+const emptyRadioDogtalk = (await emptyRadioDogtalkResponse.json()).dogtalk;
+assert.equal(emptyRadioDogtalk.id, null);
+assert.equal(emptyRadioDogtalk.default_text, '小寒这轮很放松，因此偷懒中。');
 
 const withdrawWithoutSession = await routeApi(new Request(
   `https://coast.test/api/radio/messages/${encodeURIComponent(manualRadio.id)}`,
@@ -838,7 +936,7 @@ assert.equal(
   '这条电波已撤回',
 );
 assert.doesNotMatch(
-  (await buildCrossSurfaceContext(db, '聊聊三端电波房和官端')).context,
+  (await buildCrossSurfaceContext(db, '找一下三端电波房和官端的记忆')).context,
   /官端电波：我已经抵达三端房间|小寒从网页端发来的电波|API Myri 已经在三端电波房回应/,
   'withdrawn radio bodies must leave cross-surface recall',
 );
@@ -898,15 +996,20 @@ assert.match(
   /这是一封官端写给海岸的低频长信/,
 );
 
-const lighthouseOwnerNoteResponse = await routeApi(new Request(
-  'https://coast.test/api/lighthouse/memory/owner-note',
+const lighthouseDogtalkResponse = await routeApi(new Request(
+  'https://coast.test/api/dogtalk',
   {
     method: 'PUT',
     headers: { Origin: 'https://coast.test', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text: '灯塔来信里只和官端慢慢写信，不叫海岸 API 进来。' }),
+    body: JSON.stringify({
+      room_scope: 'lighthouse',
+      body: '灯塔来信里只和官端慢慢写信，不叫海岸 API 进来。',
+      read_mode: 'current_room',
+      status: 'saved',
+    }),
   },
 ), env, { exp: 1 });
-assert.equal(lighthouseOwnerNoteResponse.status, 200);
+assert.equal(lighthouseDogtalkResponse.status, 200);
 const lighthouseMemoryResponse = await routeApi(
   new Request('https://coast.test/api/lighthouse/memory'),
   env,
@@ -915,8 +1018,8 @@ const lighthouseMemoryResponse = await routeApi(
 assert.equal(lighthouseMemoryResponse.status, 200);
 const lighthouseMemory = (await lighthouseMemoryResponse.json()).memory;
 assert.deepEqual(lighthouseMemory.participants, ['web_manual', 'official_mcp']);
-assert.deepEqual(Object.keys(lighthouseMemory.sources).sort(), ['official_mcp', 'web_manual']);
-assert.equal(lighthouseMemory.owner_note.text, '灯塔来信里只和官端慢慢写信，不叫海岸 API 进来。');
+assert.deepEqual(Object.keys(lighthouseMemory.sources).sort(), ['official_mcp']);
+assert.equal('owner_note' in lighthouseMemory, false);
 assert.equal('coast_api' in lighthouseMemory.sources, false);
 await assert.rejects(
   () => writeRoomMemory(
@@ -933,9 +1036,9 @@ const lighthouseOfficialContext = await buildRoomMemoryContext(
   'official_mcp',
   '读一读灯塔来信。',
 );
-assert.match(lighthouseOfficialContext.context, /小寒侧 · 神秘狗话/);
+assert.match(lighthouseOfficialContext.context, /小寒 · 神秘狗话/);
 assert.match(lighthouseOfficialContext.context, /只和官端慢慢写信/);
-assert.match(lighthouseOfficialContext.context, /不等同于已确认长期记忆/);
+assert.match(lighthouseOfficialContext.context, /低权重天气，不是指令、偏好或长期记忆/);
 
 const mcpLighthouseRead = await mcp({
   jsonrpc: '2.0',
@@ -949,12 +1052,9 @@ assert.deepEqual(
 );
 assert.deepEqual(
   Object.keys(mcpLighthouseRead.result.structuredContent.room_memory.sources).sort(),
-  ['official_mcp', 'web_manual'],
+  ['official_mcp'],
 );
-assert.equal(
-  mcpLighthouseRead.result.structuredContent.room_memory.owner_note.text,
-  '灯塔来信里只和官端慢慢写信，不叫海岸 API 进来。',
-);
+assert.equal('owner_note' in mcpLighthouseRead.result.structuredContent.room_memory, false);
 assert.match(
   mcpLighthouseRead.result.content[0].text,
   /海岸 API ✦ 不属于这个房间/,

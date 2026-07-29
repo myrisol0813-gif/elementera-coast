@@ -89,7 +89,7 @@ function parsePocketCandidateLines(value, existing) {
   });
 }
 
-export function createMemory({ chat, router, toast, storage }) {
+export function createMemory({ chat, router, toast, storage, dogtalk }) {
   const runtime = {
     soils: new Map(),
     pockets: new Map(),
@@ -421,6 +421,7 @@ export function createMemory({ chat, router, toast, storage }) {
     const local = current ? `<section class="feature-group"><div class="feature-card">
       <button class="feature-row" type="button" data-action="memory:soil"><span><strong>思维壤 · ${currentSoil().hand_seeds.length} 粒手持种</strong><small>${escapeHtml(currentSoil().current_text || '当前窗口还没有整理方向。')}</small></span><span>›</span></button>
       <button class="feature-row" type="button" data-action="memory:pockets"><span><strong>待确认袋 · ${currentPockets().length}</strong><small>只有确认后才会进入正式库。</small></span><span>›</span></button>
+      ${dogtalk.entryButton({ room_scope: 'conversation', conversation_id: currentId() })}
     </div></section>` : '';
     return {
       title: '轨迹记忆',
@@ -502,7 +503,14 @@ export function createMemory({ chat, router, toast, storage }) {
   async function openLibrary(scope = runtime.libraryTab) {
     runtime.libraryTab = scope === 'global' ? 'global' : 'conversation';
     if (runtime.libraryTab === 'conversation') {
-      await Promise.all([fetchSoil(currentId()), fetchPockets(currentId()), fetchEntries('conversation'), fetchOfficialSoils(), fetchVectorStatus()]);
+      await Promise.all([
+        fetchSoil(currentId()),
+        fetchPockets(currentId()),
+        fetchEntries('conversation'),
+        fetchOfficialSoils(),
+        fetchVectorStatus(),
+        dogtalk.fetchScope({ room_scope: 'conversation', conversation_id: currentId() }),
+      ]);
     } else await Promise.all([fetchEntries('global'), fetchOfficialSoils(), fetchVectorStatus()]);
     return router.open('memory');
   }

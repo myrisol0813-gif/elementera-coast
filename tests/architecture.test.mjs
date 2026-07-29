@@ -13,7 +13,7 @@ const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 const headers = await read(join(pages, '_headers'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-18"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-19"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 
@@ -84,7 +84,7 @@ assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(join(pages, 'service-worker.js'));
-assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-18';$/m);
+assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-19';$/m);
 assert.ok(worker.includes("url.pathname.startsWith('/api/')"));
 assert.ok(worker.includes("url.pathname.startsWith('/mcp')"));
 assert.ok(worker.includes("url.pathname.startsWith('/.well-known/')"));
@@ -115,7 +115,7 @@ const moduleFiles = [
   'app.js',
   'core/api.js', 'core/dom.js', 'core/icons.js', 'core/router.js', 'core/storage.js',
   'content/letters.js',
-  'features/chat-state.js', 'features/chat.js', 'features/daily-client.js', 'features/daily.js', 'features/letters.js',
+  'features/chat-state.js', 'features/chat.js', 'features/daily-client.js', 'features/daily.js', 'features/dogtalk.js', 'features/letters.js',
   'features/memory.js', 'features/models.js', 'features/rooms.js', 'features/settings.js', 'features/shell.js', 'features/tools.js',
 ].map((path) => join(moduleRoot, path));
 
@@ -133,6 +133,7 @@ const dailyClientSource = await read(join(moduleRoot, 'features/daily-client.js'
 const dailySource = await read(join(moduleRoot, 'features/daily.js'));
 const memorySource = await read(join(moduleRoot, 'features/memory.js'));
 const roomsSource = await read(join(moduleRoot, 'features/rooms.js'));
+const dogtalkSource = await read(join(moduleRoot, 'features/dogtalk.js'));
 const modelsBackendSource = await read(join(repo, 'functions/models.js'));
 for (const name of ['edit', 'trash', 'copy', 'like', 'refresh', 'heart']) {
   assert.ok(chatSource.includes(`'${name}'`), `chat icon ${name} is missing`);
@@ -158,6 +159,19 @@ assert.equal(memorySource.includes('memory:soil-organize'), false, 'manual soil 
 assert.equal(memorySource.includes('整理思维壤'), false, 'manual soil organize label must stay retired');
 for (const action of ['memory:soil-edit', 'memory:soil-clear', 'memory:soil-auto']) {
   assert.ok(memorySource.includes(action), `soil control must remain available: ${action}`);
+}
+assert.equal(roomsSource.includes('room-memory-drawer'), false, 'room memory cannot sit inside a chat flow');
+assert.equal(roomsSource.includes('owner-note'), false, 'retired room owner-note UI must stay removed');
+for (const route of ["router.register('room-memory'", "router.register('room-soil'"]) {
+  assert.ok(roomsSource.includes(route), `rooms are missing the independent route: ${route}`);
+}
+for (const copy of [
+  '小寒 · 神秘狗话',
+  '小寒这轮很放松，因此偷懒中。',
+  '不写也可以。神秘狗话是助力，不是打卡。',
+  '不进入思维壤、落袋、种子、记忆或自动总结',
+]) {
+  assert.ok(dogtalkSource.includes(copy), `dogtalk UI is missing its boundary copy: ${copy}`);
 }
 
 const tokenStyles = await read(join(moduleRoot, 'styles/tokens.css'));
@@ -190,6 +204,8 @@ const memoryStoreSource = await read(join(repo, 'functions/memory-store.js'));
 const embeddingSource = await read(join(repo, 'functions/embedding.js'));
 const memoryRecallSource = await read(join(repo, 'functions/memory-recall.js'));
 const memoryRouterSource = await read(join(repo, 'functions/memory-router.js'));
+const dogtalkStoreSource = await read(join(repo, 'functions/dogtalk-store.js'));
+const dogtalkApiSource = await read(join(repo, 'functions/dogtalk-api.js'));
 const toolsSource = await read(join(moduleRoot, 'features/tools.js'));
 const mcpOwnerSource = (await Promise.all([
   'mcp-router.js',
@@ -225,6 +241,23 @@ assert.ok(dailyToolsSource.includes("name: 'save_album_reference'"));
 assert.equal(dailyToolsSource.includes("name: 'create_diary'"), false, 'ordinary chat must use the draft-only diary tool');
 assert.ok(chatRouter.includes('DAILY_MODEL_TOOLS'));
 assert.ok(chatRouter.includes('executeDailyModelTool'));
+assert.ok(chatRouter.includes('DOGTALK_MODEL_TOOL'));
+assert.ok(chatRouter.includes('executeDogtalkModelTool'));
+for (const contract of [
+  "const TYPE = 'xiaohan_mystic_dogtalk'",
+  "const OWNER = 'xiaohan'",
+  "const DEFAULT_TEXT = '小寒这轮很放松，因此偷懒中。'",
+  'auto_recall: false',
+  "memory_weight: 'low'",
+  'not_instruction: true',
+  'not_preference: true',
+  'not_memory_seed: true',
+  'not_pocket: true',
+]) {
+  assert.ok(dogtalkStoreSource.includes(contract), `dogtalk store is missing: ${contract}`);
+}
+assert.ok(dogtalkApiSource.includes('requireOwnerSession'));
+assert.equal(dogtalkApiSource.includes('requireMcpAuth'), false, 'models cannot write Xiaohan dogtalk');
 assert.ok(modelsBackendSource.includes("role: 'tool'"));
 assert.ok(modelsBackendSource.includes('tool_calls'));
 assert.ok(dailyStoreSource.includes('image_data_url_not_allowed'));

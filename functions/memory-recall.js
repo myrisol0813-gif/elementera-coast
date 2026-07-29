@@ -145,10 +145,11 @@ export async function buildMemoryContext(env, owner, conversationId, query, opti
     }
   }
 
-  const results = {};
+  const pools = POOLS.filter((pool) => pool.scope !== 'global' || options.include_global !== false);
+  const results = Object.fromEntries(POOLS.map((pool) => [pool.key, []]));
   const traces = [];
   const selectedAcrossPools = new Set();
-  for (const pool of POOLS) {
+  for (const pool of pools) {
     const result = await retrievePool(env, db, pool, conversationId, query, queryValues, recentIds, {
       explicit,
       stall,
@@ -165,12 +166,12 @@ export async function buildMemoryContext(env, owner, conversationId, query, opti
 
   if (options.mode !== 'explicit') {
     let remaining = settings.maxInjectedEntries;
-    for (const pool of POOLS) {
+    for (const pool of pools) {
       results[pool.key] = results[pool.key].slice(0, remaining);
       remaining -= results[pool.key].length;
     }
   }
-  const selectedIds = POOLS.flatMap((pool) => results[pool.key].map((entry) => entry.id));
+  const selectedIds = pools.flatMap((pool) => results[pool.key].map((entry) => entry.id));
   if (options.mode !== 'explicit') await markEntriesRecalled(db, selectedIds);
   return {
     ...results,

@@ -24,7 +24,8 @@ const expected = {
   'memory:official-soil-delete': ['删除这条灯塔巡迹？', '删除后不会再出现在海岸中，也不会参与搜索或召回。', '删除'],
   'rooms:withdraw-radio': ['撤回这条电波吗？', '撤回后房间里将不再显示正文，也不会进入上下文召回。', '撤回'],
   'rooms:resolve-pocket': ['处理这条房间候选？', '请确认它要进入所选分区，或从待确认袋中丢弃。', '确认处理'],
-  'rooms:delete-owner-note': ['清除这段神秘狗话？', '清除后，它不再参与这个房间的理解与召回；已确认的长期记忆不会受到影响。', '清除'],
+  'dogtalk:clear': ['清空这条神秘狗话草稿？', '本条草稿会收进归档，不再作为当前房间最近的神秘狗话；思维壤、落袋、种子和记忆不会受到影响。', '清空草稿'],
+  'dogtalk:archive': ['把这条神秘狗话收进归档？', '归档后它不再作为当前房间最近的神秘狗话，也不会被低频读取；之后仍可由数据层保留。', '归档'],
   'daily:publish-content-draft': ['确认发布这份草稿？', '发布后它会进入正式日记或碳硅圈，并保留原始来源署名。', '确认发布'],
   'daily:discard-content-draft': ['丢弃这份草稿？', '丢弃后它不会发布，也不会进入正式海岸内容。', '丢弃'],
   'daily:discard-summary': ['丢弃本次总结结果？', '这份尚未提交的总结、日记与候选内容会被放下，不会写入服务器。', '丢弃'],
@@ -47,6 +48,7 @@ for (const action of [
 const sourceFiles = [
   'public/features/chat.js',
   'public/features/daily.js',
+  'public/features/dogtalk.js',
   'public/features/memory.js',
   'public/features/rooms.js',
   'public/features/tools.js',
