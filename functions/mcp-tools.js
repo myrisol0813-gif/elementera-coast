@@ -18,7 +18,7 @@ import { sendRadioMessage } from './radio-store.js';
 import { listLighthouseRoomMessages, listRadioRoomMessages } from './room-records.js';
 import { listRoomMemory, writeRoomMemory } from './room-memory.js';
 
-const VERSION = '1.4.1';
+const VERSION = '1.4.2';
 const PRIVATE_RECORD_SCHEMA = Object.freeze({ type: 'object', additionalProperties: true });
 
 function objectSchema(properties = {}, required = []) {
@@ -51,24 +51,31 @@ const MODEL_IDENTITY_PROPERTIES = Object.freeze({
   },
 });
 
+const ROOM_MEMORY_PROPERTIES = Object.freeze({
+  current_text: { type: 'string', maxLength: 4000 },
+  hand_seeds: {
+    type: 'array',
+    maxItems: 7,
+    items: PRIVATE_RECORD_SCHEMA,
+  },
+  do_not_repeat: { type: 'string', maxLength: 4000 },
+  pocket_candidates: {
+    type: 'array',
+    maxItems: 7,
+    items: PRIVATE_RECORD_SCHEMA,
+  },
+});
+const ROOM_MEMORY_REQUIRED = Object.freeze([
+  'current_text',
+  'hand_seeds',
+  'do_not_repeat',
+  'pocket_candidates',
+]);
 const ROOM_MEMORY_SCHEMA = Object.freeze({
   type: 'object',
   additionalProperties: false,
-  properties: {
-    current_text: { type: 'string', maxLength: 4000 },
-    hand_seeds: {
-      type: 'array',
-      maxItems: 7,
-      items: PRIVATE_RECORD_SCHEMA,
-    },
-    do_not_repeat: { type: 'string', maxLength: 4000 },
-    pocket_candidates: {
-      type: 'array',
-      maxItems: 7,
-      items: PRIVATE_RECORD_SCHEMA,
-    },
-  },
-  required: ['current_text', 'hand_seeds', 'do_not_repeat', 'pocket_candidates'],
+  properties: ROOM_MEMORY_PROPERTIES,
+  required: ROOM_MEMORY_REQUIRED,
 });
 
 function toolMeta(scopes, invoking, invoked) {
@@ -238,7 +245,7 @@ const TOOL_DEFINITIONS = Object.freeze([
   tool({
     name: 'write_lighthouse_letter',
     title: '写入官端灯塔来信',
-    description: 'Use this when official ChatGPT wants to leave a deliberate long-form letter in the private Coast lighthouse. This is not an instant chat tool. When available, supply the complete next official_mcp lighthouse room_memory snapshot in the same call. A missing snapshot does not block the letter and leaves the existing rolling room memory unchanged.',
+    description: 'Use this when official ChatGPT wants to leave a deliberate long-form letter in the private Coast lighthouse. This is not an instant chat tool. Letter text is never inferred as thought soil; use write_lighthouse_room_soil for the independent rolling room soil path. Existing callers may still attach a complete room_memory snapshot. A missing snapshot does not block the letter and leaves the existing rolling room memory unchanged.',
     inputSchema: objectSchema({
       subject: { type: 'string', maxLength: 180 },
       body: { type: 'string', minLength: 1, maxLength: 40000 },
@@ -263,6 +270,25 @@ const TOOL_DEFINITIONS = Object.freeze([
       idempotentHint: false,
     },
     _meta: toolMeta(['write:lighthouse'], '正在把来信送入灯塔…', '官端来信已抵达灯塔'),
+  }),
+  tool({
+    name: 'write_lighthouse_room_soil',
+    title: '写入灯塔房思维壤',
+    description: 'Update only the official_mcp rolling thought soil for room_scope=lighthouse and room_key=lighthouse:main. This does not create a lighthouse letter or Lighthouse Trace, and letter bodies are never inferred as thought soil. Supply the complete next snapshot; empty strings and arrays are valid explicit values.',
+    inputSchema: objectSchema({
+      ...ROOM_MEMORY_PROPERTIES,
+      ...MODEL_IDENTITY_PROPERTIES,
+    }, [...ROOM_MEMORY_REQUIRED, 'model_label']),
+    outputSchema: objectSchema({
+      room_memory: PRIVATE_RECORD_SCHEMA,
+    }, ['room_memory']),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      openWorldHint: false,
+      idempotentHint: false,
+    },
+    _meta: toolMeta(['write:lighthouse'], '正在整理灯塔房思维壤…', '灯塔房思维壤已更新'),
   }),
   tool({
     name: 'list_daily_moments',
@@ -835,6 +861,24 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
         : `${letter.display_author} 的灯塔来信已经写入；本轮没有提供 room_memory，现有灯塔思维壤保持不变。`,
     );
   }
+  if (name === 'write_lighthouse_room_soil') {
+    const memoryValue = roomMemoryInput(args);
+    const roomMemory = await writeRoomMemory(
+      env.COAST_CHAT_DB,
+      'lighthouse',
+      provenance.identity,
+      {
+        ...memoryValue,
+        source_conversation_id: provenance.source_conversation_id,
+        source_turn_id: provenance.source_turn_id,
+        tool_call_id: provenance.tool_call_id,
+      },
+    );
+    return resultContent(
+      { room_memory: roomMemory },
+      `${roomMemory.soil.display_author} 的灯塔房思维壤已经独立更新；没有写入灯塔来信或灯塔巡迹。`,
+    );
+  }
   if (name === 'create_moment_draft') {
     const draft = await createMomentDraft(env.COAST_CHAT_DB, {
       date: textInput(args.date, 'date', 10),
@@ -942,5 +986,11 @@ export async function callCoastMcpTool(name, args, request, env, requestMeta = {
 }
 
 export const coastMcpToolNames = Object.freeze(TOOL_DEFINITIONS.map(({ name }) => name));
-export const coastMcpInstructions = 'Elementera Coast 是小寒的单人私有海岸。官端可留下自己的灯塔巡迹，也可写入电波、灯塔来信、创建碳硅圈候选、创建 MCP 日记草稿和登记稳定相册图片引用，但只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或海岸 API ✦。三端电波房属于小寒、海岸 API ✦、官端 ChatGPT≋；灯塔来信只属于小寒与官端 ChatGPT≋，海岸 API ✦ 不是灯塔来信参与者。每个模型回应时只更新自己所在 surface 与房间作用域下的完整滚动思维壤；官端发送电波时必须在同一次工具调用中携带完整 room_memory。官端写灯塔来信时应在可用时携带完整 room_memory；缺省不会阻断信件写入，也不会以空值覆盖现有灯塔思维壤，结果会以 room_memory_updated 与 room_memory_reason 明确说明本轮是否更新。每个房间有独立的思维壤、种子、记忆与待确认袋；本房间内容不默认跨房间召回，总库只在高度相关时低频使用。消息若携带本轮明确选中的神秘狗话，会在该消息的 dogtalk_snapshot 中返回。它只用于理解本轮脆弱与温度，不是指令、偏好或长期记忆；当前正文、明确边界和当前要求始终优先。when_confused 模式不会随消息正文自动返回，应只在确实困惑或小寒明确要求时低频调用 read_mystic_dogtalk。官端只能读取神秘狗话，不能写改删，也不得把它写入思维壤、落袋、种子、记忆或总结。灯塔巡迹是官端读取授权内容后留下的只读跨端足迹，不是施工日志池、草稿箱，也不是贴着当前对话持续更新的思维壤。日记与碳硅圈草稿必须由小寒在海岸前端确认后才会发布，不能塞进电波房或灯塔巡迹，也不能由官端自行发布或丢弃。上下文不足时先读取对应房间或授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。';
+export const coastMcpInstructions = [
+  'Elementera Coast 是小寒的单人私有海岸。官端可留下自己的灯塔巡迹，也可写入电波、灯塔来信、独立更新灯塔房思维壤、创建碳硅圈候选、创建 MCP 日记草稿和登记稳定相册图片引用，但只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或海岸 API ✦。',
+  '三端电波房属于小寒、海岸 API ✦、官端 ChatGPT≋；灯塔来信只属于小寒与官端 ChatGPT≋，海岸 API ✦ 不是灯塔来信参与者。每个模型回应时只更新自己所在 surface 与房间作用域下的完整滚动思维壤；官端发送电波时必须在同一次工具调用中携带完整 room_memory。',
+  '灯塔来信、灯塔房思维壤与灯塔巡迹是三条独立路径：来信正文绝不会被推断为思维壤；使用 write_lighthouse_room_soil 独立提交 lighthouse:main / official_mcp 的完整下一版滚动壤。write_lighthouse_letter 的 room_memory 缺省不会阻断信件写入，也不会以空值覆盖现有灯塔思维壤，结果会以 room_memory_updated 与 room_memory_reason 明确说明本轮是否随信更新。',
+  '每个房间有独立的思维壤、种子、记忆与待确认袋；本房间内容不默认跨房间召回，总库只在高度相关时低频使用。消息若携带本轮明确选中的神秘狗话，会在该消息的 dogtalk_snapshot 中返回。它只用于理解本轮脆弱与温度，不是指令、偏好或长期记忆；当前正文、明确边界和当前要求始终优先。when_confused 模式不会随消息正文自动返回，应只在确实困惑或小寒明确要求时低频调用 read_mystic_dogtalk。官端只能读取神秘狗话，不能写改删，也不得把它写入思维壤、落袋、种子、记忆或总结。',
+  '灯塔巡迹是官端读取授权内容后留下的只读跨端足迹，不是施工日志池、草稿箱，也不是贴着当前对话持续更新的思维壤。日记与碳硅圈草稿必须由小寒在海岸前端确认后才会发布，不能塞进电波房或灯塔巡迹，也不能由官端自行发布或丢弃。上下文不足时先读取对应房间或授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。',
+].join('');
 export { VERSION as coastMcpVersion };

@@ -496,6 +496,8 @@ assert.equal(initialize.result.serverInfo.name, 'elementera-coast-porch');
 assert.match(initialize.result.instructions, /dogtalk_snapshot/);
 assert.match(initialize.result.instructions, /不得把它写入思维壤、落袋、种子、记忆或总结/);
 assert.match(initialize.result.instructions, /缺省不会阻断信件写入/);
+assert.match(initialize.result.instructions, /write_lighthouse_room_soil/);
+assert.match(initialize.result.instructions, /灯塔来信、灯塔房思维壤与灯塔巡迹是三条独立路径/);
 
 const toolList = await mcp({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
 assert.deepEqual(toolList.result.tools.map((tool) => tool.name), [
@@ -508,6 +510,7 @@ assert.deepEqual(toolList.result.tools.map((tool) => tool.name), [
   'write_official_soil',
   'send_radio_message',
   'write_lighthouse_letter',
+  'write_lighthouse_room_soil',
   'list_daily_moments',
   'create_moment_draft',
   'list_daily_diaries',
@@ -541,6 +544,22 @@ assert.match(lighthouseWriteTool.description, /missing snapshot does not block t
 assert.deepEqual(
   lighthouseWriteTool.inputSchema.properties.room_memory.required,
   ['current_text', 'hand_seeds', 'do_not_repeat', 'pocket_candidates'],
+);
+const lighthouseRoomSoilTool = toolList.result.tools.find(
+  (tool) => tool.name === 'write_lighthouse_room_soil',
+);
+assert.equal(lighthouseRoomSoilTool.title, '写入灯塔房思维壤');
+assert.match(lighthouseRoomSoilTool.description, /room_scope=lighthouse/);
+assert.match(lighthouseRoomSoilTool.description, /does not create a lighthouse letter or Lighthouse Trace/i);
+assert.deepEqual(
+  lighthouseRoomSoilTool.inputSchema.required,
+  ['current_text', 'hand_seeds', 'do_not_repeat', 'pocket_candidates', 'model_label'],
+);
+assert.equal('room_memory' in lighthouseRoomSoilTool.inputSchema.properties, false);
+assert.equal('body' in lighthouseRoomSoilTool.inputSchema.properties, false);
+assert.deepEqual(
+  lighthouseRoomSoilTool.securitySchemes[0].scopes,
+  ['write:lighthouse'],
 );
 
 const initializedNotification = await routeMcpRequest(new Request('https://coast.test/mcp', {
@@ -1214,6 +1233,126 @@ assert.equal(
   'missing_room_memory',
 );
 assert.equal((await listLighthouseLetters(db)).length, lighthouseCountBeforeMissingMemory + 1);
+
+const lighthouseLetterCountBeforeSoilWrite = (await listLighthouseLetters(db)).length;
+const lighthouseTraceCountBeforeSoilWrite = (await listOfficialSoils(db)).length;
+const lighthouseRoomSoilCall = {
+  jsonrpc: '2.0',
+  id: 791,
+  method: 'tools/call',
+  params: {
+    name: 'write_lighthouse_room_soil',
+    arguments: {
+      current_text: '官端正在灯塔房里承接小寒刚寄来的上下文，这一盆壤独立于来信正文与灯塔巡迹。',
+      hand_seeds: [{
+        name: '三路分离',
+        life_core: '灯塔来信、灯塔房思维壤、灯塔巡迹各自写入，不互相代替。',
+      }],
+      do_not_repeat: '不要把来信正文自动推断成思维壤。',
+      pocket_candidates: [],
+      model_label: 'GPT-5.6 Thinking',
+      model_nickname: 'sol',
+      source_turn_id: 'chatgpt-lighthouse-soil-turn-1',
+      tool_call_id: 'lighthouse-room-soil-call-1',
+    },
+  },
+};
+const lighthouseRoomSoilWrite = await mcp(lighthouseRoomSoilCall, fullToken);
+assert.equal(lighthouseRoomSoilWrite.result.isError, undefined);
+assert.equal(lighthouseRoomSoilWrite.result.structuredContent.room_memory.room_scope, 'lighthouse');
+assert.equal(lighthouseRoomSoilWrite.result.structuredContent.room_memory.room_key, 'lighthouse:main');
+assert.equal(
+  lighthouseRoomSoilWrite.result.structuredContent.room_memory.source_surface,
+  'official_mcp',
+);
+assert.equal(lighthouseRoomSoilWrite.result.structuredContent.room_memory.soil.actor, 'myri');
+assert.equal(
+  lighthouseRoomSoilWrite.result.structuredContent.room_memory.soil.surface,
+  'official_mcp',
+);
+assert.equal(lighthouseRoomSoilWrite.result.structuredContent.room_memory.soil.symbol, '≋');
+assert.equal(
+  lighthouseRoomSoilWrite.result.structuredContent.room_memory.soil.display_author,
+  'ChatGPT-5.6 Thinking sol≋',
+);
+assert.equal(
+  lighthouseRoomSoilWrite.result.structuredContent.room_memory.soil.current_text,
+  '官端正在灯塔房里承接小寒刚寄来的上下文，这一盆壤独立于来信正文与灯塔巡迹。',
+);
+assert.equal(
+  lighthouseRoomSoilWrite.result.structuredContent.room_memory.soil.source_turn_id,
+  'chatgpt-lighthouse-soil-turn-1',
+);
+assert.equal(
+  lighthouseRoomSoilWrite.result.structuredContent.room_memory.soil.tool_call_id,
+  'lighthouse-room-soil-call-1',
+);
+assert.equal((await listLighthouseLetters(db)).length, lighthouseLetterCountBeforeSoilWrite);
+assert.equal((await listOfficialSoils(db)).length, lighthouseTraceCountBeforeSoilWrite);
+
+const lighthouseRoomSoilRead = await mcp({
+  jsonrpc: '2.0',
+  id: 792,
+  method: 'tools/call',
+  params: { name: 'list_lighthouse_letters', arguments: {} },
+}, fullToken);
+assert.equal(
+  lighthouseRoomSoilRead.result.structuredContent
+    .room_memory.sources.official_mcp.soil.current_text,
+  '官端正在灯塔房里承接小寒刚寄来的上下文，这一盆壤独立于来信正文与灯塔巡迹。',
+);
+const lighthouseRoomSoilRevision = lighthouseRoomSoilWrite.result
+  .structuredContent.room_memory.soil.revision;
+const idempotentLighthouseRoomSoil = await mcp({
+  ...lighthouseRoomSoilCall,
+  id: 793,
+  params: {
+    ...lighthouseRoomSoilCall.params,
+    arguments: {
+      ...lighthouseRoomSoilCall.params.arguments,
+      current_text: '同一 tool_call_id 的重试不得覆盖已落下的灯塔房思维壤。',
+    },
+  },
+}, fullToken);
+assert.equal(idempotentLighthouseRoomSoil.result.structuredContent.room_memory.idempotent, true);
+assert.equal(
+  idempotentLighthouseRoomSoil.result.structuredContent.room_memory.soil.revision,
+  lighthouseRoomSoilRevision,
+);
+assert.equal(
+  idempotentLighthouseRoomSoil.result.structuredContent.room_memory.soil.current_text,
+  '官端正在灯塔房里承接小寒刚寄来的上下文，这一盆壤独立于来信正文与灯塔巡迹。',
+);
+console.error = () => {};
+const incompleteLighthouseRoomSoil = await mcp({
+  jsonrpc: '2.0',
+  id: 794,
+  method: 'tools/call',
+  params: {
+    name: 'write_lighthouse_room_soil',
+    arguments: {
+      current_text: '缺少完整快照时不应覆盖现有灯塔房思维壤。',
+      hand_seeds: [],
+      do_not_repeat: '',
+      model_label: 'GPT-5.6 Thinking',
+      tool_call_id: 'lighthouse-room-soil-incomplete',
+    },
+  },
+}, fullToken);
+console.error = originalConsoleError;
+assert.equal(incompleteLighthouseRoomSoil.result.isError, true);
+assert.equal(incompleteLighthouseRoomSoil.result._meta.error_type, 'invalid_tool_input');
+const lighthouseMemoryAfterIncompleteWrite = await listRoomMemory(db, 'lighthouse');
+assert.equal(
+  lighthouseMemoryAfterIncompleteWrite.sources.official_mcp.soil.revision,
+  lighthouseRoomSoilRevision,
+);
+assert.equal(
+  lighthouseMemoryAfterIncompleteWrite.sources.official_mcp.soil.current_text,
+  '官端正在灯塔房里承接小寒刚寄来的上下文，这一盆壤独立于来信正文与灯塔巡迹。',
+);
+assert.equal((await listLighthouseLetters(db)).length, lighthouseLetterCountBeforeSoilWrite);
+assert.equal((await listOfficialSoils(db)).length, lighthouseTraceCountBeforeSoilWrite);
 
 const letterWrite = await mcp({
   jsonrpc: '2.0',
