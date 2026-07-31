@@ -16,6 +16,7 @@ import {
   resolvePocket,
   upsertSoilPocketCandidates,
   writeSoil,
+  writeSoilCurrentText,
 } from './memory-store.js';
 
 const ROOMS = new Set(['radio', 'lighthouse']);
@@ -318,6 +319,54 @@ export async function writeRoomMemory(db, roomValue, identityValue, value = {}) 
     soil: scopedRecord(soil, roomId, source),
     pockets,
   };
+}
+
+export async function writeLighthouseRoomSoil(db, identityValue, value = {}) {
+  const roomId = 'lighthouse';
+  const identity = validateCoastIdentity(identityValue);
+  const source = modelMemorySurface(roomId, identity.surface);
+  let conversationId;
+  try {
+    conversationId = await ensureRoomConversation(db, roomId, source);
+    await readSoil(db, conversationId);
+  } catch (error) {
+    throw new MemoryStoreError(
+      'lighthouse_room_init_failed',
+      '灯塔来信房思维壤初始化失败。',
+      500,
+    );
+  }
+  try {
+    const { soil, idempotent } = await writeSoilCurrentText(
+      db,
+      conversationId,
+      { current_text: value.current_text },
+      {
+        provenance: {
+          identity,
+          source_conversation_id: value.source_conversation_id || conversationId,
+          source_turn_id: value.source_turn_id,
+          tool_call_id: value.tool_call_id,
+        },
+      },
+    );
+    return {
+      room_scope: roomId,
+      room_key: ROOM_META[roomId].room_key,
+      source_surface: source,
+      conversation_id: conversationId,
+      soil: scopedRecord(soil, roomId, source),
+      idempotent,
+    };
+  } catch (error) {
+    if (error instanceof MemoryStoreError && error.type === 'invalid_request') throw error;
+    if (error instanceof MemoryStoreError && error.type === 'room_soil_write_failed') throw error;
+    throw new MemoryStoreError(
+      'room_soil_write_failed',
+      '灯塔来信房思维壤写入失败。',
+      500,
+    );
+  }
 }
 
 function clipped(value, max) {

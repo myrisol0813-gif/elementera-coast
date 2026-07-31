@@ -107,6 +107,7 @@ async function initializeMemorySchema(db) {
     manual_locked INTEGER NOT NULL DEFAULT 0,
     auto_refresh_enabled INTEGER NOT NULL DEFAULT 1,
     organized_through_turn_id TEXT NOT NULL DEFAULT '',
+    tool_call_ids_json TEXT NOT NULL DEFAULT '[]',
     revision INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
@@ -123,7 +124,11 @@ async function initializeMemorySchema(db) {
     ['source_conversation_id', 'TEXT DEFAULT NULL'],
     ['source_turn_id', 'TEXT DEFAULT NULL'],
     ['tool_call_id', 'TEXT DEFAULT NULL'],
+    ['tool_call_ids_json', "TEXT NOT NULL DEFAULT '[]'"],
   ]) await ensureColumn(db, 'conversation_soils', column, declaration);
+  await run(db, `UPDATE conversation_soils
+    SET tool_call_ids_json = json_array(tool_call_id)
+    WHERE tool_call_id IS NOT NULL AND json_array_length(tool_call_ids_json) = 0`);
   await run(db, `CREATE TABLE IF NOT EXISTS memory_pockets (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL DEFAULT 'owner',
@@ -430,6 +435,61 @@ export async function writeSoil(db, id, value = {}, { automatic = false, provena
     conversationId,
   ]);
   return readSoil(db, conversationId);
+}
+
+export async function writeSoilCurrentText(db, id, value = {}, { provenance = {} } = {}) {
+  await ensureMemorySchema(db);
+  const conversationId = sanitizeId(id, 'conversation');
+  await ensureSoilRow(db, conversationId);
+  const currentText = String(value.current_text ?? '').trim();
+  if (!currentText || currentText.length > MAX_SOURCE_TEXT) {
+    throw new MemoryStoreError('invalid_request', '灯塔房思维壤 current_text 必须为 1 到 12000 个字符。');
+  }
+  const identity = validateCoastIdentity(provenance.identity);
+  const sourceConversationId = clip(
+    provenance.source_conversation_id || conversationId,
+    200,
+  );
+  const sourceTurnId = clip(provenance.source_turn_id, 200) || null;
+  const toolCallId = clip(provenance.tool_call_id, 240) || null;
+  const timestamp = Date.now();
+  const result = await run(db, `UPDATE conversation_soils SET
+    current_text = ?,
+    actor = ?, surface = ?, model_label = ?, model_nickname = ?, symbol = ?, display_author = ?,
+    source_conversation_id = ?, source_turn_id = ?, tool_call_id = ?,
+    tool_call_ids_json = CASE
+      WHEN ? IS NULL THEN tool_call_ids_json
+      ELSE json_insert(tool_call_ids_json, '$[#]', ?)
+    END,
+    revision = revision + 1, updated_at = ?
+    WHERE conversation_id = ?
+      AND (? IS NULL OR NOT EXISTS (
+        SELECT 1 FROM json_each(tool_call_ids_json) WHERE value = ?
+      ))`, [
+    currentText,
+    identity.actor,
+    identity.surface,
+    identity.model_label,
+    identity.model_nickname,
+    identity.symbol,
+    identity.display_author,
+    sourceConversationId,
+    sourceTurnId,
+    toolCallId,
+    toolCallId,
+    toolCallId,
+    timestamp,
+    conversationId,
+    toolCallId,
+    toolCallId,
+  ]);
+  const soil = await readSoil(db, conversationId);
+  const changes = Number(result?.meta?.changes || 0);
+  const idempotent = Boolean(toolCallId && changes === 0);
+  if (changes === 0 && !idempotent) {
+    throw new MemoryStoreError('room_soil_write_failed', '灯塔房思维壤没有完成写入。', 500);
+  }
+  return { soil, idempotent };
 }
 
 function sourceRef(value) {

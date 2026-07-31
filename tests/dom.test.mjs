@@ -568,7 +568,11 @@ globalThis.fetch = async (input, options = {}) => {
       memories: [],
     });
     const sources = {
-      official_mcp: blank('official_mcp', 'ChatGPT-5.6 Thinking sol≋'),
+      official_mcp: blank(
+        'official_mcp',
+        'ChatGPT-5.6 Thinking sol≋',
+        kind === 'lighthouse' ? '官端写入的灯塔来信房 current_text。' : '',
+      ),
     };
     if (kind === 'radio') {
       const candidate = {
@@ -1606,7 +1610,8 @@ lighthouseSoilTip.click();
 await waitFor(() => !document.querySelector('#overlayRoot')?.hidden
   && document.querySelector('#overlayRoot')?.dataset.route === 'thought-soil', 'lighthouse official soil detail');
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('灯塔来信思维壤'));
-assert.ok(document.querySelector('#overlayRoot').textContent.includes('还没有整理当前方向。'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('官端写入的灯塔来信房 current_text。'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('ChatGPT-5.6 Thinking sol≋ · 独立滚动工作上下文'));
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('revision 4 · 整理来源 · ChatGPT-5.6 Thinking sol≋'));
 document.querySelector('[data-action="memory:done"]').click();
 await waitFor(() => document.querySelector('#overlayRoot').hidden, 'close lighthouse soil detail');

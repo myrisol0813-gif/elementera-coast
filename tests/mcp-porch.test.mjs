@@ -470,14 +470,14 @@ const mcpHeaders = {
   Accept: 'application/json, text/event-stream',
   'Content-Type': 'application/json',
 };
-async function mcp(body, accessToken = '') {
+async function mcp(body, accessToken = '', targetEnv = env) {
   const headers = { ...mcpHeaders };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   const response = await routeMcpRequest(new Request('https://coast.test/mcp', {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
-  }), env);
+  }), targetEnv);
   assert.equal(response.status, 200);
   return response.json();
 }
@@ -493,10 +493,10 @@ const initialize = await mcp({
   },
 });
 assert.equal(initialize.result.serverInfo.name, 'elementera-coast-porch');
-assert.equal(initialize.result.serverInfo.version, '1.4.3');
+assert.equal(initialize.result.serverInfo.version, '1.4.4');
 assert.match(initialize.result.instructions, /dogtalk_snapshot/);
 assert.match(initialize.result.instructions, /不得把它写入思维壤、落袋、种子、记忆或总结/);
-assert.match(initialize.result.instructions, /缺省不会阻断信件写入/);
+assert.match(initialize.result.instructions, /room_memory_reason=not_requested/);
 assert.match(initialize.result.instructions, /write_lighthouse_room_soil/);
 assert.match(initialize.result.instructions, /灯塔来信、灯塔房思维壤与灯塔巡迹是三条独立路径/);
 
@@ -539,28 +539,36 @@ assert.deepEqual(
 const lighthouseWriteTool = toolList.result.tools.find(
   (tool) => tool.name === 'write_lighthouse_letter',
 );
-assert.ok('room_memory' in lighthouseWriteTool.inputSchema.properties);
-assert.equal(lighthouseWriteTool.inputSchema.required.includes('room_memory'), false);
-assert.match(lighthouseWriteTool.description, /missing snapshot does not block the letter/i);
-assert.deepEqual(
-  lighthouseWriteTool.inputSchema.properties.room_memory.required,
-  ['current_text', 'hand_seeds', 'do_not_repeat', 'pocket_candidates'],
-);
+assert.equal('room_memory' in lighthouseWriteTool.inputSchema.properties, false);
+assert.match(lighthouseWriteTool.description, /writes a letter only/i);
 const lighthouseRoomSoilTool = toolList.result.tools.find(
   (tool) => tool.name === 'write_lighthouse_room_soil',
 );
 assert.equal(lighthouseRoomSoilTool.title, '写入灯塔房思维壤');
-assert.match(lighthouseRoomSoilTool.description, /room_scope=lighthouse/);
-assert.match(lighthouseRoomSoilTool.description, /does not create a lighthouse letter or Lighthouse Trace/i);
+assert.match(lighthouseRoomSoilTool.description, /official_mcp source of lighthouse:main only/i);
+assert.match(lighthouseRoomSoilTool.description, /does not create a lighthouse letter or a lighthouse trace/i);
 assert.deepEqual(
   lighthouseRoomSoilTool.inputSchema.required,
-  ['current_text', 'hand_seeds', 'do_not_repeat', 'pocket_candidates', 'model_label'],
+  ['current_text', 'model_label'],
 );
 assert.equal('room_memory' in lighthouseRoomSoilTool.inputSchema.properties, false);
 assert.equal('body' in lighthouseRoomSoilTool.inputSchema.properties, false);
+assert.equal(lighthouseRoomSoilTool.inputSchema.properties.current_text.minLength, 1);
+assert.equal(lighthouseRoomSoilTool.inputSchema.properties.current_text.maxLength, 12000);
+for (const property of [
+  'current_text',
+  'model_label',
+  'model_nickname',
+  'source_conversation_id',
+  'source_turn_id',
+  'tool_call_id',
+]) assert.ok(property in lighthouseRoomSoilTool.inputSchema.properties);
+for (const property of ['hand_seeds', 'do_not_repeat', 'pocket_candidates']) {
+  assert.equal(property in lighthouseRoomSoilTool.inputSchema.properties, false);
+}
 assert.deepEqual(
   lighthouseRoomSoilTool.securitySchemes[0].scopes,
-  ['write:lighthouse'],
+  ['write:soil'],
 );
 
 const initializedNotification = await routeMcpRequest(new Request('https://coast.test/mcp', {
@@ -761,6 +769,21 @@ assert.match(deniedRadio.result._meta['mcp/www_authenticate'][0], /insufficient_
 assert.equal(deniedRadio.result._meta.failure_code, 'scope_missing');
 assert.deepEqual(deniedRadio.result._meta.auth_diagnostic.actual_scopes, ['read:coast']);
 assert.equal(JSON.stringify(deniedRadio).includes(insufficientToken), false);
+const deniedLighthouseRoomSoil = await mcp({
+  jsonrpc: '2.0',
+  id: 71,
+  method: 'tools/call',
+  params: {
+    name: 'write_lighthouse_room_soil',
+    arguments: { current_text: '不应写入', model_label: 'GPT-5.6 Thinking' },
+  },
+}, insufficientToken);
+assert.equal(deniedLighthouseRoomSoil.result.isError, true);
+assert.equal(deniedLighthouseRoomSoil.result._meta.failure_code, 'unauthorized');
+assert.deepEqual(
+  deniedLighthouseRoomSoil.result._meta.auth_diagnostic.required_scopes,
+  ['write:soil'],
+);
 console.warn = originalWarn;
 const authWarningText = authWarnings.join('\n');
 assert.match(authWarningText, /"failure_code":"missing_authorization_header"/);
@@ -777,6 +800,90 @@ for (const forbiddenValue of [
 ]) {
   assert.equal(authWarningText.includes(forbiddenValue), false, 'auth logs cannot contain token or identity values');
 }
+
+const lighthouseInitFailureDb = {
+  prepare() { throw new Error('simulated lighthouse room init failure'); },
+};
+const lighthouseWriteFailureBacking = new D1Database();
+const lighthouseWriteFailureDb = {
+  prepare(sql) {
+    if (String(sql).includes('tool_call_ids_json = CASE')) {
+      return {
+        bind() {
+          return {
+            async run() { throw new Error('simulated room soil write failure'); },
+          };
+        },
+      };
+    }
+    return lighthouseWriteFailureBacking.prepare(sql);
+  },
+};
+console.error = () => {};
+const lighthouseInitFailure = await mcp({
+  jsonrpc: '2.0',
+  id: 72,
+  method: 'tools/call',
+  params: {
+    name: 'write_lighthouse_room_soil',
+    arguments: { current_text: '初始化失败时不能伪报成功。', model_label: 'GPT-5.6 Thinking' },
+  },
+}, fullToken, { ...env, COAST_CHAT_DB: lighthouseInitFailureDb });
+const lighthouseWriteFailure = await mcp({
+  jsonrpc: '2.0',
+  id: 73,
+  method: 'tools/call',
+  params: {
+    name: 'write_lighthouse_room_soil',
+    arguments: { current_text: '数据库写入失败时不能伪报成功。', model_label: 'GPT-5.6 Thinking' },
+  },
+}, fullToken, { ...env, COAST_CHAT_DB: lighthouseWriteFailureDb });
+console.error = originalConsoleError;
+assert.equal(lighthouseInitFailure.result.isError, true);
+assert.equal(lighthouseInitFailure.result._meta.failure_code, 'lighthouse_room_init_failed');
+assert.equal(lighthouseWriteFailure.result.isError, true);
+assert.equal(lighthouseWriteFailure.result._meta.failure_code, 'room_soil_write_failed');
+
+const firstLighthouseSoilDb = new D1Database();
+const firstLighthouseSoilEnv = { ...env, COAST_CHAT_DB: firstLighthouseSoilDb };
+const firstLighthouseSoilText = '首次调用会初始化 canonical 灯塔房 soil，并直接写入 current_text。';
+const firstLighthouseSoilWrite = await mcp({
+  jsonrpc: '2.0',
+  id: 74,
+  method: 'tools/call',
+  params: {
+    name: 'write_lighthouse_room_soil',
+    arguments: {
+      current_text: firstLighthouseSoilText,
+      model_label: 'o3',
+      model_nickname: '雾灯',
+      tool_call_id: 'lighthouse-room-soil-first-write',
+    },
+  },
+}, fullToken, firstLighthouseSoilEnv);
+const firstLighthouseSoil = firstLighthouseSoilWrite.result.structuredContent.soil;
+assert.equal(firstLighthouseSoil.conversation_id, 'coast-room:lighthouse:official_mcp');
+assert.equal(firstLighthouseSoil.current_text, firstLighthouseSoilText);
+assert.equal(firstLighthouseSoil.revision, 2);
+assert.equal(firstLighthouseSoil.display_author, 'ChatGPT-o3 雾灯≋');
+assert.ok(Number.isFinite(Date.parse(firstLighthouseSoil.created_at)));
+assert.ok(Number.isFinite(Date.parse(firstLighthouseSoil.updated_at)));
+assert.equal(
+  firstLighthouseSoilDb.database.prepare(`SELECT COUNT(*) AS count FROM conversation_soils
+    WHERE conversation_id = ?`).get('coast-room:lighthouse:official_mcp').count,
+  1,
+);
+const firstLighthouseSoilRead = await mcp({
+  jsonrpc: '2.0',
+  id: 75,
+  method: 'tools/call',
+  params: { name: 'list_lighthouse_letters', arguments: {} },
+}, fullToken, firstLighthouseSoilEnv);
+assert.equal(
+  firstLighthouseSoilRead.result.structuredContent
+    .room_memory.sources.official_mcp.soil.current_text,
+  firstLighthouseSoilText,
+);
 
 const manualRadioResponse = await routeApi(new Request('https://coast.test/api/radio/messages', {
   method: 'POST',
@@ -1204,39 +1311,72 @@ assert.equal(legacyMessages[0].withdrawn, false);
 assert.ok(legacyRadioDb.database.prepare('PRAGMA table_info(coast_radio_messages)').all()
   .some((column) => column.name === 'withdrawn_at'));
 
-const lighthouseCountBeforeMissingMemory = (await listLighthouseLetters(db)).length;
-const missingLighthouseMemory = await mcp({
+await writeRoomMemory(
+  db,
+  'lighthouse',
+  officialMcpIdentity({ model_label: 'GPT-5.4', model_nickname: '旧潮' }),
+  {
+    current_text: '灯塔房原有思维壤。',
+    hand_seeds: [{
+      name: '三路分离',
+      life_core: '灯塔来信、灯塔房思维壤、灯塔巡迹各自写入，不互相代替。',
+    }],
+    do_not_repeat: '不要把来信正文自动推断成思维壤。',
+    pocket_candidates: [{
+      candidate_id: 'lighthouse-existing-candidate',
+      title: '保留既有候选',
+      life_core: '定向更新 current_text 时不能清掉候选。',
+      content: '这是写入前已经存在的灯塔房候选。',
+    }],
+    organized_through_turn_id: 'lighthouse-existing-turn',
+    tool_call_id: 'lighthouse-room-soil-fixture',
+  },
+);
+db.database.prepare(`UPDATE conversation_soils
+  SET manual_locked = 1, auto_refresh_enabled = 0
+  WHERE conversation_id = ?`).run('coast-room:lighthouse:official_mcp');
+const lighthouseMemoryBeforeLetter = await listRoomMemory(db, 'lighthouse');
+const originalLighthouseSoil = lighthouseMemoryBeforeLetter.sources.official_mcp.soil;
+const lighthouseCountBeforeLetter = (await listLighthouseLetters(db)).length;
+const independentLetter = await mcp({
   jsonrpc: '2.0',
   id: 79,
   method: 'tools/call',
   params: {
     name: 'write_lighthouse_letter',
     arguments: {
-      subject: '不完整来信',
-      body: '缺少滚动壤时仍应写入来信，并保留现有灯塔壤。',
+      subject: '来信与房间壤分开',
+      body: '普通灯塔来信只落来信，不要求也不修改 room memory。',
       model_label: 'GPT-5.6 Thinking',
-      tool_call_id: 'lighthouse-missing-memory',
+      tool_call_id: 'lighthouse-independent-letter',
     },
   },
 }, fullToken);
-assert.equal(missingLighthouseMemory.result.isError, undefined);
-assert.equal(missingLighthouseMemory.result.structuredContent.letter.surface, 'official_mcp');
-assert.equal(missingLighthouseMemory.result.structuredContent.letter.actor, 'myri');
-assert.equal(missingLighthouseMemory.result.structuredContent.letter.symbol, '≋');
+assert.equal(independentLetter.result.isError, undefined);
+assert.equal(independentLetter.result.structuredContent.letter.surface, 'official_mcp');
+assert.equal(independentLetter.result.structuredContent.letter.actor, 'myri');
+assert.equal(independentLetter.result.structuredContent.letter.symbol, '≋');
 assert.equal(
-  missingLighthouseMemory.result.structuredContent.letter.display_author,
+  independentLetter.result.structuredContent.letter.display_author,
   'ChatGPT-5.6 Thinking≋',
 );
-assert.equal(missingLighthouseMemory.result.structuredContent.room_memory, null);
-assert.equal(missingLighthouseMemory.result.structuredContent.room_memory_updated, false);
+assert.equal('room_memory' in independentLetter.result.structuredContent, false);
+assert.equal(independentLetter.result.structuredContent.room_memory_updated, false);
+assert.equal(independentLetter.result.structuredContent.room_memory_reason, 'not_requested');
+assert.equal((await listLighthouseLetters(db)).length, lighthouseCountBeforeLetter + 1);
+const lighthouseMemoryAfterLetter = await listRoomMemory(db, 'lighthouse');
 assert.equal(
-  missingLighthouseMemory.result.structuredContent.room_memory_reason,
-  'missing_room_memory',
+  lighthouseMemoryAfterLetter.sources.official_mcp.soil.current_text,
+  originalLighthouseSoil.current_text,
 );
-assert.equal((await listLighthouseLetters(db)).length, lighthouseCountBeforeMissingMemory + 1);
+assert.equal(
+  lighthouseMemoryAfterLetter.sources.official_mcp.soil.revision,
+  originalLighthouseSoil.revision,
+);
 
 const lighthouseLetterCountBeforeSoilWrite = (await listLighthouseLetters(db)).length;
 const lighthouseTraceCountBeforeSoilWrite = (await listOfficialSoils(db)).length;
+const acceptanceSoilText = '灯塔来信房当前正在测试官端思维壤写入。狗话可读，来信可写，房间壤应独立于灯塔巡迹。';
 const lighthouseRoomSoilCall = {
   jsonrpc: '2.0',
   id: 791,
@@ -1244,49 +1384,65 @@ const lighthouseRoomSoilCall = {
   params: {
     name: 'write_lighthouse_room_soil',
     arguments: {
-      current_text: '官端正在灯塔房里承接小寒刚寄来的上下文，这一盆壤独立于来信正文与灯塔巡迹。',
-      hand_seeds: [{
-        name: '三路分离',
-        life_core: '灯塔来信、灯塔房思维壤、灯塔巡迹各自写入，不互相代替。',
-      }],
-      do_not_repeat: '不要把来信正文自动推断成思维壤。',
-      pocket_candidates: [],
-      model_label: 'GPT-5.6 Thinking',
-      model_nickname: 'sol',
+      current_text: acceptanceSoilText,
+      model_label: 'GPT-5.5 Thinking',
+      model_nickname: '回潮',
+      source_conversation_id: 'chatgpt-lighthouse-conversation-1',
       source_turn_id: 'chatgpt-lighthouse-soil-turn-1',
-      tool_call_id: 'lighthouse-room-soil-call-1',
+      tool_call_id: 'lighthouse-room-soil-acceptance-001',
     },
   },
 };
 const lighthouseRoomSoilWrite = await mcp(lighthouseRoomSoilCall, fullToken);
 assert.equal(lighthouseRoomSoilWrite.result.isError, undefined);
-assert.equal(lighthouseRoomSoilWrite.result.structuredContent.room_memory.room_scope, 'lighthouse');
-assert.equal(lighthouseRoomSoilWrite.result.structuredContent.room_memory.room_key, 'lighthouse:main');
+assert.equal(lighthouseRoomSoilWrite.result.structuredContent.room_memory_updated, true);
+assert.equal(lighthouseRoomSoilWrite.result.structuredContent.room_memory_reason, 'updated');
+assert.equal(lighthouseRoomSoilWrite.result.structuredContent.idempotent, false);
+const acceptedLighthouseSoil = lighthouseRoomSoilWrite.result.structuredContent.soil;
+assert.equal(acceptedLighthouseSoil.conversation_id, 'coast-room:lighthouse:official_mcp');
+assert.equal(acceptedLighthouseSoil.room_scope, 'lighthouse');
+assert.equal(acceptedLighthouseSoil.room_key, 'lighthouse:main');
+assert.equal(acceptedLighthouseSoil.source_surface, 'official_mcp');
+assert.equal(acceptedLighthouseSoil.actor, 'myri');
+assert.equal(acceptedLighthouseSoil.surface, 'official_mcp');
+assert.equal(acceptedLighthouseSoil.model_label, 'GPT-5.5 Thinking');
+assert.equal(acceptedLighthouseSoil.model_nickname, '回潮');
+assert.equal(acceptedLighthouseSoil.symbol, '≋');
 assert.equal(
-  lighthouseRoomSoilWrite.result.structuredContent.room_memory.source_surface,
-  'official_mcp',
+  acceptedLighthouseSoil.display_author,
+  'ChatGPT-5.5 Thinking 回潮≋',
 );
-assert.equal(lighthouseRoomSoilWrite.result.structuredContent.room_memory.soil.actor, 'myri');
+assert.equal(acceptedLighthouseSoil.current_text, acceptanceSoilText);
+assert.equal(acceptedLighthouseSoil.source_conversation_id, 'chatgpt-lighthouse-conversation-1');
+assert.equal(acceptedLighthouseSoil.source_turn_id, 'chatgpt-lighthouse-soil-turn-1');
+assert.equal(acceptedLighthouseSoil.tool_call_id, 'lighthouse-room-soil-acceptance-001');
+assert.equal(acceptedLighthouseSoil.revision, originalLighthouseSoil.revision + 1);
+assert.equal(acceptedLighthouseSoil.created_at, originalLighthouseSoil.created_at);
+assert.equal(acceptedLighthouseSoil.manual_locked, originalLighthouseSoil.manual_locked);
+assert.equal(acceptedLighthouseSoil.auto_refresh_enabled, originalLighthouseSoil.auto_refresh_enabled);
+assert.deepEqual(acceptedLighthouseSoil.hand_seeds, originalLighthouseSoil.hand_seeds);
+assert.equal(acceptedLighthouseSoil.do_not_repeat, originalLighthouseSoil.do_not_repeat);
+assert.deepEqual(acceptedLighthouseSoil.pocket_candidates, originalLighthouseSoil.pocket_candidates);
 assert.equal(
-  lighthouseRoomSoilWrite.result.structuredContent.room_memory.soil.surface,
-  'official_mcp',
+  acceptedLighthouseSoil.organized_through_turn_id,
+  originalLighthouseSoil.organized_through_turn_id,
 );
-assert.equal(lighthouseRoomSoilWrite.result.structuredContent.room_memory.soil.symbol, '≋');
-assert.equal(
-  lighthouseRoomSoilWrite.result.structuredContent.room_memory.soil.display_author,
-  'ChatGPT-5.6 Thinking sol≋',
+const canonicalLighthouseMemoryAfterWrite = await listRoomMemory(db, 'lighthouse');
+assert.deepEqual(
+  canonicalLighthouseMemoryAfterWrite.sources.official_mcp.pending_pockets,
+  lighthouseMemoryBeforeLetter.sources.official_mcp.pending_pockets,
 );
-assert.equal(
-  lighthouseRoomSoilWrite.result.structuredContent.room_memory.soil.current_text,
-  '官端正在灯塔房里承接小寒刚寄来的上下文，这一盆壤独立于来信正文与灯塔巡迹。',
+assert.deepEqual(
+  canonicalLighthouseMemoryAfterWrite.sources.official_mcp.seeds,
+  lighthouseMemoryBeforeLetter.sources.official_mcp.seeds,
 );
-assert.equal(
-  lighthouseRoomSoilWrite.result.structuredContent.room_memory.soil.source_turn_id,
-  'chatgpt-lighthouse-soil-turn-1',
+assert.deepEqual(
+  canonicalLighthouseMemoryAfterWrite.sources.official_mcp.memories,
+  lighthouseMemoryBeforeLetter.sources.official_mcp.memories,
 );
-assert.equal(
-  lighthouseRoomSoilWrite.result.structuredContent.room_memory.soil.tool_call_id,
-  'lighthouse-room-soil-call-1',
+assert.deepEqual(
+  canonicalLighthouseMemoryAfterWrite.sources.official_mcp.stones,
+  lighthouseMemoryBeforeLetter.sources.official_mcp.stones,
 );
 assert.equal((await listLighthouseLetters(db)).length, lighthouseLetterCountBeforeSoilWrite);
 assert.equal((await listOfficialSoils(db)).length, lighthouseTraceCountBeforeSoilWrite);
@@ -1300,10 +1456,17 @@ const lighthouseRoomSoilRead = await mcp({
 assert.equal(
   lighthouseRoomSoilRead.result.structuredContent
     .room_memory.sources.official_mcp.soil.current_text,
-  '官端正在灯塔房里承接小寒刚寄来的上下文，这一盆壤独立于来信正文与灯塔巡迹。',
+  acceptanceSoilText,
 );
-const lighthouseRoomSoilRevision = lighthouseRoomSoilWrite.result
-  .structuredContent.room_memory.soil.revision;
+assert.deepEqual(
+  lighthouseRoomSoilRead.result.structuredContent.room_memory.sources.official_mcp.soil,
+  acceptedLighthouseSoil,
+);
+assert.equal(
+  lighthouseRoomSoilRead.result.structuredContent.room_memory.sources.official_mcp.source_label,
+  'ChatGPT-5.5 Thinking 回潮≋',
+);
+const lighthouseRoomSoilRevision = acceptedLighthouseSoil.revision;
 const idempotentLighthouseRoomSoil = await mcp({
   ...lighthouseRoomSoilCall,
   id: 793,
@@ -1315,45 +1478,110 @@ const idempotentLighthouseRoomSoil = await mcp({
     },
   },
 }, fullToken);
-assert.equal(idempotentLighthouseRoomSoil.result.structuredContent.room_memory.idempotent, true);
+assert.equal(idempotentLighthouseRoomSoil.result.structuredContent.idempotent, true);
+assert.equal(idempotentLighthouseRoomSoil.result.structuredContent.room_memory_updated, true);
+assert.equal(idempotentLighthouseRoomSoil.result.structuredContent.room_memory_reason, 'updated');
 assert.equal(
-  idempotentLighthouseRoomSoil.result.structuredContent.room_memory.soil.revision,
+  idempotentLighthouseRoomSoil.result.structuredContent.soil.revision,
   lighthouseRoomSoilRevision,
 );
 assert.equal(
-  idempotentLighthouseRoomSoil.result.structuredContent.room_memory.soil.current_text,
-  '官端正在灯塔房里承接小寒刚寄来的上下文，这一盆壤独立于来信正文与灯塔巡迹。',
+  idempotentLighthouseRoomSoil.result.structuredContent.soil.current_text,
+  acceptanceSoilText,
 );
 console.error = () => {};
-const incompleteLighthouseRoomSoil = await mcp({
+const emptyLighthouseRoomSoil = await mcp({
   jsonrpc: '2.0',
   id: 794,
   method: 'tools/call',
   params: {
     name: 'write_lighthouse_room_soil',
     arguments: {
-      current_text: '缺少完整快照时不应覆盖现有灯塔房思维壤。',
-      hand_seeds: [],
-      do_not_repeat: '',
+      current_text: '   ',
       model_label: 'GPT-5.6 Thinking',
-      tool_call_id: 'lighthouse-room-soil-incomplete',
+      tool_call_id: 'lighthouse-room-soil-empty',
+    },
+  },
+}, fullToken);
+const oversizedLighthouseRoomSoil = await mcp({
+  jsonrpc: '2.0',
+  id: 795,
+  method: 'tools/call',
+  params: {
+    name: 'write_lighthouse_room_soil',
+    arguments: {
+      current_text: '壤'.repeat(12001),
+      model_label: 'GPT-5.6 Thinking',
+      tool_call_id: 'lighthouse-room-soil-oversized',
     },
   },
 }, fullToken);
 console.error = originalConsoleError;
-assert.equal(incompleteLighthouseRoomSoil.result.isError, true);
-assert.equal(incompleteLighthouseRoomSoil.result._meta.error_type, 'invalid_tool_input');
-const lighthouseMemoryAfterIncompleteWrite = await listRoomMemory(db, 'lighthouse');
+for (const invalidWrite of [emptyLighthouseRoomSoil, oversizedLighthouseRoomSoil]) {
+  assert.equal(invalidWrite.result.isError, true);
+  assert.equal(invalidWrite.result._meta.error_type, 'invalid_tool_input');
+  assert.equal(invalidWrite.result._meta.failure_code, 'invalid_request');
+}
+const lighthouseMemoryAfterInvalidWrites = await listRoomMemory(db, 'lighthouse');
 assert.equal(
-  lighthouseMemoryAfterIncompleteWrite.sources.official_mcp.soil.revision,
+  lighthouseMemoryAfterInvalidWrites.sources.official_mcp.soil.revision,
   lighthouseRoomSoilRevision,
 );
 assert.equal(
-  lighthouseMemoryAfterIncompleteWrite.sources.official_mcp.soil.current_text,
-  '官端正在灯塔房里承接小寒刚寄来的上下文，这一盆壤独立于来信正文与灯塔巡迹。',
+  lighthouseMemoryAfterInvalidWrites.sources.official_mcp.soil.current_text,
+  acceptanceSoilText,
 );
 assert.equal((await listLighthouseLetters(db)).length, lighthouseLetterCountBeforeSoilWrite);
 assert.equal((await listOfficialSoils(db)).length, lighthouseTraceCountBeforeSoilWrite);
+
+const longLighthouseSoilText = `超过旧上限仍完整保存：${'潮'.repeat(5000)}`;
+const replacementLighthouseRoomSoil = await mcp({
+  jsonrpc: '2.0',
+  id: 796,
+  method: 'tools/call',
+  params: {
+    name: 'write_lighthouse_room_soil',
+    arguments: {
+      current_text: longLighthouseSoilText,
+      model_label: 'GPT-5.6 Thinking',
+      model_nickname: 'sol',
+      tool_call_id: 'lighthouse-room-soil-acceptance-002',
+    },
+  },
+}, fullToken);
+const replacedLighthouseSoil = replacementLighthouseRoomSoil.result.structuredContent.soil;
+assert.equal(replacedLighthouseSoil.current_text, longLighthouseSoilText);
+assert.equal(replacedLighthouseSoil.revision, lighthouseRoomSoilRevision + 1);
+assert.equal(replacedLighthouseSoil.conversation_id, acceptedLighthouseSoil.conversation_id);
+assert.equal(replacedLighthouseSoil.created_at, acceptedLighthouseSoil.created_at);
+assert.deepEqual(replacedLighthouseSoil.hand_seeds, originalLighthouseSoil.hand_seeds);
+assert.equal(replacedLighthouseSoil.do_not_repeat, originalLighthouseSoil.do_not_repeat);
+assert.deepEqual(replacedLighthouseSoil.pocket_candidates, originalLighthouseSoil.pocket_candidates);
+const delayedFirstCallRetry = await mcp({
+  ...lighthouseRoomSoilCall,
+  id: 798,
+  params: {
+    ...lighthouseRoomSoilCall.params,
+    arguments: {
+      ...lighthouseRoomSoilCall.params.arguments,
+      current_text: '旧 key 即使隔着一次新更新再重放，也不得把当前壤回滚。',
+    },
+  },
+}, fullToken);
+assert.equal(delayedFirstCallRetry.result.structuredContent.idempotent, true);
+assert.equal(
+  delayedFirstCallRetry.result.structuredContent.soil.current_text,
+  longLighthouseSoilText,
+);
+assert.equal(
+  delayedFirstCallRetry.result.structuredContent.soil.revision,
+  replacedLighthouseSoil.revision,
+);
+assert.equal(
+  db.database.prepare(`SELECT COUNT(*) AS count FROM conversation_soils
+    WHERE conversation_id = ?`).get('coast-room:lighthouse:official_mcp').count,
+  1,
+);
 
 const letterWrite = await mcp({
   jsonrpc: '2.0',
@@ -1366,46 +1594,32 @@ const letterWrite = await mcp({
       body: '这是一封官端写给海岸的低频长信。',
       model_label: 'GPT-5.6 Thinking',
       tool_call_id: 'lighthouse-call-1',
-      room_memory: {
-        current_text: '官端灯塔侧记得这是一封只在小寒与官端之间往返的长信。',
-        hand_seeds: [],
-        do_not_repeat: '',
-        pocket_candidates: [],
-      },
     },
   },
 }, fullToken);
 assert.equal(letterWrite.result.structuredContent.letter.surface, 'official_mcp');
-assert.equal(letterWrite.result.structuredContent.room_memory_updated, true);
-assert.equal(letterWrite.result.structuredContent.room_memory_reason, null);
-assert.equal(letterWrite.result.structuredContent.room_memory.soil.surface, 'official_mcp');
-assert.equal(letterWrite.result.structuredContent.room_memory.soil.actor, 'myri');
-assert.equal(letterWrite.result.structuredContent.room_memory.soil.symbol, '≋');
+assert.equal(letterWrite.result.structuredContent.room_memory_updated, false);
+assert.equal(letterWrite.result.structuredContent.room_memory_reason, 'not_requested');
+assert.equal('room_memory' in letterWrite.result.structuredContent, false);
+const lighthouseMemoryAfterSecondLetter = await listRoomMemory(db, 'lighthouse');
 assert.equal(
-  letterWrite.result.structuredContent.room_memory.soil.display_author,
-  'ChatGPT-5.6 Thinking≋',
+  lighthouseMemoryAfterSecondLetter.sources.official_mcp.soil.current_text,
+  longLighthouseSoilText,
 );
-assert.equal(letterWrite.result.structuredContent.room_memory.soil.tool_call_id, 'lighthouse-call-1');
 assert.equal(
-  letterWrite.result.structuredContent.room_memory.soil.source_turn_id,
-  letterWrite.result.structuredContent.letter.id,
+  lighthouseMemoryAfterSecondLetter.sources.official_mcp.soil.revision,
+  replacedLighthouseSoil.revision,
 );
-const idempotentLighthouseMemory = await writeRoomMemory(
-  db,
-  'lighthouse',
-  officialMcpIdentity({ model_label: 'GPT-5.6 Thinking' }),
-  {
-    current_text: '同一 tool_call_id 的重试不应覆盖灯塔壤。',
-    hand_seeds: [],
-    do_not_repeat: '',
-    pocket_candidates: [],
-    tool_call_id: 'lighthouse-call-1',
-  },
-);
-assert.equal(idempotentLighthouseMemory.idempotent, true);
+const lighthouseTraceRetry = await mcp({ ...soilCall, id: 797 }, fullToken);
+assert.equal(lighthouseTraceRetry.result.structuredContent.soil.id, writtenSoil.result.structuredContent.soil.id);
+const lighthouseMemoryAfterTraceRetry = await listRoomMemory(db, 'lighthouse');
 assert.equal(
-  idempotentLighthouseMemory.soil.current_text,
-  '官端灯塔侧记得这是一封只在小寒与官端之间往返的长信。',
+  lighthouseMemoryAfterTraceRetry.sources.official_mcp.soil.current_text,
+  longLighthouseSoilText,
+);
+assert.equal(
+  lighthouseMemoryAfterTraceRetry.sources.official_mcp.soil.revision,
+  replacedLighthouseSoil.revision,
 );
 assert.equal((await listLighthouseLetters(db))[0].symbol, '≋');
 assert.match(
@@ -1471,6 +1685,13 @@ assert.deepEqual(lighthouseMemory.participants, ['web_manual', 'official_mcp']);
 assert.deepEqual(Object.keys(lighthouseMemory.sources).sort(), ['official_mcp']);
 assert.equal('owner_note' in lighthouseMemory, false);
 assert.equal('coast_api' in lighthouseMemory.sources, false);
+assert.equal(lighthouseMemory.sources.official_mcp.soil.current_text, longLighthouseSoilText);
+assert.equal(lighthouseMemory.sources.official_mcp.soil.revision, replacedLighthouseSoil.revision);
+assert.equal(lighthouseMemory.sources.official_mcp.soil.display_author, 'ChatGPT-5.6 Thinking sol≋');
+assert.doesNotMatch(
+  lighthouseMemory.sources.official_mcp.soil.current_text,
+  /这一刻想被官端轻轻看见/,
+);
 await assert.rejects(
   () => writeRoomMemory(
     db,
@@ -1752,33 +1973,38 @@ assert.equal((await listOfficialSoils(db)).length, 0, 'an MCP retry must not res
 const manifest = await routeMcpRequest(new Request('https://coast.test/mcp/manifest'), env);
 assert.equal(manifest.status, 200);
 assert.equal(manifest.headers.get('cache-control'), 'private, no-store');
-assert.equal(manifest.headers.get('x-coast-mcp-catalog-version'), '1.4.3');
+assert.equal(manifest.headers.get('x-coast-mcp-catalog-version'), '1.4.4');
 const manifestBody = await manifest.json();
 assert.equal(manifestBody.authentication, 'oauth2');
-assert.equal(manifestBody.version, '1.4.3');
-assert.equal(manifestBody.tool_catalog_version, '1.4.3');
+assert.equal(manifestBody.version, '1.4.4');
+assert.equal(manifestBody.tool_catalog_version, '1.4.4');
 assert.equal(manifestBody.tool_count, toolList.result.tools.length);
 assert.deepEqual(manifestBody.tools, toolList.result.tools.map((tool) => tool.name));
 assert.deepEqual(manifestBody.tool_definitions, toolList.result.tools);
 const manifestLetterWriter = manifestBody.tool_definitions.find(
   (tool) => tool.name === 'write_lighthouse_letter',
 );
-assert.ok('room_memory' in manifestLetterWriter.inputSchema.properties);
-assert.ok('current_text' in manifestLetterWriter.inputSchema.properties.room_memory.properties);
+assert.equal('room_memory' in manifestLetterWriter.inputSchema.properties, false);
 const manifestLighthouseSoilWriter = manifestBody.tool_definitions.find(
   (tool) => tool.name === 'write_lighthouse_room_soil',
 );
 assert.ok(manifestLighthouseSoilWriter);
 assert.ok('current_text' in manifestLighthouseSoilWriter.inputSchema.properties);
+assert.deepEqual(
+  manifestLighthouseSoilWriter.inputSchema.required,
+  ['current_text', 'model_label'],
+);
+assert.equal(manifestLighthouseSoilWriter.inputSchema.properties.current_text.maxLength, 12000);
+assert.deepEqual(manifestLighthouseSoilWriter.securitySchemes[0].scopes, ['write:soil']);
 const metadata = await routeMcpRequest(new Request('https://coast.test/.well-known/oauth-protected-resource'), env);
 assert.equal(metadata.status, 200);
 assert.equal((await metadata.json()).authorization_servers[0], issuer);
 const health = await routeMcpRequest(new Request('https://coast.test/mcp/health'), {});
 assert.equal(health.status, 200);
 assert.equal(health.headers.get('cache-control'), 'private, no-store');
-assert.equal(health.headers.get('x-coast-mcp-catalog-version'), '1.4.3');
+assert.equal(health.headers.get('x-coast-mcp-catalog-version'), '1.4.4');
 const healthBody = await health.json();
-assert.equal(healthBody.version, '1.4.3');
+assert.equal(healthBody.version, '1.4.4');
 assert.equal(healthBody.transport, 'streamable-http');
 
 globalThis.fetch = originalFetch;
