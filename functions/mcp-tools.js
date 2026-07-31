@@ -18,7 +18,7 @@ import { sendRadioMessage } from './radio-store.js';
 import { listLighthouseRoomMessages, listRadioRoomMessages } from './room-records.js';
 import { listRoomMemory, writeRoomMemory } from './room-memory.js';
 
-const VERSION = '1.4.2';
+const VERSION = '1.4.3';
 const PRIVATE_RECORD_SCHEMA = Object.freeze({ type: 'object', additionalProperties: true });
 
 function objectSchema(properties = {}, required = []) {

@@ -26,7 +26,8 @@ function corsHeaders(extra = {}) {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept, MCP-Protocol-Version, MCP-Session-Id, Last-Event-ID',
-    'Access-Control-Expose-Headers': 'MCP-Protocol-Version, MCP-Session-Id',
+    'Access-Control-Expose-Headers': 'MCP-Protocol-Version, MCP-Session-Id, X-Coast-MCP-Catalog-Version',
+    'X-Coast-MCP-Catalog-Version': coastMcpVersion,
     ...extra,
   };
 }
@@ -140,13 +141,17 @@ export async function routeMcpRequest(request, env) {
   }
   if (url.pathname === '/mcp/manifest') {
     if (request.method !== 'GET') return apiError('method_not_allowed', 'Method not allowed.', 405);
+    const toolDefinitions = listCoastMcpTools();
     return json({
       name: 'Elementera Coast MCP Porch',
       version: coastMcpVersion,
+      tool_catalog_version: coastMcpVersion,
       endpoint: `${url.origin}/mcp`,
       authentication: 'oauth2',
       scopes: MCP_SCOPES,
       tools: coastMcpToolNames,
+      tool_count: toolDefinitions.length,
+      tool_definitions: toolDefinitions,
     }, 200, corsHeaders());
   }
   if (url.pathname === '/.well-known/oauth-protected-resource') {

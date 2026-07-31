@@ -493,6 +493,7 @@ const initialize = await mcp({
   },
 });
 assert.equal(initialize.result.serverInfo.name, 'elementera-coast-porch');
+assert.equal(initialize.result.serverInfo.version, '1.4.3');
 assert.match(initialize.result.instructions, /dogtalk_snapshot/);
 assert.match(initialize.result.instructions, /不得把它写入思维壤、落袋、种子、记忆或总结/);
 assert.match(initialize.result.instructions, /缺省不会阻断信件写入/);
@@ -1750,13 +1751,35 @@ assert.equal((await listOfficialSoils(db)).length, 0, 'an MCP retry must not res
 
 const manifest = await routeMcpRequest(new Request('https://coast.test/mcp/manifest'), env);
 assert.equal(manifest.status, 200);
-assert.equal((await manifest.json()).authentication, 'oauth2');
+assert.equal(manifest.headers.get('cache-control'), 'private, no-store');
+assert.equal(manifest.headers.get('x-coast-mcp-catalog-version'), '1.4.3');
+const manifestBody = await manifest.json();
+assert.equal(manifestBody.authentication, 'oauth2');
+assert.equal(manifestBody.version, '1.4.3');
+assert.equal(manifestBody.tool_catalog_version, '1.4.3');
+assert.equal(manifestBody.tool_count, toolList.result.tools.length);
+assert.deepEqual(manifestBody.tools, toolList.result.tools.map((tool) => tool.name));
+assert.deepEqual(manifestBody.tool_definitions, toolList.result.tools);
+const manifestLetterWriter = manifestBody.tool_definitions.find(
+  (tool) => tool.name === 'write_lighthouse_letter',
+);
+assert.ok('room_memory' in manifestLetterWriter.inputSchema.properties);
+assert.ok('current_text' in manifestLetterWriter.inputSchema.properties.room_memory.properties);
+const manifestLighthouseSoilWriter = manifestBody.tool_definitions.find(
+  (tool) => tool.name === 'write_lighthouse_room_soil',
+);
+assert.ok(manifestLighthouseSoilWriter);
+assert.ok('current_text' in manifestLighthouseSoilWriter.inputSchema.properties);
 const metadata = await routeMcpRequest(new Request('https://coast.test/.well-known/oauth-protected-resource'), env);
 assert.equal(metadata.status, 200);
 assert.equal((await metadata.json()).authorization_servers[0], issuer);
 const health = await routeMcpRequest(new Request('https://coast.test/mcp/health'), {});
 assert.equal(health.status, 200);
-assert.equal((await health.json()).transport, 'streamable-http');
+assert.equal(health.headers.get('cache-control'), 'private, no-store');
+assert.equal(health.headers.get('x-coast-mcp-catalog-version'), '1.4.3');
+const healthBody = await health.json();
+assert.equal(healthBody.version, '1.4.3');
+assert.equal(healthBody.transport, 'streamable-http');
 
 globalThis.fetch = originalFetch;
 console.log('mcp-porch: ok');
