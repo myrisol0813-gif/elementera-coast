@@ -541,7 +541,7 @@ globalThis.fetch = async (input, options = {}) => {
   }
   if (url.pathname === '/api/radio/memory' || url.pathname === '/api/lighthouse/memory') {
     const kind = url.pathname.includes('/radio/') ? 'radio' : 'lighthouse';
-    const blank = (surface, author, text = '') => ({
+    const blank = (surface, author, text = '', pocketCandidates = [], pendingPockets = []) => ({
       conversation_id: `${kind}-${surface}`,
       room_scope: kind,
       room_key: `${kind}:main`,
@@ -552,18 +552,45 @@ globalThis.fetch = async (input, options = {}) => {
         current_text: text,
         hand_seeds: [],
         do_not_repeat: '',
-        pocket_candidates: [],
+        pocket_candidates: pocketCandidates,
+        revision: surface === 'coast_api' ? 7 : 4,
+        updated_at: now(),
+        actor: 'myri',
         surface,
+        source_surface: surface,
+        model_label: surface === 'official_mcp' ? 'GPT-5.6 Thinking' : 'openai/gpt-5.2',
+        model_nickname: surface === 'official_mcp' ? 'sol' : null,
+        symbol: surface === 'official_mcp' ? '≋' : '✦',
         display_author: author,
       },
-      pending_pockets: [],
+      pending_pockets: pendingPockets,
       seeds: [],
       memories: [],
     });
     const sources = {
-      official_mcp: blank('official_mcp', 'ChatGPT≋', `${kind} 官端正在整理当前方向。`),
+      official_mcp: blank('official_mcp', 'ChatGPT-5.6 Thinking sol≋'),
     };
-    if (kind === 'radio') sources.coast_api = blank('coast_api', '海岸 API ✦', '电波房 API 侧正在整理当前方向。');
+    if (kind === 'radio') {
+      const candidate = {
+        title: 'API 侧待确认潮纹',
+        life_core: '只属于 coast_api 当前来源的候选。',
+      };
+      const pending = {
+        id: 'radio-api-pocket-dom',
+        title: candidate.title,
+        life_core: candidate.life_core,
+        status: 'pending',
+        source_surface: 'coast_api',
+        source_label: '海岸 API ✦',
+      };
+      sources.coast_api = blank(
+        'coast_api',
+        '海岸 API ✦',
+        '电波房 API 侧正在整理当前方向。',
+        [candidate],
+        [pending],
+      );
+    }
     return response({
       ok: true,
       memory: {
@@ -578,7 +605,7 @@ globalThis.fetch = async (input, options = {}) => {
         local_label: kind === 'radio' ? '电波房' : '灯塔来信',
         library_conversation_id: `room-library-${kind}`,
         sources,
-        pending_pockets: [],
+        pending_pockets: Object.values(sources).flatMap((source) => source.pending_pockets),
         seeds: [],
         memories: [],
         global: { seeds: [], memories: [] },
@@ -1009,6 +1036,10 @@ assert.equal(dogtalks.get('conversation:conv-1').body, '主窗这一轮想轻轻
 assert.ok(document.querySelector('.message.user .message-dogtalk-mark')?.textContent.includes('随本轮'));
 assert.equal(formalChatBodies[0].settings.max_tokens, null, 'natural output must not impose an application token limit');
 await waitFor(() => document.querySelector('.thought-soil-entry')?.textContent.includes('1 粒手持种'), 'thought soil entry');
+assert.equal(document.querySelector('.thought-soil-entry').dataset.action, 'memory:soil-open');
+assert.equal(document.querySelector('.thought-soil-entry').dataset.scope, 'conversation');
+assert.equal(document.querySelector('.thought-soil-entry').dataset.conversationId, 'conv-1');
+assert.ok(document.querySelector('.message.assistant').previousElementSibling?.classList.contains('thought-soil-row'));
 await waitFor(() => document.querySelector('#toastRoot').textContent.includes('模型或供应商达到自身长度上限'), 'ordinary truncation notice');
 assert.equal(soilOrganizeBodies.filter((item) => item.trigger === 'reply').length, 1, 'the first reply must organize thought soil');
 assert.equal(soilOrganizeBodies.find((item) => item.trigger === 'reply').force, true, 'each reply must bypass the old interval schedule');
@@ -1022,6 +1053,7 @@ assert.ok(document.querySelector('#overlayRoot').textContent.includes('暂放的
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('这条岔路先放下，以后也许还会长。'));
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('这些内容已先放进待确认袋。确认前不会参与召回。'));
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('待确认袋 · 1'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('revision 2 · 整理来源'));
 assert.equal(document.querySelector('[data-action="memory:soil-organize"]'), null, 'manual soil organize entry must stay retired');
 assert.ok(document.querySelector('[data-action="memory:soil-edit"]'));
 assert.ok(document.querySelector('[data-action="memory:soil-clear"]'));
@@ -1134,12 +1166,15 @@ await waitFor(() => document.querySelectorAll('#chatConversationList .conversati
 document.querySelector('[data-action="memory:open"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory', 'memory owner route');
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('当前窗口种子'));
+assert.equal(document.querySelector('#overlayRoot').textContent.includes('当前窗口思维壤'), false);
+assert.equal(document.querySelector('#overlayRoot [data-action="memory:soil-open"]'), null);
 for (const scope of ['conversation', 'radio', 'lighthouse', 'global']) {
   assert.ok(document.querySelector(`[data-action="memory:tab"][data-scope="${scope}"]`));
 }
 assert.equal(document.querySelector('#overlayRoot').textContent.includes('小寒 · 神秘狗话'), false, 'dogtalk belongs beside the composer, not inside the trajectory page');
 document.querySelector('[data-action="memory:tab"][data-scope="global"]').click();
 await waitFor(() => document.querySelector('[data-action="memory:tab"][data-scope="global"]').classList.contains('is-active'), 'global library stays separate from Lighthouse Traces');
+assert.equal(document.querySelector('#overlayRoot [data-action="memory:soil-open"]'), null);
 assert.equal(
   document.querySelector('[data-official-soil-id="official-soil-e364eddd-1964-4ad8-9285-5299f4add3d4"]'),
   null,
@@ -1147,6 +1182,8 @@ assert.equal(
 );
 document.querySelector('[data-action="memory:tab"][data-scope="lighthouse"]').click();
 await waitFor(() => document.querySelector('[data-action="memory:tab"][data-scope="lighthouse"]').classList.contains('is-active'), 'lighthouse library for traces');
+assert.equal(document.querySelector('#overlayRoot').textContent.includes('灯塔来信思维壤'), false);
+assert.equal(document.querySelector('#overlayRoot [data-action="memory:soil-open"]'), null);
 const officialSoilCard = document.querySelector('[data-official-soil-id="official-soil-e364eddd-1964-4ad8-9285-5299f4add3d4"]');
 assert.ok(officialSoilCard);
 for (const copy of ['灯塔巡迹 · ChatGPT-5.5 Thinking 回潮≋', '灯塔侧 · 官端 MCP', '官端回潮把一捧整理过的思维壤留在海岸。', 'official_mcp', '只读足迹']) {
@@ -1459,7 +1496,21 @@ assert.ok(document.querySelector('#roomComposer').classList.contains('composer--
 assert.equal(document.querySelector('#mainDogtalkComposer').parentElement.id, 'composer');
 assert.equal(document.querySelector('#roomDogtalkComposer').parentElement.id, 'roomComposer');
 assert.ok(document.querySelector('#roomMessages').textContent.includes('官端从灯塔向电波房打了个招呼。'));
-assert.ok(document.querySelector('#roomMessages .room-soil-tip')?.textContent.includes('ChatGPT≋'));
+const initialRadioOfficialTip = document.querySelector('#roomMessages .room-soil-tip [data-source-surface="official_mcp"]');
+assert.ok(initialRadioOfficialTip?.textContent.includes('电波房思维壤 · ChatGPT-5.6 Thinking sol≋ · 0 粒手持种'));
+assert.equal(initialRadioOfficialTip.dataset.action, 'memory:soil-open');
+assert.ok(document.querySelector('.local-message.is-official').previousElementSibling?.classList.contains('room-soil-tip'));
+initialRadioOfficialTip.click();
+await waitFor(() => !document.querySelector('#overlayRoot')?.hidden
+  && document.querySelector('#overlayRoot')?.dataset.route === 'thought-soil', 'radio official soil detail');
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('电波房思维壤'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('ChatGPT-5.6 Thinking sol≋ · 独立滚动工作上下文'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('还没有整理当前方向。'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('手持种 · 0/3'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('revision 4 · 整理来源 · ChatGPT-5.6 Thinking sol≋'));
+assert.equal(document.querySelector('#overlayRoot [data-action="memory:soil-edit"]'), null);
+document.querySelector('[data-action="memory:done"]').click();
+await waitFor(() => document.querySelector('#overlayRoot').hidden, 'close radio official soil detail');
 assert.equal(document.querySelector('.local-message.is-official [data-action="rooms:withdraw-radio"]'), null);
 const radioDogtalk = document.querySelector('#roomDogtalkComposer');
 assert.ok(radioDogtalk.textContent.includes('小寒这轮很放松，因此偷懒中。'));
@@ -1477,12 +1528,33 @@ await waitFor(() => document.querySelector('#roomMessages').textContent.includes
 assert.equal(radioBodies.at(-1).dogtalk.body, '三端房间里，小寒有一点害羞地想靠近。');
 assert.equal(radioBodies.at(-1).dogtalk.read_mode, 'current_room');
 assert.ok(document.querySelector('.local-message.is-user .message-dogtalk-mark')?.textContent.includes('害羞'));
+assert.equal(document.querySelector('.local-message.is-user').previousElementSibling?.classList.contains('room-soil-tip'), false);
 assert.equal(dogtalks.get('radio:main').body, '三端房间里，小寒有一点害羞地想靠近。');
 document.querySelector('[data-action="rooms:ask-api"]').click();
 await waitFor(() => document.querySelector('#roomMessages').textContent.includes('海岸 API ✦ 收到了这条电波'), 'coast API radio reply');
 assert.equal(document.querySelector('.local-message.is-api [data-action="rooms:withdraw-radio"]'), null);
-assert.ok(document.querySelector('.local-message.is-api + .room-soil-tip')
-  || [...document.querySelectorAll('.room-soil-tip')].some((tip) => tip.textContent.includes('海岸 API ✦')));
+const radioSoilTips = [...document.querySelectorAll('#roomMessages .room-soil-tip [data-action="memory:soil-open"]')];
+assert.equal(radioSoilTips.length, 2, 'radio must retain one latest soil entry per model source');
+assert.deepEqual(radioSoilTips.map((tip) => tip.dataset.sourceSurface).sort(), ['coast_api', 'official_mcp']);
+assert.ok(radioSoilTips.find((tip) => tip.dataset.sourceSurface === 'coast_api')?.textContent.includes('电波房思维壤 · 海岸 API ✦ · 0 粒手持种'));
+assert.ok(radioSoilTips.find((tip) => tip.dataset.sourceSurface === 'official_mcp')?.textContent.includes('电波房思维壤 · ChatGPT-5.6 Thinking sol≋ · 0 粒手持种'));
+assert.equal(document.querySelector('.local-message.is-api').previousElementSibling?.querySelector('[data-source-surface="coast_api"]') != null, true);
+radioSoilTips.find((tip) => tip.dataset.sourceSurface === 'coast_api').click();
+await waitFor(() => !document.querySelector('#overlayRoot')?.hidden
+  && document.querySelector('#overlayRoot')?.dataset.route === 'thought-soil'
+  && document.querySelector('#overlayRoot').textContent.includes('电波房 API 侧正在整理当前方向。'), 'radio api soil detail');
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('电波房 API 侧正在整理当前方向。'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('revision 7 · 整理来源 · 海岸 API ✦'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('API 侧待确认潮纹'));
+document.querySelector('#overlayRoot [data-action="memory:pockets"][data-scope="radio"][data-source-surface="coast_api"]').click();
+await waitFor(() => !document.querySelector('#overlayRoot')?.hidden
+  && document.querySelector('#overlayRoot')?.dataset.route === 'memory-pockets', 'radio api source pending pocket');
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('只属于 coast_api 当前来源的候选。'));
+document.querySelector('[data-action="router:back"]').click();
+await waitFor(() => !document.querySelector('#overlayRoot')?.hidden
+  && document.querySelector('#overlayRoot')?.dataset.route === 'thought-soil', 'return to radio api soil detail');
+document.querySelector('[data-action="memory:done"]').click();
+await waitFor(() => document.querySelector('#overlayRoot').hidden, 'close radio api soil detail');
 
 document.querySelector('[data-action="memory:open"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory', 'parallel trajectory from radio');
@@ -1490,12 +1562,12 @@ assert.ok(document.querySelector('[data-action="memory:tab"][data-scope="radio"]
 for (const scope of ['conversation', 'radio', 'lighthouse', 'global']) {
   assert.ok(document.querySelector(`[data-action="memory:tab"][data-scope="${scope}"]`));
 }
-assert.ok(document.querySelector('#overlayRoot').textContent.includes('电波房思维壤'));
+assert.equal(document.querySelector('#overlayRoot').textContent.includes('电波房思维壤'), false);
+assert.equal(document.querySelector('#overlayRoot [data-action="memory:soil-open"]'), null);
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('电波房待确认袋'));
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('电波房种子'));
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('电波房记忆'));
-assert.ok(document.querySelector('#overlayRoot').textContent.includes('海岸 API ✦'));
-assert.ok(document.querySelector('#overlayRoot').textContent.includes('ChatGPT≋'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('API 侧待确认潮纹'));
 assert.equal(document.querySelector('#overlayRoot').textContent.includes('小寒 · 神秘狗话'), false);
 document.querySelector('[data-action="router:back"]').click();
 await waitFor(() => document.querySelector('#overlayRoot').hidden, 'return to radio window');
@@ -1527,7 +1599,17 @@ assert.ok(document.querySelector('#roomSubtitle').textContent.includes('小寒 �
 assert.equal(document.querySelector('[data-action="rooms:ask-api"]'), null);
 assert.equal(document.querySelector('#roomSubtitle').textContent.includes('海岸 API ✦'), false);
 assert.ok(document.querySelector('#roomMessages').textContent.includes('官端写来一封低频回信。'));
-assert.ok(document.querySelector('#roomMessages .room-soil-tip')?.textContent.includes('灯塔来信思维壤'));
+const lighthouseSoilTip = document.querySelector('#roomMessages .room-soil-tip [data-source-surface="official_mcp"]');
+assert.ok(lighthouseSoilTip?.textContent.includes('灯塔来信思维壤 · ChatGPT-5.6 Thinking sol≋ · 0 粒手持种'));
+assert.equal(document.querySelector('.lighthouse-letter.is-other').previousElementSibling?.querySelector('[data-source-surface="official_mcp"]') != null, true);
+lighthouseSoilTip.click();
+await waitFor(() => !document.querySelector('#overlayRoot')?.hidden
+  && document.querySelector('#overlayRoot')?.dataset.route === 'thought-soil', 'lighthouse official soil detail');
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('灯塔来信思维壤'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('还没有整理当前方向。'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('revision 4 · 整理来源 · ChatGPT-5.6 Thinking sol≋'));
+document.querySelector('[data-action="memory:done"]').click();
+await waitFor(() => document.querySelector('#overlayRoot').hidden, 'close lighthouse soil detail');
 const lighthouseDogtalk = document.querySelector('#roomDogtalkComposer');
 lighthouseDogtalk.querySelector('details').open = true;
 lighthouseDogtalk.querySelector('[name="body"]').value = '写信时有一点柔软。';
@@ -1540,10 +1622,12 @@ document.querySelector('#roomComposer').dispatchEvent(new window.Event('submit',
 await waitFor(() => document.querySelector('#roomMessages').textContent.includes('这是一封低频长信。'), 'lighthouse letter with dogtalk');
 assert.equal(lighthouseBodies.at(-1).dogtalk.body, '写信时有一点柔软。');
 assert.ok(document.querySelector('.lighthouse-letter.is-user .message-dogtalk-mark'));
+assert.equal(document.querySelector('.lighthouse-letter.is-user').previousElementSibling?.classList.contains('room-soil-tip'), false);
 document.querySelector('[data-action="memory:open"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'memory'
   && document.querySelector('[data-action="memory:tab"][data-scope="lighthouse"]')?.classList.contains('is-active'), 'parallel trajectory from lighthouse');
-assert.ok(document.querySelector('#overlayRoot').textContent.includes('灯塔来信思维壤'));
+assert.equal(document.querySelector('#overlayRoot').textContent.includes('灯塔来信思维壤'), false);
+assert.equal(document.querySelector('#overlayRoot [data-action="memory:soil-open"]'), null);
 assert.equal(document.querySelector('#overlayRoot').textContent.includes('海岸 API ✦'), false);
 document.querySelector('[data-action="memory:tab"][data-scope="radio"]').click();
 await waitFor(() => document.querySelector('[data-action="memory:tab"][data-scope="radio"]').classList.contains('is-active'), 'lighthouse can inspect parallel radio library');

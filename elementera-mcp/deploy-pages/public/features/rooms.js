@@ -48,11 +48,16 @@ function dogtalkMark(record) {
   return `<span class="message-dogtalk-mark" title="这条消息携带了小寒当时的低权重神秘狗话">神秘狗话${escapeHtml(weather)}</span>`;
 }
 
-function soilIsBlank(soil = {}) {
-  return !String(soil.current_text || '').trim()
-    && !(Array.isArray(soil.hand_seeds) && soil.hand_seeds.length)
-    && !String(soil.do_not_repeat || '').trim()
-    && !(Array.isArray(soil.pocket_candidates) && soil.pocket_candidates.length);
+function soilSourceLabel(item, source, soil) {
+  if (item.surface === 'coast_api') return '海岸 API ✦';
+  const soilModel = String(soil.model_label || '').trim();
+  const soilHasKnownModel = soilModel && soilModel !== '未标注模型';
+  if (soilHasKnownModel && soil.display_author) return soil.display_author;
+  return item.display_author
+    || soil.display_author
+    || source?.source_label
+    || SOURCE_LABELS[item.surface]
+    || '模型侧';
 }
 
 export function createRooms({ router, toast, dogtalk }) {
@@ -145,15 +150,13 @@ export function createRooms({ router, toast, dogtalk }) {
 
   function soilTip(kind, item, latest) {
     if (latest[item.surface] !== item.id) return '';
+    if (kind === 'lighthouse' && item.surface !== 'official_mcp') return '';
     const source = state[kind].memory?.sources?.[item.surface];
-    if (!source?.soil || soilIsBlank(source.soil)) return '';
-    const count = Array.isArray(source.soil.hand_seeds) ? source.soil.hand_seeds.length : 0;
-    const label = source.soil.display_author
-      || source.source_label
-      || SOURCE_LABELS[item.surface]
-      || '模型侧';
+    const soil = source?.soil || {};
+    const count = Array.isArray(soil.hand_seeds) ? soil.hand_seeds.length : 0;
+    const label = soilSourceLabel(item, source, soil);
     return `<div class="thought-soil-row room-soil-tip">
-      <button class="thought-soil-entry" type="button" data-action="memory:open" data-scope="${kind}" data-source="${escapeAttribute(item.surface)}">
+      <button class="thought-soil-entry" type="button" data-action="memory:soil-open" data-scope="${kind}" data-source-surface="${escapeAttribute(item.surface)}">
         ${escapeHtml(ROOM_COPY[kind].soil)} · ${escapeHtml(label)} · ${count} 粒手持种 <span aria-hidden="true">›</span>
       </button>
     </div>`;

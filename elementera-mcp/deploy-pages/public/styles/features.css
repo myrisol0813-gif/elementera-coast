@@ -216,27 +216,6 @@
   gap: 12px;
 }
 
-.room-library-soils {
-  display: grid;
-  gap: 12px;
-}
-
-.room-library-soil.is-selected {
-  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
-}
-
-.room-library-soil h2 {
-  margin-top: 16px;
-  font-size: 13px;
-}
-
-.room-library-soil ul {
-  margin: 0;
-  padding-left: 19px;
-  color: var(--text-soft);
-  line-height: 1.65;
-}
-
 .memory-more-targets {
   margin-top: 12px;
 }

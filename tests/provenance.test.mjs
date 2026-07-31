@@ -109,8 +109,8 @@ globalThis.fetch = async (input, options = {}) => {
 };
 const memory = createMemory({ chat, router, toast: () => undefined, storage });
 await memory.onConversationChanged('conv-1');
-await memory.handleAction('soil', {});
-assert.ok(currentView.body.includes('整理 · GPT-5.5 · 1,286 tok'));
+await memory.handleAction('soil-open', { dataset: { scope: 'conversation', conversationId: 'conv-1' } });
+assert.ok(currentView.body.includes('revision 2 · 整理来源 · GPT-5.5 · 1,286 tok'));
 await memory.openPockets();
 assert.ok(currentView.body.includes('提炼 · GPT-5.5'));
 globalThis.fetch = originalFetch;

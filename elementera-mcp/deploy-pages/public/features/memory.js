@@ -95,7 +95,6 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
     pockets: new Map(),
     entries: { conversation: [], global: [], radio: [], lighthouse: [] },
     roomMemory: { radio: null, lighthouse: null },
-    selectedRoomSource: { radio: '', lighthouse: '' },
     officialSoils: [],
     officialSoilsStatus: 'idle',
     libraryTab: 'conversation',
@@ -209,48 +208,94 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
 
   function renderSoilEntry(conversationId) {
     const soil = runtime.soils.get(conversationId) || emptySoil(conversationId);
+    const handSeeds = Array.isArray(soil.hand_seeds) ? soil.hand_seeds : [];
     const locked = soil.manual_locked ? ' · 已锁定' : '';
-    return `<div class="thought-soil-row"><button class="thought-soil-entry" type="button" data-action="memory:soil">思维壤 · ${Math.min(soil.hand_seeds.length, maxHandSeeds())} 粒手持种${locked} <span aria-hidden="true">›</span></button></div>`;
+    return `<div class="thought-soil-row"><button class="thought-soil-entry" type="button" data-action="memory:soil-open" data-scope="conversation" data-conversation-id="${escapeAttribute(conversationId)}">思维壤 · ${Math.min(handSeeds.length, maxHandSeeds())} 粒手持种${locked} <span aria-hidden="true">›</span></button></div>`;
   }
 
-  function soilBody(soil) {
+  function soilProvenance(soil) {
+    const revisionValue = Number(soil.revision);
+    const revision = Number.isFinite(revisionValue) ? Math.max(1, Math.trunc(revisionValue)) : 1;
+    const organizer = soil.display_author
+      || shortModelName(soil.organized_by_model)
+      || '尚未整理';
+    const updatedAt = memoryDate(soil.updated_at || soil.organized_at);
+    return `<p class="feature-note generation-provenance">revision ${revision} · 整理来源 · ${escapeHtml(organizer)}${escapeHtml(tokenSuffix(soil.organize_usage))}${updatedAt ? ` · ${escapeHtml(updatedAt)}` : ''}</p>`;
+  }
+
+  function soilBody(soil, {
+    scope = 'conversation',
+    sourceSurface = '',
+    pendingPockets = [],
+  } = {}) {
     const limit = maxHandSeeds();
-    const activeSeeds = soil.hand_seeds.slice(0, limit);
+    const activeSeeds = (Array.isArray(soil.hand_seeds) ? soil.hand_seeds : []).slice(0, limit);
+    const pocketCandidates = Array.isArray(soil.pocket_candidates) ? soil.pocket_candidates : [];
     const seeds = activeSeeds.length
       ? activeSeeds.map((seed) => `<div class="feature-row static"><span><strong>${escapeHtml(seed.name || seed.life_core)}</strong><small>${escapeHtml(seed.life_core || '')}${seed.usage_hint ? `<br>使用：${escapeHtml(seed.usage_hint)}` : ''}${seed.avoid_hint ? `<br>避免：${escapeHtml(seed.avoid_hint)}` : ''}</small></span></div>`).join('')
       : '<p>还没有手持种。</p>';
-    const candidates = soil.pocket_candidates.length
-      ? `${soil.pocket_candidates.map((item) => {
+    const candidates = pocketCandidates.length
+      ? `${pocketCandidates.map((item) => {
         const candidate = pocketCandidate(item);
         return `<div class="feature-row static"><span><strong>${escapeHtml(candidate.title || '可落袋内容')}</strong><small>${escapeHtml(candidate.life_core)}${candidate.source_excerpt ? `<br>来源：${escapeHtml(candidate.source_excerpt)}` : ''}</small></span></div>`;
       }).join('')}<p class="feature-note">这些内容已先放进待确认袋。确认前不会参与召回。</p>`
       : '<p>还没有可落袋内容。</p>';
-    const provenance = soil.organized_by_model
-      ? `<p class="feature-note generation-provenance">整理 · ${escapeHtml(shortModelName(soil.organized_by_model))}${escapeHtml(tokenSuffix(soil.organize_usage))}</p>`
+    const pocketEntry = pendingPockets.length || pocketCandidates.length
+      ? `<section class="feature-group"><div class="feature-card">
+        <button class="feature-row" type="button" data-action="memory:pockets" data-scope="${escapeAttribute(scope)}"${sourceSurface ? ` data-source-surface="${escapeAttribute(sourceSurface)}"` : ''}><span><strong>待确认袋 · ${pendingPockets.length}</strong><small>候选会停在这里；确认前不会参与召回。</small></span><span>›</span></button>
+      </div></section>`
+      : '';
+    const controls = scope === 'conversation'
+      ? `<div class="button-row">
+        <button type="button" data-action="memory:soil-edit">编辑</button>
+        <button type="button" data-action="memory:soil-clear">清空</button>
+        ${soil.manual_locked ? '<button type="button" data-action="memory:soil-auto">恢复自动整理</button>' : ''}
+      </div>`
       : '';
     return `${section('当前', textBlock(soil.current_text, '还没有整理当前方向。'))}
       ${section(`手持种 · ${activeSeeds.length}/${limit}`, seeds)}
       ${section('勿复读', textBlock(soil.do_not_repeat))}
       ${section('可落袋', candidates)}
-      <section class="feature-group"><div class="feature-card">
-        <button class="feature-row" type="button" data-action="memory:pockets"><span><strong>待确认袋 · ${currentPockets().length}</strong><small>候选会自动停在这里；确认前不会参与召回。</small></span><span>›</span></button>
-      </div></section>
-      ${provenance}
-      <div class="button-row">
-        <button type="button" data-action="memory:soil-edit">编辑</button>
-        <button type="button" data-action="memory:soil-clear">清空</button>
-        ${soil.manual_locked ? '<button type="button" data-action="memory:soil-auto">恢复自动整理</button>' : ''}
-      </div>`;
+      ${pocketEntry}
+      ${soilProvenance(soil)}
+      ${controls}`;
   }
 
-  function soilView() {
-    const soil = currentSoil();
+  function soilView({
+    scope = 'conversation',
+    conversation_id: conversationId = '',
+    source_surface: sourceSurface = '',
+  } = {}) {
+    if (scope === 'conversation') {
+      const id = conversationId || currentId();
+      const soil = runtime.soils.get(id) || emptySoil(id);
+      const pockets = runtime.pockets.get(id) || [];
+      return {
+        title: '思维壤',
+        subtitle: soil.manual_locked ? '手动内容已锁定' : '当前窗口的滚动工作上下文',
+        className: 'memory-soil',
+        headerAction: '<button class="feature-head-action" type="button" data-action="memory:done">完成</button>',
+        body: soilBody(soil, { scope, pendingPockets: pockets }),
+      };
+    }
+    const source = runtime.roomMemory[scope]?.sources?.[sourceSurface] || null;
+    const soil = source?.soil || {
+      ...emptySoil(source?.conversation_id || `${scope}:${sourceSurface}`),
+      room_scope: scope,
+      source_surface: sourceSurface,
+      display_author: roomSourceLabel({ source_surface: sourceSurface }),
+    };
+    const roomLabel = scope === 'radio' ? '电波房思维壤' : '灯塔来信思维壤';
     return {
-      title: '思维壤',
-      subtitle: soil.manual_locked ? '手动内容已锁定' : '当前窗口的轻量便签',
+      title: roomLabel,
+      subtitle: `${soil.display_author || roomSourceLabel(source || { source_surface: sourceSurface })} · 独立滚动工作上下文`,
       className: 'memory-soil',
       headerAction: '<button class="feature-head-action" type="button" data-action="memory:done">完成</button>',
-      body: soilBody(soil),
+      body: soilBody(soil, {
+        scope,
+        sourceSurface,
+        pendingPockets: Array.isArray(source?.pending_pockets) ? source.pending_pockets : [],
+      }),
     };
   }
 
@@ -307,7 +352,20 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
     </article>`;
   }
 
-  function pocketsView() {
+  function pocketsView({ scope = 'conversation', source_surface: sourceSurface = '' } = {}) {
+    if (scope === 'radio' || scope === 'lighthouse') {
+      const source = runtime.roomMemory[scope]?.sources?.[sourceSurface] || null;
+      const pockets = Array.isArray(source?.pending_pockets) ? source.pending_pockets : [];
+      const label = scope === 'radio' ? '电波房' : '灯塔来信';
+      return {
+        title: `${label}待确认袋`,
+        subtitle: `${source?.soil?.display_author || roomSourceLabel(source || { source_surface: sourceSurface })} · 确认前不召回`,
+        className: 'memory-pockets',
+        body: pockets.length
+          ? `<div class="memory-pocket-list">${pockets.map((pocket) => roomPendingCard(scope, pocket)).join('')}</div>`
+          : '<p class="feature-empty">待确认袋是空的。</p>',
+      };
+    }
     const pockets = currentPockets();
     return {
       title: '待确认袋',
@@ -419,23 +477,6 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
     }[value.source_surface] || '房间来源';
   }
 
-  function roomSoilCard(source, selected = false) {
-    const soil = source.soil || {};
-    const seeds = Array.isArray(soil.hand_seeds) ? soil.hand_seeds : [];
-    const candidates = Array.isArray(soil.pocket_candidates) ? soil.pocket_candidates : [];
-    return `<article class="feature-card feature-prose room-library-soil ${selected ? 'is-selected' : ''}" data-room-soil-source="${escapeAttribute(source.source_surface || '')}">
-      <div class="memory-entry-meta"><span>${escapeHtml(soil.display_author || roomSourceLabel(source))}</span><span>${escapeHtml(source.source_surface || '')}</span><span>revision ${Number(soil.revision || 1)}</span></div>
-      <h2>当前</h2>${textBlock(soil.current_text, '暂无')}
-      <h2>手持种 · ${seeds.length}</h2>${seeds.length
-        ? `<ul>${seeds.map((seed) => `<li>${escapeHtml(seed.name || seed.life_core || '未命名种子')} · ${escapeHtml(seed.life_core || '')}</li>`).join('')}</ul>`
-        : '<p>暂无</p>'}
-      <h2>勿复读</h2>${textBlock(soil.do_not_repeat, '暂无')}
-      <h2>可落袋</h2>${candidates.length
-        ? `<ul>${candidates.map((item) => `<li>${escapeHtml(pocketCandidate(item).life_core || pocketCandidate(item).title)}</li>`).join('')}</ul>`
-        : '<p>暂无</p>'}
-    </article>`;
-  }
-
   function roomPendingCard(scope, pocket) {
     const id = escapeAttribute(pocket.id);
     const local = scope === 'radio' ? '电波库' : '灯塔库';
@@ -507,21 +548,13 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
     const stones = entries.filter((entry) => ['stone', 'archived'].includes(entry.status));
     const current = runtime.libraryTab === 'conversation';
     const global = runtime.libraryTab === 'global';
-    const local = current ? `<section class="feature-group"><div class="feature-card">
-      <button class="feature-row" type="button" data-action="memory:soil"><span><strong>当前窗口思维壤 · ${currentSoil().hand_seeds.length} 粒手持种</strong><small>${escapeHtml(currentSoil().current_text || '当前窗口还没有整理方向。')}</small></span><span>›</span></button>
+    const conversationPending = current ? `<section class="feature-group"><div class="feature-card">
       <button class="feature-row" type="button" data-action="memory:pockets"><span><strong>待确认袋 · ${currentPockets().length}</strong><small>只有确认后才会进入正式库。</small></span><span>›</span></button>
     </div></section>` : '';
     const roomMemory = roomScope ? runtime.roomMemory[roomScope] : null;
     const roomLabel = roomScope === 'radio' ? '电波房' : '灯塔来信';
-    const selectedRoomSource = roomScope ? runtime.selectedRoomSource[roomScope] : '';
-    const roomSources = roomScope
-      ? Object.values(roomMemory?.sources || {}).sort((left, right) => (
-        left.source_surface === selectedRoomSource ? -1 : right.source_surface === selectedRoomSource ? 1 : 0
-      ))
-      : [];
-    const roomLocal = roomScope && roomMemory
-      ? `<section class="feature-group"><h2>${roomLabel}思维壤</h2>${selectedRoomSource ? `<p class="feature-note">正在查看 ${escapeHtml(roomSources[0]?.soil?.display_author || roomSourceLabel(roomSources[0]))} 的独立滚动思维壤。</p>` : ''}<div class="room-library-soils">${roomSources.map((source) => roomSoilCard(source, source.source_surface === selectedRoomSource)).join('') || '<div class="feature-card"><p class="feature-empty">这个房间还没有模型思维壤。</p></div>'}</div></section>
-        <section class="feature-group"><h2>${roomLabel}待确认袋</h2>${(roomMemory.pending_pockets || []).length
+    const roomPending = roomScope && roomMemory
+      ? `<section class="feature-group"><h2>${roomLabel}待确认袋</h2>${(roomMemory.pending_pockets || []).length
           ? `<div class="memory-pocket-list">${roomMemory.pending_pockets.map((pocket) => roomPendingCard(roomScope, pocket)).join('')}</div>`
           : '<div class="feature-card"><p class="feature-empty">待确认袋是空的。</p></div>'}</section>`
       : '';
@@ -541,7 +574,7 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
           : `${prefix} · 独立房间作用域`,
       className: 'memory-library',
       headerAction: '<button class="feature-head-action" type="button" data-action="memory:entry-new">新增</button>',
-      body: `${libraryControls()}${local}${roomLocal}
+      body: `${libraryControls()}${conversationPending}${roomPending}
         ${roomScope === 'lighthouse' ? officialSoilGroup() : ''}
         ${entryGroup(`${prefix}种子`, seeds, '这里还没有种子。')}
         ${entryGroup(`${prefix}记忆`, memories, '这里还没有记忆。')}
@@ -610,30 +643,42 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
   router.register('memory-entry-edit', entryEditView);
   router.register('memory-vector-status', vectorStatusView);
 
-  async function openSoil() {
-    const conversationId = currentId();
-    if (!conversationId) return;
-    if (!runtime.soils.has(conversationId)) await onConversationChanged(conversationId);
-    return router.open('thought-soil');
+  async function openSoil({
+    scope = 'conversation',
+    conversation_id: conversationId = '',
+    source_surface: sourceSurface = '',
+  } = {}) {
+    if (scope === 'conversation') {
+      const id = conversationId || currentId();
+      if (!id) return;
+      await Promise.all([fetchSoil(id), fetchPockets(id)]);
+      return router.open('thought-soil', { scope, conversation_id: id });
+    }
+    const allowed = scope === 'radio'
+      ? ['coast_api', 'official_mcp']
+      : scope === 'lighthouse'
+        ? ['official_mcp']
+        : [];
+    if (!allowed.includes(sourceSurface)) throw new Error('找不到对应来源的思维壤。');
+    await fetchEntries(scope);
+    return router.open('thought-soil', { scope, source_surface: sourceSurface });
   }
 
-  async function openPockets() {
+  async function openPockets({ scope = 'conversation', source_surface: sourceSurface = '' } = {}) {
+    if (scope === 'radio' || scope === 'lighthouse') {
+      await fetchEntries(scope);
+      return router.open('memory-pockets', { scope, source_surface: sourceSurface });
+    }
     await fetchPockets(currentId());
-    return router.open('memory-pockets');
+    return router.open('memory-pockets', { scope: 'conversation', conversation_id: currentId() });
   }
 
-  async function openLibrary(scope = runtime.libraryTab, source = '') {
+  async function openLibrary(scope = runtime.libraryTab) {
     runtime.libraryTab = ['conversation', 'radio', 'lighthouse', 'global'].includes(scope)
       ? scope
       : 'conversation';
-    if (['radio', 'lighthouse'].includes(runtime.libraryTab)) {
-      runtime.selectedRoomSource[runtime.libraryTab] = ['coast_api', 'official_mcp'].includes(source)
-        ? source
-        : '';
-    }
     if (runtime.libraryTab === 'conversation') {
       await Promise.all([
-        fetchSoil(currentId()),
         fetchPockets(currentId()),
         fetchEntries('conversation'),
         fetchVectorStatus(),
@@ -742,15 +787,19 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
 
   async function handleAction(name, target) {
     if (name === 'open') {
-      return openLibrary(
-        target.dataset.scope || rooms?.getActiveScope?.() || 'conversation',
-        target.dataset.source || '',
-      );
+      return openLibrary(target.dataset.scope || rooms?.getActiveScope?.() || 'conversation');
     }
-    if (name === 'soil') return openSoil();
+    if (name === 'soil-open') return openSoil({
+      scope: target.dataset.scope || 'conversation',
+      conversation_id: target.dataset.conversationId || '',
+      source_surface: target.dataset.sourceSurface || '',
+    });
     if (name === 'done') return router.back();
     if (name === 'soil-edit') return router.open('thought-soil-edit');
-    if (name === 'pockets') return openPockets();
+    if (name === 'pockets') return openPockets({
+      scope: target.dataset.scope || 'conversation',
+      source_surface: target.dataset.sourceSurface || '',
+    });
     if (name === 'soil-clear') {
       if (!await clearSoil()) return;
       return router.refresh();
@@ -798,7 +847,7 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
         ? target.dataset.scope
         : 'conversation';
       const tasks = [fetchEntries(runtime.libraryTab)];
-      if (runtime.libraryTab === 'conversation') tasks.push(fetchSoil(currentId()), fetchPockets(currentId()));
+      if (runtime.libraryTab === 'conversation') tasks.push(fetchPockets(currentId()));
       if (runtime.libraryTab === 'lighthouse') tasks.push(fetchOfficialSoils());
       await Promise.all(tasks);
       return router.refresh({ preserveScroll: false });

@@ -13,7 +13,7 @@ const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 const headers = await read(join(pages, '_headers'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-21"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-22"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 
@@ -84,7 +84,7 @@ assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(join(pages, 'service-worker.js'));
-assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-21';$/m);
+assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-22';$/m);
 assert.ok(worker.includes("url.pathname.startsWith('/api/')"));
 assert.ok(worker.includes("url.pathname.startsWith('/mcp')"));
 assert.ok(worker.includes("url.pathname.startsWith('/.well-known/')"));
@@ -134,6 +134,7 @@ const dailySource = await read(join(moduleRoot, 'features/daily.js'));
 const memorySource = await read(join(moduleRoot, 'features/memory.js'));
 const roomsSource = await read(join(moduleRoot, 'features/rooms.js'));
 const dogtalkSource = await read(join(moduleRoot, 'features/dogtalk.js'));
+const featureStyles = await read(join(moduleRoot, 'styles/features.css'));
 const modelsBackendSource = await read(join(repo, 'functions/models.js'));
 for (const name of ['edit', 'trash', 'copy', 'like', 'refresh', 'heart']) {
   assert.ok(chatSource.includes(`'${name}'`), `chat icon ${name} is missing`);
@@ -160,6 +161,12 @@ assert.equal(memorySource.includes('整理思维壤'), false, 'manual soil organ
 for (const action of ['memory:soil-edit', 'memory:soil-clear', 'memory:soil-auto']) {
   assert.ok(memorySource.includes(action), `soil control must remain available: ${action}`);
 }
+assert.ok(memorySource.includes('memory:soil-open'), 'message-flow soil must have one explicit open action');
+for (const retired of ['selectedRoomSource', 'roomSoilCard', 'roomLocal', 'room-library-soil', 'room-library-soils']) {
+  const source = retired.startsWith('room-library') ? featureStyles : memorySource;
+  assert.equal(source.includes(retired), false, `trajectory-only soil path must be removed: ${retired}`);
+}
+assert.equal(memorySource.includes('data-action="memory:soil"'), false, 'the old implicit conversation soil action must be removed');
 assert.equal(roomsSource.includes('room-memory-drawer'), false, 'room memory cannot sit inside a chat flow');
 assert.equal(roomsSource.includes('owner-note'), false, 'retired room owner-note UI must stay removed');
 for (const route of ["router.register('server-room'", "router.register('room-memory'", "router.register('room-soil'"]) {
@@ -170,6 +177,8 @@ for (const scope of ['conversation', 'radio', 'lighthouse', 'global']) {
 }
 assert.ok(roomsSource.includes('activateRoom(kind)'), 'radio and lighthouse must use the peer chat-window shell');
 assert.ok(roomsSource.includes('room-soil-tip'), 'room model messages must expose their rolling soil nearby');
+assert.ok(roomsSource.includes('data-action="memory:soil-open"'), 'room soil tips must open the soil detail directly');
+assert.equal(roomsSource.includes('soilIsBlank'), false, 'an empty room soil must retain its message-flow entry');
 assert.ok(roomsSource.includes("message.actor === 'xiaohan'"));
 assert.ok(roomsSource.includes("message.surface === 'web_manual'"));
 for (const copy of [
@@ -188,7 +197,6 @@ assert.equal((tokenStyles.match(/--topbar-height:/g) || []).length, 1, 'top bar 
 assert.match(tokenStyles, /--topbar-height:\s*52px;/);
 assert.match(tokenStyles, /--composer-height:\s*62px;/);
 assert.match(shellStyles, /\.topbar\s*\{[\s\S]*?align-items:\s*center;/);
-const featureStyles = await read(join(moduleRoot, 'styles/features.css'));
 assert.match(featureStyles, /\.feature-head\s*\{[\s\S]*?height:\s*calc\(var\(--topbar-height\) \+ var\(--safe-top\)\)/);
 const chatStyles = await read(join(moduleRoot, 'styles/chat.css'));
 assert.match(chatStyles, /\.composer--chat\s*\{\s*grid-template-columns:\s*42px minmax\(0, 1fr\) 42px;\s*\}/);
