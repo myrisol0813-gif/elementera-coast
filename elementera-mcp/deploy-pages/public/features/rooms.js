@@ -131,9 +131,16 @@ export function createRooms({ router, toast, dogtalk }) {
   function latestModelIds(kind) {
     const result = {};
     for (const item of state[kind].items) {
-      if (['coast_api', 'official_mcp'].includes(item.surface)) result[item.surface] = item.id;
+      if (!['coast_api', 'official_mcp'].includes(item.surface)) continue;
+      const current = result[item.surface];
+      if (!current || Date.parse(item.created_at || 0) >= current.createdAt) {
+        result[item.surface] = {
+          id: item.id,
+          createdAt: Date.parse(item.created_at || 0),
+        };
+      }
     }
-    return result;
+    return Object.fromEntries(Object.entries(result).map(([source, value]) => [source, value.id]));
   }
 
   function soilTip(kind, item, latest) {
@@ -141,9 +148,12 @@ export function createRooms({ router, toast, dogtalk }) {
     const source = state[kind].memory?.sources?.[item.surface];
     if (!source?.soil || soilIsBlank(source.soil)) return '';
     const count = Array.isArray(source.soil.hand_seeds) ? source.soil.hand_seeds.length : 0;
-    const label = source.source_label || SOURCE_LABELS[item.surface] || '模型侧';
+    const label = source.soil.display_author
+      || source.source_label
+      || SOURCE_LABELS[item.surface]
+      || '模型侧';
     return `<div class="thought-soil-row room-soil-tip">
-      <button class="thought-soil-entry" type="button" data-action="memory:open" data-scope="${kind}">
+      <button class="thought-soil-entry" type="button" data-action="memory:open" data-scope="${kind}" data-source="${escapeAttribute(item.surface)}">
         ${escapeHtml(ROOM_COPY[kind].soil)} · ${escapeHtml(label)} · ${count} 粒手持种 <span aria-hidden="true">›</span>
       </button>
     </div>`;
@@ -156,7 +166,9 @@ export function createRooms({ router, toast, dogtalk }) {
         ? 'is-api'
         : '';
     const user = message.actor === 'xiaohan';
-    const canWithdraw = !message.withdrawn;
+    const canWithdraw = message.actor === 'xiaohan'
+      && message.surface === 'web_manual'
+      && !message.withdrawn;
     return `${soilTip('radio', message, latest)}
       <article class="local-message ${user ? 'is-user' : 'is-other'} ${sourceClass} ${message.withdrawn ? 'is-withdrawn' : ''}" data-room-message-id="${escapeAttribute(message.id)}">
         <div>${escapeHtml(message.text)}</div>

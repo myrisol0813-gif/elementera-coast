@@ -83,6 +83,13 @@ export async function withdrawRadioMessageByOwner(db, id) {
     ? await first(db, 'SELECT * FROM coast_radio_messages WHERE id = ?', [messageId])
     : null;
   if (!row) throw new CoastStoreError('radio_message_not_found', '这条电波不存在。', 404);
+  if (row.actor !== 'xiaohan' || row.surface !== 'web_manual') {
+    throw new CoastStoreError(
+      'radio_withdraw_forbidden',
+      '只能撤回小寒从网页手动发送的电波。',
+      403,
+    );
+  }
   if (!row.withdrawn_at) {
     await db.prepare(`UPDATE coast_radio_messages
       SET withdrawn_at = ?, withdrawn_by = ?

@@ -1454,8 +1454,13 @@ assert.equal(document.querySelector('#menuButton').hidden, false);
 assert.equal(document.querySelector('.feature-back'), null, 'radio is not a feature-page overlay');
 assert.equal(document.querySelector('#roomTitle').textContent, '无线电波的两端');
 assert.ok(document.querySelector('#roomSubtitle').textContent.includes('海岸 API ✦'));
+assert.ok(document.querySelector('#composer').classList.contains('composer--chat'));
+assert.ok(document.querySelector('#roomComposer').classList.contains('composer--room'));
+assert.equal(document.querySelector('#mainDogtalkComposer').parentElement.id, 'composer');
+assert.equal(document.querySelector('#roomDogtalkComposer').parentElement.id, 'roomComposer');
 assert.ok(document.querySelector('#roomMessages').textContent.includes('官端从灯塔向电波房打了个招呼。'));
 assert.ok(document.querySelector('#roomMessages .room-soil-tip')?.textContent.includes('ChatGPT≋'));
+assert.equal(document.querySelector('.local-message.is-official [data-action="rooms:withdraw-radio"]'), null);
 const radioDogtalk = document.querySelector('#roomDogtalkComposer');
 assert.ok(radioDogtalk.textContent.includes('小寒这轮很放松，因此偷懒中。'));
 radioDogtalk.querySelector('details').open = true;
@@ -1475,6 +1480,7 @@ assert.ok(document.querySelector('.local-message.is-user .message-dogtalk-mark')
 assert.equal(dogtalks.get('radio:main').body, '三端房间里，小寒有一点害羞地想靠近。');
 document.querySelector('[data-action="rooms:ask-api"]').click();
 await waitFor(() => document.querySelector('#roomMessages').textContent.includes('海岸 API ✦ 收到了这条电波'), 'coast API radio reply');
+assert.equal(document.querySelector('.local-message.is-api [data-action="rooms:withdraw-radio"]'), null);
 assert.ok(document.querySelector('.local-message.is-api + .room-soil-tip')
   || [...document.querySelectorAll('.room-soil-tip')].some((tip) => tip.textContent.includes('海岸 API ✦')));
 

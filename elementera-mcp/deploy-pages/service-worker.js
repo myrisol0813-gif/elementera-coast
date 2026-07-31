@@ -1,4 +1,4 @@
-const CACHE_NAME = 'elementera-coast-app-20';
+const CACHE_NAME = 'elementera-coast-app-21';
 const CORE = Object.freeze([
   '/',
   '/index.html',

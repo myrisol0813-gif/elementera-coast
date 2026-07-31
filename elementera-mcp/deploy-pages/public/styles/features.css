@@ -221,6 +221,10 @@
   gap: 12px;
 }
 
+.room-library-soil.is-selected {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+}
+
 .room-library-soil h2 {
   margin-top: 16px;
   font-size: 13px;

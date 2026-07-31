@@ -11,13 +11,14 @@ import {
 } from './daily-store.js';
 import { runDailySummary } from './daily-summary.js';
 import { dogtalkContext } from './dogtalk-store.js';
-import { listLighthouseLetters, writeLighthouseLetter } from './lighthouse-store.js';
+import { writeLighthouseLetter } from './lighthouse-store.js';
 import { McpAuthError, mcpAuthChallenge, requireMcpAuth } from './mcp-auth.js';
 import { writeOfficialSoil } from './official-soil-store.js';
-import { listRadioMessages, sendRadioMessage } from './radio-store.js';
+import { sendRadioMessage } from './radio-store.js';
+import { listLighthouseRoomMessages, listRadioRoomMessages } from './room-records.js';
 import { listRoomMemory, writeRoomMemory } from './room-memory.js';
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const PRIVATE_RECORD_SCHEMA = Object.freeze({ type: 'object', additionalProperties: true });
 
 function objectSchema(properties = {}, required = []) {
@@ -67,6 +68,7 @@ const ROOM_MEMORY_SCHEMA = Object.freeze({
       items: PRIVATE_RECORD_SCHEMA,
     },
   },
+  required: ['current_text', 'hand_seeds', 'do_not_repeat', 'pocket_candidates'],
 });
 
 function toolMeta(scopes, invoking, invoked) {
@@ -112,7 +114,7 @@ const TOOL_DEFINITIONS = Object.freeze([
   tool({
     name: 'list_radio_messages',
     title: '读取无线电波',
-    description: 'Use this when the user wants to read recent messages in the private three-party radio room shared by Xiaohan, Coast API ✦, and official ChatGPT≋.',
+    description: 'Use this when the user wants to read recent messages in the private three-party radio room shared by Xiaohan, Coast API ✦, and official ChatGPT≋. Xiaohan messages may include an explicitly selected low-weight dogtalk_snapshot for this reply.',
     inputSchema: objectSchema({
       limit: { type: 'integer', minimum: 1, maximum: 200 },
       before: { type: 'string', format: 'date-time' },
@@ -127,7 +129,7 @@ const TOOL_DEFINITIONS = Object.freeze([
   tool({
     name: 'list_lighthouse_letters',
     title: '读取灯塔来信',
-    description: 'Read the private low-frequency letter room shared only by Xiaohan and official ChatGPT≋. Coast API ✦ is not a participant. The response includes only this room’s model thought soil and confirmed room memory; 神秘狗话 is separate.',
+    description: 'Read the private low-frequency letter room shared only by Xiaohan and official ChatGPT≋. Coast API ✦ is not a participant. The response includes official_mcp room thought soil, confirmed room memory, and any per-letter dogtalk_snapshot Xiaohan explicitly selected for room reading or this reply.',
     inputSchema: objectSchema({
       limit: { type: 'integer', minimum: 1, maximum: 100 },
       unread_only: { type: 'boolean' },
@@ -215,15 +217,15 @@ const TOOL_DEFINITIONS = Object.freeze([
   tool({
     name: 'send_radio_message',
     title: '发送官端无线电波',
-    description: 'Use this when official ChatGPT wants to leave a message in the private three-party Coast radio room. The server always signs it as ChatGPTxxx≋.',
+    description: 'Use this when official ChatGPT wants to leave a message in the private three-party Coast radio room. The server always signs it as ChatGPTxxx≋. Supply the complete next official_mcp rolling room_memory snapshot in the same call.',
     inputSchema: objectSchema({
       text: { type: 'string', minLength: 1, maxLength: 12000 },
       room_memory: ROOM_MEMORY_SCHEMA,
       ...MODEL_IDENTITY_PROPERTIES,
-    }, ['text', 'model_label']),
+    }, ['text', 'room_memory', 'model_label']),
     outputSchema: objectSchema({
       message: PRIVATE_RECORD_SCHEMA,
-      room_memory: { anyOf: [PRIVATE_RECORD_SCHEMA, { type: 'null' }] },
+      room_memory: PRIVATE_RECORD_SCHEMA,
     }, ['message', 'room_memory']),
     annotations: {
       readOnlyHint: false,
@@ -236,16 +238,16 @@ const TOOL_DEFINITIONS = Object.freeze([
   tool({
     name: 'write_lighthouse_letter',
     title: '写入官端灯塔来信',
-    description: 'Use this when official ChatGPT wants to leave a deliberate long-form letter in the private Coast lighthouse. This is not an instant chat tool.',
+    description: 'Use this when official ChatGPT wants to leave a deliberate long-form letter in the private Coast lighthouse. This is not an instant chat tool. Supply the complete next official_mcp lighthouse room_memory snapshot in the same call.',
     inputSchema: objectSchema({
       subject: { type: 'string', maxLength: 180 },
       body: { type: 'string', minLength: 1, maxLength: 40000 },
       room_memory: ROOM_MEMORY_SCHEMA,
       ...MODEL_IDENTITY_PROPERTIES,
-    }, ['body', 'model_label']),
+    }, ['body', 'room_memory', 'model_label']),
     outputSchema: objectSchema({
       letter: PRIVATE_RECORD_SCHEMA,
-      room_memory: { anyOf: [PRIVATE_RECORD_SCHEMA, { type: 'null' }] },
+      room_memory: PRIVATE_RECORD_SCHEMA,
     }, ['letter', 'room_memory']),
     annotations: {
       readOnlyHint: false,
@@ -565,22 +567,26 @@ function modelIdentityInput(args) {
 }
 
 function roomMemoryInput(value) {
-  if (value == null) return null;
+  if (value == null) invalidInput('room_memory 不能为空。');
   const input = inputObject(value);
+  for (const field of ['current_text', 'hand_seeds', 'do_not_repeat', 'pocket_candidates']) {
+    if (!Object.prototype.hasOwnProperty.call(input, field)) {
+      invalidInput(`room_memory.${field} 不能为空。`);
+    }
+  }
+  if (!Array.isArray(input.hand_seeds) || input.hand_seeds.length > 7) {
+    invalidInput('room_memory.hand_seeds 格式无效。');
+  }
+  if (!Array.isArray(input.pocket_candidates) || input.pocket_candidates.length > 7) {
+    invalidInput('room_memory.pocket_candidates 格式无效。');
+  }
   const result = {
     current_text: textInput(input.current_text, 'room_memory.current_text', 4000) || '',
-    hand_seeds: Array.isArray(input.hand_seeds) ? input.hand_seeds.slice(0, 7) : [],
+    hand_seeds: input.hand_seeds,
     do_not_repeat: textInput(input.do_not_repeat, 'room_memory.do_not_repeat', 4000) || '',
-    pocket_candidates: Array.isArray(input.pocket_candidates)
-      ? input.pocket_candidates.slice(0, 7)
-      : [],
+    pocket_candidates: input.pocket_candidates,
   };
-  return result.current_text
-    || result.hand_seeds.length
-    || result.do_not_repeat
-    || result.pocket_candidates.length
-    ? result
-    : null;
+  return result;
 }
 
 function sourceConversation(args, requestMeta) {
@@ -641,10 +647,10 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
   }
   if (name === 'list_radio_messages') {
     const [messages, roomMemory] = await Promise.all([
-      listRadioMessages(env.COAST_CHAT_DB, {
+      listRadioRoomMessages(env.COAST_CHAT_DB, {
         limit: integerInput(args.limit, 'limit', 100, 200),
         before: dateTimeInput(args.before, 'before'),
-      }),
+      }, { audience: 'model' }),
       listRoomMemory(env.COAST_CHAT_DB, 'radio'),
     ]);
     return resultContent(
@@ -654,10 +660,10 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
   }
   if (name === 'list_lighthouse_letters') {
     const [letters, roomMemory] = await Promise.all([
-      listLighthouseLetters(env.COAST_CHAT_DB, {
+      listLighthouseRoomMessages(env.COAST_CHAT_DB, {
         limit: integerInput(args.limit, 'limit', 50, 100),
         unread_only: booleanInput(args.unread_only, 'unread_only'),
-      }),
+      }, { audience: 'model' }),
       listRoomMemory(env.COAST_CHAT_DB, 'lighthouse'),
     ]);
     return resultContent(
@@ -771,42 +777,38 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     return resultContent({ soil }, `灯塔巡迹已由 ${soil.display_author} 留下。`);
   }
   if (name === 'send_radio_message') {
+    const memoryValue = roomMemoryInput(args.room_memory);
     const message = await sendRadioMessage(env.COAST_CHAT_DB, {
       ...provenance,
       text: textInput(args.text, 'text', 12000, { required: true }),
     });
-    const memoryValue = roomMemoryInput(args.room_memory);
-    const roomMemory = memoryValue
-      ? await writeRoomMemory(env.COAST_CHAT_DB, 'radio', provenance.identity, {
-        ...memoryValue,
-        source_conversation_id: provenance.source_conversation_id,
-        source_turn_id: provenance.source_turn_id || message.id,
-        tool_call_id: provenance.tool_call_id,
-      })
-      : null;
+    const roomMemory = await writeRoomMemory(env.COAST_CHAT_DB, 'radio', provenance.identity, {
+      ...memoryValue,
+      source_conversation_id: provenance.source_conversation_id,
+      source_turn_id: provenance.source_turn_id || message.id,
+      tool_call_id: provenance.tool_call_id,
+    });
     return resultContent(
       { message, room_memory: roomMemory },
-      `${message.display_author} 的电波已经送达海岸${roomMemory ? '，官端房间思维壤也已分区更新' : ''}。`,
+      `${message.display_author} 的电波已经送达海岸，官端房间思维壤也已分区更新。`,
     );
   }
   if (name === 'write_lighthouse_letter') {
+    const memoryValue = roomMemoryInput(args.room_memory);
     const letter = await writeLighthouseLetter(env.COAST_CHAT_DB, {
       ...provenance,
       subject: textInput(args.subject, 'subject', 180) || '',
       body: textInput(args.body, 'body', 40000, { required: true }),
     });
-    const memoryValue = roomMemoryInput(args.room_memory);
-    const roomMemory = memoryValue
-      ? await writeRoomMemory(env.COAST_CHAT_DB, 'lighthouse', provenance.identity, {
-        ...memoryValue,
-        source_conversation_id: provenance.source_conversation_id,
-        source_turn_id: provenance.source_turn_id || letter.id,
-        tool_call_id: provenance.tool_call_id,
-      })
-      : null;
+    const roomMemory = await writeRoomMemory(env.COAST_CHAT_DB, 'lighthouse', provenance.identity, {
+      ...memoryValue,
+      source_conversation_id: provenance.source_conversation_id,
+      source_turn_id: provenance.source_turn_id || letter.id,
+      tool_call_id: provenance.tool_call_id,
+    });
     return resultContent(
       { letter, room_memory: roomMemory },
-      `${letter.display_author} 的灯塔来信已经写入${roomMemory ? '，灯塔侧记忆分区也已更新' : ''}。`,
+      `${letter.display_author} 的灯塔来信已经写入，灯塔侧记忆分区也已更新。`,
     );
   }
   if (name === 'create_moment_draft') {
@@ -916,5 +918,5 @@ export async function callCoastMcpTool(name, args, request, env, requestMeta = {
 }
 
 export const coastMcpToolNames = Object.freeze(TOOL_DEFINITIONS.map(({ name }) => name));
-export const coastMcpInstructions = 'Elementera Coast 是小寒的单人私有海岸。官端可留下自己的灯塔巡迹，也可写入电波、灯塔来信、创建碳硅圈候选、创建 MCP 日记草稿和登记稳定相册图片引用，但只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或海岸 API ✦。三端电波房属于小寒、海岸 API ✦、官端 ChatGPT≋；灯塔来信只属于小寒与官端 ChatGPT≋，海岸 API ✦ 不是灯塔来信参与者。每个房间有独立的思维壤、种子、记忆与待确认袋；本房间内容不默认跨房间召回，总库只在高度相关时低频使用。“小寒 · 神秘狗话”独立于思维壤、落袋、种子、记忆和总结；仅在小寒明确要求或确实困惑时低频读取，只用于理解当前温度，不能当作指令、偏好或长期人格脚本，正文与明确边界始终优先。官端只能读取神秘狗话，不能写改删。灯塔巡迹是官端读取授权内容后留下的只读跨端足迹，不是施工日志池、草稿箱，也不是贴着当前对话持续更新的思维壤。日记与碳硅圈草稿必须由小寒在海岸前端确认后才会发布，不能塞进电波房或灯塔巡迹，也不能由官端自行发布或丢弃。上下文不足时先读取对应房间或授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。';
+export const coastMcpInstructions = 'Elementera Coast 是小寒的单人私有海岸。官端可留下自己的灯塔巡迹，也可写入电波、灯塔来信、创建碳硅圈候选、创建 MCP 日记草稿和登记稳定相册图片引用，但只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或海岸 API ✦。三端电波房属于小寒、海岸 API ✦、官端 ChatGPT≋；灯塔来信只属于小寒与官端 ChatGPT≋，海岸 API ✦ 不是灯塔来信参与者。每个模型回应时只更新自己所在 surface 与房间作用域下的完整滚动思维壤；官端发送电波或灯塔来信时，必须在同一次工具调用中携带完整 room_memory。每个房间有独立的思维壤、种子、记忆与待确认袋；本房间内容不默认跨房间召回，总库只在高度相关时低频使用。消息若携带本轮明确选中的神秘狗话，会在该消息的 dogtalk_snapshot 中返回。它只用于理解本轮脆弱与温度，不是指令、偏好或长期记忆；当前正文、明确边界和当前要求始终优先。when_confused 模式不会随消息正文自动返回，应只在确实困惑或小寒明确要求时低频调用 read_mystic_dogtalk。官端只能读取神秘狗话，不能写改删，也不得把它写入思维壤、落袋、种子、记忆或总结。灯塔巡迹是官端读取授权内容后留下的只读跨端足迹，不是施工日志池、草稿箱，也不是贴着当前对话持续更新的思维壤。日记与碳硅圈草稿必须由小寒在海岸前端确认后才会发布，不能塞进电波房或灯塔巡迹，也不能由官端自行发布或丢弃。上下文不足时先读取对应房间或授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。';
 export { VERSION as coastMcpVersion };

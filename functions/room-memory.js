@@ -1,5 +1,9 @@
 import { ensureChatSchema, sanitizeId } from './chat-store.js';
-import { validateCoastIdentity } from './coast-identity.js';
+import {
+  apiMyriIdentity,
+  officialMcpIdentity,
+  validateCoastIdentity,
+} from './coast-identity.js';
 import { dogtalkContext } from './dogtalk-store.js';
 import { buildMemoryContext } from './memory-recall.js';
 import {
@@ -107,6 +111,16 @@ function sourceLabel(source) {
   }[source] || source;
 }
 
+function sourceIdentity(record, source) {
+  const model = {
+    model_label: record?.model_label || '未标注模型',
+    model_nickname: record?.model_nickname || null,
+  };
+  return source === 'official_mcp'
+    ? officialMcpIdentity(model)
+    : apiMyriIdentity(model);
+}
+
 function title(roomValue, surfaceValue) {
   return `${ROOM_META[roomValue].title} · ${sourceLabel(surfaceValue)}`;
 }
@@ -157,8 +171,12 @@ export async function ensureRoomMemory(db, roomValue) {
 }
 
 function scopedRecord(record, roomId, source) {
+  const identity = ROOM_MEMORY_SURFACES[roomId]?.includes(source)
+    ? sourceIdentity(record, source)
+    : null;
   return {
     ...record,
+    ...(identity || {}),
     room_scope: roomId,
     room_key: ROOM_META[roomId].room_key,
     ...(record?.source_surface && record.source_surface !== source
@@ -182,15 +200,16 @@ export async function listRoomMemory(db, roomValue) {
       listPockets(db, { conversation_id: conversationId, status: 'archived' }),
       listEntries(db, { conversation_id: conversationId, scope: 'conversation', limit: 100 }),
     ]);
+    const projectedSoil = scopedRecord(soil, roomId, source);
     const activeEntries = entries.entries.filter((item) => !['stone', 'archived', 'discarded'].includes(item.status));
     const sealedEntries = entries.entries.filter((item) => ['stone', 'archived'].includes(item.status));
     sources[source] = {
       room_scope: roomId,
       room_key: ROOM_META[roomId].room_key,
       source_surface: source,
-      source_label: sourceLabel(source),
+      source_label: projectedSoil.display_author,
       conversation_id: conversationId,
-      soil: scopedRecord(soil, roomId, source),
+      soil: projectedSoil,
       pending_pockets: pendingPockets.map((item) => scopedRecord(item, roomId, source)),
       seeds: activeEntries.filter((item) => item.entry_type === 'seed')
         .map((item) => scopedRecord(item, roomId, source)),
@@ -255,6 +274,18 @@ export async function writeRoomMemory(db, roomValue, identityValue, value = {}) 
   const identity = validateCoastIdentity(identityValue);
   const source = modelMemorySurface(roomId, identity.surface);
   const conversationId = await ensureRoomConversation(db, roomId, source);
+  const current = await readSoil(db, conversationId);
+  if (value.tool_call_id && current.tool_call_id === value.tool_call_id) {
+    return {
+      room_scope: roomId,
+      room_key: ROOM_META[roomId].room_key,
+      source_surface: source,
+      conversation_id: conversationId,
+      soil: scopedRecord(current, roomId, source),
+      pockets: { created: 0, updated: 0, suppressed: 0, pockets: [] },
+      idempotent: true,
+    };
+  }
   const soil = await writeSoil(db, conversationId, {
     current_text: value.current_text,
     hand_seeds: value.hand_seeds,
@@ -312,7 +343,7 @@ function soilBlock(roomId, soils, settings = {}) {
   ];
   for (const source of memorySurfaces(roomId)) {
     const soil = soils[source] || {};
-    lines.push(`${sourceLabel(source)}：`);
+    lines.push(`${soil.display_author || sourceLabel(source)}：`);
     lines.push(`当前：${clipped(soil.current_text, budget) || '未整理'}`);
     if (soil.hand_seeds?.length) {
       lines.push(
@@ -398,7 +429,11 @@ export async function buildRoomMemoryContext(env, roomValue, surfaceValue, query
   const memories = [sharedMemory, ...sourceMemories];
   const soils = {};
   for (const [sourceName, conversationId] of Object.entries(ids)) {
-    soils[sourceName] = await readSoil(env.COAST_CHAT_DB, conversationId);
+    soils[sourceName] = scopedRecord(
+      await readSoil(env.COAST_CHAT_DB, conversationId),
+      roomId,
+      sourceName,
+    );
   }
   const memory = {
     conversation_seeds: uniqueEntries(memories, 'conversation_seeds'),

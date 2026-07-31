@@ -209,7 +209,6 @@
 
 .composer {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 42px;
   align-items: end;
   gap: 8px;
   width: min(780px, 100%);
@@ -218,6 +217,14 @@
   padding: 7px max(14px, var(--safe-right)) calc(7px + var(--safe-bottom)) max(14px, var(--safe-left));
   border-top: 1px solid var(--line);
   background: var(--bg);
+}
+
+.composer--chat {
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
+}
+
+.composer--room {
+  grid-template-columns: minmax(0, 1fr) 42px;
 }
 
 .composer-side,
@@ -241,6 +248,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 32px;
   align-items: end;
+  width: 100%;
+  min-width: 0;
   min-height: 42px;
   padding: 4px 6px 4px 15px;
   border: 1px solid transparent;
@@ -283,11 +292,7 @@
   line-height: 1.4;
 }
 
-.room-composer {
-  grid-template-columns: minmax(0, 1fr) 42px;
-}
-
-.room-composer .input-pill {
+.composer--room .input-pill {
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -323,9 +328,10 @@
 }
 
 .dogtalk-composer-slot {
-  width: min(780px, 100%);
-  margin: 0 auto;
-  padding: 0 max(14px, var(--safe-right)) 6px max(14px, var(--safe-left));
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+  padding-bottom: 6px;
 }
 
 .dogtalk-composer {
@@ -553,7 +559,6 @@
   }
 
   .composer {
-    grid-template-columns: 42px minmax(0, 1fr) 42px;
     padding-inline: 14px;
   }
 

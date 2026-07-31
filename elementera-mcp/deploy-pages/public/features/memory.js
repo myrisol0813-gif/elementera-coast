@@ -95,6 +95,7 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
     pockets: new Map(),
     entries: { conversation: [], global: [], radio: [], lighthouse: [] },
     roomMemory: { radio: null, lighthouse: null },
+    selectedRoomSource: { radio: '', lighthouse: '' },
     officialSoils: [],
     officialSoilsStatus: 'idle',
     libraryTab: 'conversation',
@@ -418,12 +419,12 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
     }[value.source_surface] || '房间来源';
   }
 
-  function roomSoilCard(source) {
+  function roomSoilCard(source, selected = false) {
     const soil = source.soil || {};
     const seeds = Array.isArray(soil.hand_seeds) ? soil.hand_seeds : [];
     const candidates = Array.isArray(soil.pocket_candidates) ? soil.pocket_candidates : [];
-    return `<article class="feature-card feature-prose room-library-soil">
-      <div class="memory-entry-meta"><span>${escapeHtml(roomSourceLabel(source))}</span><span>${escapeHtml(source.source_surface || '')}</span></div>
+    return `<article class="feature-card feature-prose room-library-soil ${selected ? 'is-selected' : ''}" data-room-soil-source="${escapeAttribute(source.source_surface || '')}">
+      <div class="memory-entry-meta"><span>${escapeHtml(soil.display_author || roomSourceLabel(source))}</span><span>${escapeHtml(source.source_surface || '')}</span><span>revision ${Number(soil.revision || 1)}</span></div>
       <h2>当前</h2>${textBlock(soil.current_text, '暂无')}
       <h2>手持种 · ${seeds.length}</h2>${seeds.length
         ? `<ul>${seeds.map((seed) => `<li>${escapeHtml(seed.name || seed.life_core || '未命名种子')} · ${escapeHtml(seed.life_core || '')}</li>`).join('')}</ul>`
@@ -512,8 +513,14 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
     </div></section>` : '';
     const roomMemory = roomScope ? runtime.roomMemory[roomScope] : null;
     const roomLabel = roomScope === 'radio' ? '电波房' : '灯塔来信';
+    const selectedRoomSource = roomScope ? runtime.selectedRoomSource[roomScope] : '';
+    const roomSources = roomScope
+      ? Object.values(roomMemory?.sources || {}).sort((left, right) => (
+        left.source_surface === selectedRoomSource ? -1 : right.source_surface === selectedRoomSource ? 1 : 0
+      ))
+      : [];
     const roomLocal = roomScope && roomMemory
-      ? `<section class="feature-group"><h2>${roomLabel}思维壤</h2><div class="room-library-soils">${Object.values(roomMemory.sources || {}).map(roomSoilCard).join('') || '<div class="feature-card"><p class="feature-empty">这个房间还没有模型思维壤。</p></div>'}</div></section>
+      ? `<section class="feature-group"><h2>${roomLabel}思维壤</h2>${selectedRoomSource ? `<p class="feature-note">正在查看 ${escapeHtml(roomSources[0]?.soil?.display_author || roomSourceLabel(roomSources[0]))} 的独立滚动思维壤。</p>` : ''}<div class="room-library-soils">${roomSources.map((source) => roomSoilCard(source, source.source_surface === selectedRoomSource)).join('') || '<div class="feature-card"><p class="feature-empty">这个房间还没有模型思维壤。</p></div>'}</div></section>
         <section class="feature-group"><h2>${roomLabel}待确认袋</h2>${(roomMemory.pending_pockets || []).length
           ? `<div class="memory-pocket-list">${roomMemory.pending_pockets.map((pocket) => roomPendingCard(roomScope, pocket)).join('')}</div>`
           : '<div class="feature-card"><p class="feature-empty">待确认袋是空的。</p></div>'}</section>`
@@ -615,10 +622,15 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
     return router.open('memory-pockets');
   }
 
-  async function openLibrary(scope = runtime.libraryTab) {
+  async function openLibrary(scope = runtime.libraryTab, source = '') {
     runtime.libraryTab = ['conversation', 'radio', 'lighthouse', 'global'].includes(scope)
       ? scope
       : 'conversation';
+    if (['radio', 'lighthouse'].includes(runtime.libraryTab)) {
+      runtime.selectedRoomSource[runtime.libraryTab] = ['coast_api', 'official_mcp'].includes(source)
+        ? source
+        : '';
+    }
     if (runtime.libraryTab === 'conversation') {
       await Promise.all([
         fetchSoil(currentId()),
@@ -730,7 +742,10 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
 
   async function handleAction(name, target) {
     if (name === 'open') {
-      return openLibrary(target.dataset.scope || rooms?.getActiveScope?.() || 'conversation');
+      return openLibrary(
+        target.dataset.scope || rooms?.getActiveScope?.() || 'conversation',
+        target.dataset.source || '',
+      );
     }
     if (name === 'soil') return openSoil();
     if (name === 'done') return router.back();
