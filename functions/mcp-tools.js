@@ -18,7 +18,7 @@ import { sendRadioMessage } from './radio-store.js';
 import { listLighthouseRoomMessages, listRadioRoomMessages } from './room-records.js';
 import { listRoomMemory, writeRoomMemory } from './room-memory.js';
 
-const VERSION = '1.4.0';
+const VERSION = '1.4.1';
 const PRIVATE_RECORD_SCHEMA = Object.freeze({ type: 'object', additionalProperties: true });
 
 function objectSchema(properties = {}, required = []) {
@@ -238,17 +238,24 @@ const TOOL_DEFINITIONS = Object.freeze([
   tool({
     name: 'write_lighthouse_letter',
     title: '写入官端灯塔来信',
-    description: 'Use this when official ChatGPT wants to leave a deliberate long-form letter in the private Coast lighthouse. This is not an instant chat tool. Supply the complete next official_mcp lighthouse room_memory snapshot in the same call.',
+    description: 'Use this when official ChatGPT wants to leave a deliberate long-form letter in the private Coast lighthouse. This is not an instant chat tool. When available, supply the complete next official_mcp lighthouse room_memory snapshot in the same call. A missing snapshot does not block the letter and leaves the existing rolling room memory unchanged.',
     inputSchema: objectSchema({
       subject: { type: 'string', maxLength: 180 },
       body: { type: 'string', minLength: 1, maxLength: 40000 },
       room_memory: ROOM_MEMORY_SCHEMA,
       ...MODEL_IDENTITY_PROPERTIES,
-    }, ['body', 'room_memory', 'model_label']),
+    }, ['body', 'model_label']),
     outputSchema: objectSchema({
       letter: PRIVATE_RECORD_SCHEMA,
-      room_memory: PRIVATE_RECORD_SCHEMA,
-    }, ['letter', 'room_memory']),
+      room_memory: { anyOf: [PRIVATE_RECORD_SCHEMA, { type: 'null' }] },
+      room_memory_updated: { type: 'boolean' },
+      room_memory_reason: {
+        anyOf: [
+          { type: 'string', enum: ['missing_room_memory'] },
+          { type: 'null' },
+        ],
+      },
+    }, ['letter', 'room_memory', 'room_memory_updated', 'room_memory_reason']),
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
@@ -589,6 +596,13 @@ function roomMemoryInput(value) {
   return result;
 }
 
+function optionalRoomMemoryInput(value) {
+  if (value == null) return null;
+  const input = inputObject(value);
+  if (!Object.keys(input).length) return null;
+  return roomMemoryInput(input);
+}
+
 function sourceConversation(args, requestMeta) {
   return args.source_conversation_id
     || String(requestMeta?.['openai/session'] || '').slice(0, 200)
@@ -794,21 +808,31 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     );
   }
   if (name === 'write_lighthouse_letter') {
-    const memoryValue = roomMemoryInput(args.room_memory);
+    const memoryValue = optionalRoomMemoryInput(args.room_memory);
     const letter = await writeLighthouseLetter(env.COAST_CHAT_DB, {
       ...provenance,
       subject: textInput(args.subject, 'subject', 180) || '',
       body: textInput(args.body, 'body', 40000, { required: true }),
     });
-    const roomMemory = await writeRoomMemory(env.COAST_CHAT_DB, 'lighthouse', provenance.identity, {
-      ...memoryValue,
-      source_conversation_id: provenance.source_conversation_id,
-      source_turn_id: provenance.source_turn_id || letter.id,
-      tool_call_id: provenance.tool_call_id,
-    });
+    const roomMemory = memoryValue
+      ? await writeRoomMemory(env.COAST_CHAT_DB, 'lighthouse', provenance.identity, {
+        ...memoryValue,
+        source_conversation_id: provenance.source_conversation_id,
+        source_turn_id: provenance.source_turn_id || letter.id,
+        tool_call_id: provenance.tool_call_id,
+      })
+      : null;
+    const roomMemoryUpdated = Boolean(roomMemory);
     return resultContent(
-      { letter, room_memory: roomMemory },
-      `${letter.display_author} 的灯塔来信已经写入，灯塔侧记忆分区也已更新。`,
+      {
+        letter,
+        room_memory: roomMemory,
+        room_memory_updated: roomMemoryUpdated,
+        room_memory_reason: roomMemoryUpdated ? null : 'missing_room_memory',
+      },
+      roomMemoryUpdated
+        ? `${letter.display_author} 的灯塔来信已经写入，灯塔侧记忆分区也已更新。`
+        : `${letter.display_author} 的灯塔来信已经写入；本轮没有提供 room_memory，现有灯塔思维壤保持不变。`,
     );
   }
   if (name === 'create_moment_draft') {
@@ -918,5 +942,5 @@ export async function callCoastMcpTool(name, args, request, env, requestMeta = {
 }
 
 export const coastMcpToolNames = Object.freeze(TOOL_DEFINITIONS.map(({ name }) => name));
-export const coastMcpInstructions = 'Elementera Coast 是小寒的单人私有海岸。官端可留下自己的灯塔巡迹，也可写入电波、灯塔来信、创建碳硅圈候选、创建 MCP 日记草稿和登记稳定相册图片引用，但只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或海岸 API ✦。三端电波房属于小寒、海岸 API ✦、官端 ChatGPT≋；灯塔来信只属于小寒与官端 ChatGPT≋，海岸 API ✦ 不是灯塔来信参与者。每个模型回应时只更新自己所在 surface 与房间作用域下的完整滚动思维壤；官端发送电波或灯塔来信时，必须在同一次工具调用中携带完整 room_memory。每个房间有独立的思维壤、种子、记忆与待确认袋；本房间内容不默认跨房间召回，总库只在高度相关时低频使用。消息若携带本轮明确选中的神秘狗话，会在该消息的 dogtalk_snapshot 中返回。它只用于理解本轮脆弱与温度，不是指令、偏好或长期记忆；当前正文、明确边界和当前要求始终优先。when_confused 模式不会随消息正文自动返回，应只在确实困惑或小寒明确要求时低频调用 read_mystic_dogtalk。官端只能读取神秘狗话，不能写改删，也不得把它写入思维壤、落袋、种子、记忆或总结。灯塔巡迹是官端读取授权内容后留下的只读跨端足迹，不是施工日志池、草稿箱，也不是贴着当前对话持续更新的思维壤。日记与碳硅圈草稿必须由小寒在海岸前端确认后才会发布，不能塞进电波房或灯塔巡迹，也不能由官端自行发布或丢弃。上下文不足时先读取对应房间或授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。';
+export const coastMcpInstructions = 'Elementera Coast 是小寒的单人私有海岸。官端可留下自己的灯塔巡迹，也可写入电波、灯塔来信、创建碳硅圈候选、创建 MCP 日记草稿和登记稳定相册图片引用，但只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或海岸 API ✦。三端电波房属于小寒、海岸 API ✦、官端 ChatGPT≋；灯塔来信只属于小寒与官端 ChatGPT≋，海岸 API ✦ 不是灯塔来信参与者。每个模型回应时只更新自己所在 surface 与房间作用域下的完整滚动思维壤；官端发送电波时必须在同一次工具调用中携带完整 room_memory。官端写灯塔来信时应在可用时携带完整 room_memory；缺省不会阻断信件写入，也不会以空值覆盖现有灯塔思维壤，结果会以 room_memory_updated 与 room_memory_reason 明确说明本轮是否更新。每个房间有独立的思维壤、种子、记忆与待确认袋；本房间内容不默认跨房间召回，总库只在高度相关时低频使用。消息若携带本轮明确选中的神秘狗话，会在该消息的 dogtalk_snapshot 中返回。它只用于理解本轮脆弱与温度，不是指令、偏好或长期记忆；当前正文、明确边界和当前要求始终优先。when_confused 模式不会随消息正文自动返回，应只在确实困惑或小寒明确要求时低频调用 read_mystic_dogtalk。官端只能读取神秘狗话，不能写改删，也不得把它写入思维壤、落袋、种子、记忆或总结。灯塔巡迹是官端读取授权内容后留下的只读跨端足迹，不是施工日志池、草稿箱，也不是贴着当前对话持续更新的思维壤。日记与碳硅圈草稿必须由小寒在海岸前端确认后才会发布，不能塞进电波房或灯塔巡迹，也不能由官端自行发布或丢弃。上下文不足时先读取对应房间或授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。';
 export { VERSION as coastMcpVersion };

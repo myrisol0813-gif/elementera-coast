@@ -495,6 +495,7 @@ const initialize = await mcp({
 assert.equal(initialize.result.serverInfo.name, 'elementera-coast-porch');
 assert.match(initialize.result.instructions, /dogtalk_snapshot/);
 assert.match(initialize.result.instructions, /不得把它写入思维壤、落袋、种子、记忆或总结/);
+assert.match(initialize.result.instructions, /缺省不会阻断信件写入/);
 
 const toolList = await mcp({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
 assert.deepEqual(toolList.result.tools.map((tool) => tool.name), [
@@ -525,14 +526,22 @@ const lighthouseTraceTool = toolList.result.tools.find((tool) => tool.name === '
 assert.equal(lighthouseTraceTool.title, '写入灯塔巡迹');
 assert.match(lighthouseTraceTool.description, /Lighthouse Trace/);
 assert.equal(lighthouseTraceTool._meta['openai/toolInvocation/invoked'], '灯塔巡迹已写入');
-for (const name of ['send_radio_message', 'write_lighthouse_letter']) {
-  const roomWriteTool = toolList.result.tools.find((tool) => tool.name === name);
-  assert.ok(roomWriteTool.inputSchema.required.includes('room_memory'));
-  assert.deepEqual(
-    roomWriteTool.inputSchema.properties.room_memory.required,
-    ['current_text', 'hand_seeds', 'do_not_repeat', 'pocket_candidates'],
-  );
-}
+const radioWriteTool = toolList.result.tools.find((tool) => tool.name === 'send_radio_message');
+assert.ok(radioWriteTool.inputSchema.required.includes('room_memory'));
+assert.deepEqual(
+  radioWriteTool.inputSchema.properties.room_memory.required,
+  ['current_text', 'hand_seeds', 'do_not_repeat', 'pocket_candidates'],
+);
+const lighthouseWriteTool = toolList.result.tools.find(
+  (tool) => tool.name === 'write_lighthouse_letter',
+);
+assert.ok('room_memory' in lighthouseWriteTool.inputSchema.properties);
+assert.equal(lighthouseWriteTool.inputSchema.required.includes('room_memory'), false);
+assert.match(lighthouseWriteTool.description, /missing snapshot does not block the letter/i);
+assert.deepEqual(
+  lighthouseWriteTool.inputSchema.properties.room_memory.required,
+  ['current_text', 'hand_seeds', 'do_not_repeat', 'pocket_candidates'],
+);
 
 const initializedNotification = await routeMcpRequest(new Request('https://coast.test/mcp', {
   method: 'POST',
@@ -1176,7 +1185,6 @@ assert.ok(legacyRadioDb.database.prepare('PRAGMA table_info(coast_radio_messages
   .some((column) => column.name === 'withdrawn_at'));
 
 const lighthouseCountBeforeMissingMemory = (await listLighthouseLetters(db)).length;
-console.error = () => {};
 const missingLighthouseMemory = await mcp({
   jsonrpc: '2.0',
   id: 79,
@@ -1185,16 +1193,27 @@ const missingLighthouseMemory = await mcp({
     name: 'write_lighthouse_letter',
     arguments: {
       subject: '不完整来信',
-      body: '缺少滚动壤时不应先写入来信。',
+      body: '缺少滚动壤时仍应写入来信，并保留现有灯塔壤。',
       model_label: 'GPT-5.6 Thinking',
       tool_call_id: 'lighthouse-missing-memory',
     },
   },
 }, fullToken);
-console.error = originalConsoleError;
-assert.equal(missingLighthouseMemory.result.isError, true);
-assert.equal(missingLighthouseMemory.result._meta.error_type, 'invalid_tool_input');
-assert.equal((await listLighthouseLetters(db)).length, lighthouseCountBeforeMissingMemory);
+assert.equal(missingLighthouseMemory.result.isError, undefined);
+assert.equal(missingLighthouseMemory.result.structuredContent.letter.surface, 'official_mcp');
+assert.equal(missingLighthouseMemory.result.structuredContent.letter.actor, 'myri');
+assert.equal(missingLighthouseMemory.result.structuredContent.letter.symbol, '≋');
+assert.equal(
+  missingLighthouseMemory.result.structuredContent.letter.display_author,
+  'ChatGPT-5.6 Thinking≋',
+);
+assert.equal(missingLighthouseMemory.result.structuredContent.room_memory, null);
+assert.equal(missingLighthouseMemory.result.structuredContent.room_memory_updated, false);
+assert.equal(
+  missingLighthouseMemory.result.structuredContent.room_memory_reason,
+  'missing_room_memory',
+);
+assert.equal((await listLighthouseLetters(db)).length, lighthouseCountBeforeMissingMemory + 1);
 
 const letterWrite = await mcp({
   jsonrpc: '2.0',
@@ -1217,6 +1236,8 @@ const letterWrite = await mcp({
   },
 }, fullToken);
 assert.equal(letterWrite.result.structuredContent.letter.surface, 'official_mcp');
+assert.equal(letterWrite.result.structuredContent.room_memory_updated, true);
+assert.equal(letterWrite.result.structuredContent.room_memory_reason, null);
 assert.equal(letterWrite.result.structuredContent.room_memory.soil.surface, 'official_mcp');
 assert.equal(letterWrite.result.structuredContent.room_memory.soil.actor, 'myri');
 assert.equal(letterWrite.result.structuredContent.room_memory.soil.symbol, '≋');
