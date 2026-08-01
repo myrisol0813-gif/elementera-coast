@@ -1,6 +1,8 @@
 const COOKIE_NAME = '__Host-coast_mailbox';
 const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
-const PBKDF2_ITERATIONS = 120000;
+// Cloudflare Workers rejects PBKDF2 requests above 100,000 iterations.
+// The server-keyed HMAC material below adds a pepper before the capped KDF.
+const PBKDF2_ITERATIONS = 100000;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -66,10 +68,13 @@ export async function passphraseLookup(value, env) {
   return encodeBytes(await hmac(`mailbox-passphrase-lookup\n${passphrase}`, secret));
 }
 
-async function derivePassphrase(passphrase, salt, iterations = PBKDF2_ITERATIONS) {
+async function derivePassphrase(passphrase, salt, env, iterations = PBKDF2_ITERATIONS) {
+  const secret = sessionSecret(env);
+  if (!secret) throw new Error('mailbox_auth_not_configured');
+  const material = await hmac(`mailbox-passphrase-hash\n${passphrase}`, secret);
   const key = await crypto.subtle.importKey(
     'raw',
-    encoder.encode(passphrase),
+    material,
     'PBKDF2',
     false,
     ['deriveBits'],
@@ -83,25 +88,28 @@ async function derivePassphrase(passphrase, salt, iterations = PBKDF2_ITERATIONS
   return new Uint8Array(bits);
 }
 
-export async function createPassphraseHash(value) {
+export async function createPassphraseHash(value, env) {
   const passphrase = normalizePassphrase(value);
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const derived = await derivePassphrase(passphrase, salt);
+  const derived = await derivePassphrase(passphrase, salt, env);
   return `pbkdf2-sha256$${PBKDF2_ITERATIONS}$${encodeBytes(salt)}$${encodeBytes(derived)}`;
 }
 
-export async function verifyPassphraseHash(value, storedHash) {
+export async function verifyPassphraseHash(value, storedHash, env) {
   const [algorithm, iterationsText, saltText, hashText] = String(storedHash || '').split('$');
   const iterations = Number(iterationsText);
   if (algorithm !== 'pbkdf2-sha256'
-    || !Number.isInteger(iterations)
-    || iterations < 100000
-    || iterations > 1000000
+    || iterations !== PBKDF2_ITERATIONS
     || !saltText
     || !hashText) return false;
   try {
     const expected = decodeBytes(hashText);
-    const actual = await derivePassphrase(normalizePassphrase(value), decodeBytes(saltText), iterations);
+    const actual = await derivePassphrase(
+      normalizePassphrase(value),
+      decodeBytes(saltText),
+      env,
+      iterations,
+    );
     return equalBytes(actual, expected);
   } catch {
     return false;

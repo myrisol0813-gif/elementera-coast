@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import {
   createMailboxSession,
   verifyMailboxSession,
+  verifyPassphraseHash,
 } from '../functions/mailbox-auth.js';
 import { routeMailboxApi } from '../functions/mailbox-api.js';
 import { FRIEND_MYRISOL_PROMPT_V1 } from '../functions/friend-myrisol-prompt.js';
@@ -93,9 +94,19 @@ const bob = await registerMailboxVisitor(db, env, {
 assert.equal(alice.privacy_level, 'sealed');
 assert.equal(bob.allow_memory, false);
 const storedAlice = db.database.prepare('SELECT * FROM mailbox_visitors WHERE id = ?').get(alice.id);
-assert.match(storedAlice.passphrase_hash, /^pbkdf2-sha256\$120000\$/);
+assert.match(storedAlice.passphrase_hash, /^pbkdf2-sha256\$100000\$/);
 assert.equal(storedAlice.passphrase_hash.includes('潮声-37'), false);
 assert.equal(storedAlice.passphrase_lookup.includes('潮声-37'), false);
+assert.equal(await verifyPassphraseHash('潮声-37', storedAlice.passphrase_hash, env), true);
+assert.equal(await verifyPassphraseHash('错误暗号', storedAlice.passphrase_hash, env), false);
+assert.equal(await verifyPassphraseHash('潮声-37', storedAlice.passphrase_hash, {
+  COAST_SESSION_SECRET: 'different-mailbox-test-secret-'.repeat(3),
+}), false, 'the server secret must pepper the stored verifier');
+assert.equal(await verifyPassphraseHash(
+  '潮声-37',
+  storedAlice.passphrase_hash.replace('$100000$', '$120000$'),
+  env,
+), false, 'Workers-incompatible PBKDF2 work factors must be rejected before derivation');
 await assert.rejects(
   () => registerMailboxVisitor(db, env, {
     display_name: '重复来客',

@@ -230,6 +230,7 @@ const middleware = await read(join(repo, 'functions/_middleware.js'));
 const authSource = await read(join(repo, 'functions/auth.js'));
 const mailboxPageSource = await read(join(repo, 'functions/mailbox-page.js'));
 const mailboxApiSource = await read(join(repo, 'functions/mailbox-api.js'));
+const mailboxAuthSource = await read(join(repo, 'functions/mailbox-auth.js'));
 const mailboxSchemaSource = await read(join(repo, 'functions/mailbox-schema.js'));
 const mailboxRepositorySource = await read(join(repo, 'functions/mailbox-repository.js'));
 const ownerMailboxApiSource = await read(join(repo, 'functions/owner-mailbox-api.js'));
@@ -297,6 +298,9 @@ for (const table of [
 ]) assert.ok(mailboxSchemaSource.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `missing mailbox table: ${table}`);
 assert.ok(mailboxSchemaSource.includes('passphrase_hash TEXT NOT NULL UNIQUE'));
 assert.ok(mailboxSchemaSource.includes('passphrase_lookup TEXT NOT NULL UNIQUE'));
+assert.ok(mailboxAuthSource.includes('const PBKDF2_ITERATIONS = 100000'));
+assert.ok(mailboxAuthSource.includes('mailbox-passphrase-hash\\n'));
+assert.equal(mailboxAuthSource.includes('120000'), false);
 assert.ok(mailboxRepositorySource.includes("is_visible_to_owner, safety_flag"));
 assert.equal(ownerMailboxApiSource.includes('content'), false, 'owner mailbox route cannot return sealed content');
 assert.equal(ownerMailboxApiSource.includes('visitor_notebook_entries'), false, 'owner mailbox route cannot read visitor notebook text');

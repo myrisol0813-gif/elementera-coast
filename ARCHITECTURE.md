@@ -99,7 +99,7 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 ### Friend mailbox
 
 - The animated password gate exposes one quiet `海岸信箱` entry with `输入暗号` and `填记名册` flows.
-- A visitor passphrase is never stored as plaintext. PBKDF2 stores the verifier, a server-keyed lookup prevents duplicate registration, and a separate signed HttpOnly cookie owns the visitor session.
+- A visitor passphrase is never stored as plaintext. A server-keyed HMAC peppers the verifier before the Workers-compatible PBKDF2 derivation, a separate keyed lookup prevents duplicate registration, and a signed HttpOnly cookie owns the visitor session.
 - The visitor page uses the Coast message/composer visual language but loads no main-chat, model, owner-tool, pocket, seed, or main-memory controller.
 - Visitor messages are explicitly slow mail: sending shows delivery and `等待 Myri 巡灯`, never live typing or an API-generated reply.
 - `思维壤` contains only explicit visitor-room整理 notes. `访客记事本` is a separate long-lived lightweight memory and shows only `visitor_visible` entries.

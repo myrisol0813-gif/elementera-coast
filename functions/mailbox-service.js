@@ -86,7 +86,7 @@ export async function registerMailboxVisitor(db, env, input = {}) {
     return await createMailboxVisitor(db, {
       display_name: displayName,
       preferred_name: preferredName || null,
-      passphrase_hash: await createPassphraseHash(passphrase),
+      passphrase_hash: await createPassphraseHash(passphrase, env),
       passphrase_lookup: lookup,
       allow_memory: allowMemory,
     });
@@ -109,7 +109,7 @@ export async function loginMailboxVisitor(db, env, passphraseValue) {
   const record = await findMailboxVisitorByLookup(db, await passphraseLookup(passphrase, env));
   if (!record
     || !record.visitor.is_active
-    || !(await verifyPassphraseHash(passphrase, record.passphrase_hash))) {
+    || !(await verifyPassphraseHash(passphrase, record.passphrase_hash, env))) {
     throw new MailboxServiceError(
       'mailbox_passphrase_invalid',
       '暗号没有登记，或输入得不对。',
