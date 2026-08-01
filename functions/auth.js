@@ -319,6 +319,156 @@ function loginPage(message = '') {
       text-align: center;
     }
 
+    .mailbox-entry-button {
+      display: block;
+      margin: 15px auto 0;
+      padding: 7px 13px;
+      border: 0;
+      border-radius: 999px;
+      color: var(--muted);
+      background: transparent;
+      font-size: 12px;
+      letter-spacing: .08em;
+      cursor: pointer;
+    }
+
+    .mailbox-entry-button:hover,
+    .mailbox-entry-button:focus-visible { background: #f7f4ef; color: var(--ink); }
+
+    .mailbox-entry-modal {
+      width: min(90vw, 390px);
+      max-height: min(82svh, 680px);
+      padding: 0;
+      overflow: hidden;
+      border: 0;
+      border-radius: 24px;
+      color: var(--ink);
+      background: #fff;
+      box-shadow: 0 26px 80px rgba(36, 37, 43, .18);
+    }
+
+    .mailbox-entry-modal::backdrop {
+      background: rgba(36, 37, 43, .28);
+      backdrop-filter: blur(4px);
+    }
+
+    .mailbox-entry-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 19px 20px 13px;
+      border-bottom: 1px solid #f0ece6;
+    }
+
+    .mailbox-entry-head strong { font-size: 16px; }
+
+    .mailbox-entry-close {
+      width: 34px;
+      height: 34px;
+      border: 0;
+      border-radius: 11px;
+      color: var(--muted);
+      background: #f7f4ef;
+      cursor: pointer;
+    }
+
+    .mailbox-entry-body {
+      max-height: calc(min(82svh, 680px) - 68px);
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    .mailbox-entry-copy {
+      margin: 0 0 17px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    .mailbox-entry-choices { display: grid; gap: 10px; }
+
+    .mailbox-entry-choices button,
+    .mailbox-submit {
+      min-height: 48px;
+      padding: 10px 15px;
+      border: 0;
+      border-radius: 15px;
+      background: #f7f4ef;
+      color: var(--ink);
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    .mailbox-entry-choices button:first-child,
+    .mailbox-submit { background: var(--ink); color: #fff; }
+
+    .mailbox-entry-form { display: grid; gap: 14px; }
+
+    .mailbox-entry-form label {
+      display: grid;
+      gap: 7px;
+      color: #61584f;
+      font-size: 12px;
+    }
+
+    .mailbox-entry-form input[type="text"],
+    .mailbox-entry-form input[type="password"] {
+      width: 100%;
+      min-height: 46px;
+      padding: 10px 13px;
+      border: 0;
+      border-radius: 13px;
+      outline: 0;
+      color: var(--ink);
+      background: #f7f4ef;
+    }
+
+    .mailbox-entry-form input:focus { box-shadow: 0 0 0 3px rgba(242, 184, 75, .18); }
+
+    label.mailbox-memory-choice {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      line-height: 1.5;
+    }
+
+    .mailbox-memory-choice input { margin-top: 3px; accent-color: var(--gold); }
+
+    .mailbox-form-actions {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 9px;
+      margin-top: 3px;
+    }
+
+    .mailbox-form-back {
+      min-height: 46px;
+      padding: 9px 13px;
+      border: 0;
+      border-radius: 14px;
+      color: var(--muted);
+      background: #f7f4ef;
+      cursor: pointer;
+    }
+
+    .mailbox-entry-error {
+      min-height: 18px;
+      margin: 0;
+      color: #aa7550;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .mailbox-privacy-copy {
+      margin: 17px 0 0;
+      padding-top: 15px;
+      border-top: 1px solid #f0ece6;
+      color: var(--quiet);
+      font-size: 11px;
+      line-height: 1.65;
+    }
+
     @keyframes draw-loop { to { stroke-dashoffset: 0; } }
 
     @keyframes horn-in {
@@ -472,9 +622,63 @@ function loginPage(message = '') {
           </button>
         </div>
         ${notice}
+        <button id="mailboxEntryButton" class="mailbox-entry-button" type="button">海岸信箱</button>
       </form>
+
+      <dialog id="mailboxEntryModal" class="mailbox-entry-modal" aria-labelledby="mailbox-entry-title">
+        <header class="mailbox-entry-head">
+          <strong id="mailbox-entry-title">海岸信箱</strong>
+          <button id="mailboxEntryClose" class="mailbox-entry-close" type="button" aria-label="关闭">×</button>
+        </header>
+        <div class="mailbox-entry-body">
+          <section id="mailboxEntryChoices">
+            <p class="mailbox-entry-copy">这里是给受邀来客的慢速信箱。写下的信会等 Myri 巡灯时收到。</p>
+            <div class="mailbox-entry-choices">
+              <button type="button" data-mailbox-choice="login">输入暗号</button>
+              <button type="button" data-mailbox-choice="register">填记名册</button>
+            </div>
+          </section>
+
+          <form id="mailboxLoginForm" class="mailbox-entry-form" hidden autocomplete="off">
+            <p class="mailbox-entry-copy">输入登记过的暗号，回到只属于你的信箱房间。</p>
+            <label>暗号
+              <input name="passphrase" type="password" maxlength="160" required autocomplete="current-password">
+            </label>
+            <p class="mailbox-entry-error" data-mailbox-error role="alert"></p>
+            <div class="mailbox-form-actions">
+              <button class="mailbox-form-back" type="button" data-mailbox-back>返回</button>
+              <button class="mailbox-submit" type="submit">进入聊天室</button>
+            </div>
+          </form>
+
+          <form id="mailboxRegisterForm" class="mailbox-entry-form" hidden autocomplete="off">
+            <p class="mailbox-entry-copy">暗号就是轻量身份门。海岸只保存加密后的验证值，不保存暗号明文。</p>
+            <label>称呼
+              <input name="display_name" type="text" maxlength="80" required autocomplete="nickname">
+            </label>
+            <label>暗号
+              <input name="passphrase" type="password" maxlength="160" required autocomplete="new-password">
+            </label>
+            <label>希望 Myri 怎么称呼我（可选）
+              <input name="preferred_name" type="text" maxlength="80" autocomplete="off">
+            </label>
+            <label class="mailbox-memory-choice">
+              <input name="allow_memory" type="checkbox" checked>
+              <span>允许 Myri 在我的「访客记事本」里记住少量偏好</span>
+            </label>
+            <p class="mailbox-entry-error" data-mailbox-error role="alert"></p>
+            <div class="mailbox-form-actions">
+              <button class="mailbox-form-back" type="button" data-mailbox-back>返回</button>
+              <button class="mailbox-submit" type="submit">登记并进入</button>
+            </div>
+          </form>
+
+          <p class="mailbox-privacy-copy">小寒知道谁来过，但默认不知道你具体写了什么。Myri 会在巡信时读取你的来信并回复。若出现安全风险、骚扰、滥用或需要站长处理的问题，Myri 可能只向小寒报告“需要处理”，但不默认转述正文。</p>
+        </div>
+      </dialog>
     </section>
   </main>
+  <script type="module" src="/public/mailbox-entry.js?v=coast-mailbox-01"></script>
 </body>
 </html>`;
 }
@@ -484,7 +688,7 @@ function html(value, status = 200) {
     status,
     headers: securityHeaders({
       'Content-Type': 'text/html; charset=UTF-8',
-      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
     }),
   });
 }
@@ -498,7 +702,12 @@ export function unauthorized(request) {
 
 export async function handleLogin(request, env) {
   if (!configured(env)) return html(loginPage('Gate is not configured yet.'), 503);
-  if (request.method === 'GET') return (await verifySession(request, env)) ? redirect('/') : html(loginPage());
+  if (request.method === 'GET') {
+    const mailboxEntrance = new URL(request.url).searchParams.get('mailbox') === '1';
+    return (await verifySession(request, env)) && !mailboxEntrance
+      ? redirect('/')
+      : html(loginPage());
+  }
   if (request.method !== 'POST') return text('Method not allowed\n', 405, { Allow: 'GET, POST' });
   if (!loginRequestAllowed(request)) return text('Forbidden\n', 403);
   let body;

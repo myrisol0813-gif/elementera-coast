@@ -84,10 +84,11 @@ assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(join(pages, 'service-worker.js'));
-assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-22';$/m);
+assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-23';$/m);
 assert.ok(worker.includes("url.pathname.startsWith('/api/')"));
 assert.ok(worker.includes("url.pathname.startsWith('/mcp')"));
 assert.ok(worker.includes("url.pathname.startsWith('/.well-known/')"));
+assert.ok(worker.includes("['/login', '/logout', '/mailbox']"));
 assert.equal(worker.includes("caches.match('/index.html')"), true);
 assert.equal(worker.includes('modules/legacy'), false);
 const coreBlock = worker.slice(worker.indexOf('const CORE'), worker.indexOf(']);', worker.indexOf('const CORE')) + 2);
@@ -112,7 +113,7 @@ await assert.rejects(access(join(repo, 'functions/__coast_free_chat.js')), undef
 
 const moduleRoot = join(pages, 'public');
 const moduleFiles = [
-  'app.js',
+  'app.js', 'mailbox-entry.js', 'mailbox.js',
   'core/api.js', 'core/dom.js', 'core/icons.js', 'core/router.js', 'core/storage.js',
   'content/letters.js',
   'features/chat-state.js', 'features/chat.js', 'features/daily-client.js', 'features/daily.js', 'features/dogtalk.js', 'features/letters.js',
@@ -226,6 +227,13 @@ for (const historicalPath of ['M12.2 6.4H25.2', 'M8 24l2-6', 'r="10.7"', 'M9.5 2
 }
 
 const middleware = await read(join(repo, 'functions/_middleware.js'));
+const authSource = await read(join(repo, 'functions/auth.js'));
+const mailboxPageSource = await read(join(repo, 'functions/mailbox-page.js'));
+const mailboxApiSource = await read(join(repo, 'functions/mailbox-api.js'));
+const mailboxSchemaSource = await read(join(repo, 'functions/mailbox-schema.js'));
+const mailboxRepositorySource = await read(join(repo, 'functions/mailbox-repository.js'));
+const ownerMailboxApiSource = await read(join(repo, 'functions/owner-mailbox-api.js'));
+const mailboxFrontendSource = await read(join(moduleRoot, 'mailbox.js'));
 const chatRouter = await read(join(repo, 'functions/chat-router.js'));
 const storeSource = await read(join(repo, 'functions/chat-store.js'));
 const schemaSource = await read(join(repo, 'functions/chat-schema.js'));
@@ -252,6 +260,10 @@ const mcpOwnerSource = (await Promise.all([
   'radio-store.js',
   'lighthouse-store.js',
   'room-records.js',
+  'friend-myrisol-prompt.js',
+  'mailbox-schema.js',
+  'mailbox-repository.js',
+  'mailbox-service.js',
 ].map((file) => read(join(repo, 'functions', file))))).join('\n');
 const coastApiSource = await read(join(repo, 'functions/coast-api.js'));
 const mcpToolsSource = await read(join(repo, 'functions/mcp-tools.js'));
@@ -264,6 +276,45 @@ assert.ok(roomRecordsSource.includes('attachDogtalkSnapshots'));
 assert.equal(coastApiSource.includes('listMysticDogtalkSnapshots'), false);
 const packageSource = JSON.parse(await read(join(repo, 'package.json')));
 assert.equal(/_middleware\.full|legacyOnRequest|COAST_CHAT_STORE/.test(middleware + chatRouter + storeSource + schemaSource), false);
+for (const copy of [
+  '海岸信箱',
+  '输入暗号',
+  '填记名册',
+  '这里是给受邀来客的慢速信箱',
+  '小寒知道谁来过，但默认不知道你具体写了什么',
+]) assert.ok(authSource.includes(copy), `mailbox entrance is missing: ${copy}`);
+assert.ok(middleware.indexOf("isMailboxApiPath(url.pathname)") < middleware.indexOf('verifySession(request, env)'));
+assert.ok(middleware.includes("url.pathname === '/mailbox'"));
+assert.ok(mailboxPageSource.includes('/public/mailbox.js?v=coast-mailbox-01'));
+assert.equal(/modelButton|models:|memoryPockets|global_seeds|owner-only/.test(mailboxPageSource + mailboxFrontendSource), false);
+for (const table of [
+  'mailbox_visitors',
+  'mailbox_messages',
+  'mailbox_reply_queue',
+  'visitor_notebook_entries',
+  'mailbox_thinking_notes',
+  'mailbox_patrol_batches',
+]) assert.ok(mailboxSchemaSource.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `missing mailbox table: ${table}`);
+assert.ok(mailboxSchemaSource.includes('passphrase_hash TEXT NOT NULL UNIQUE'));
+assert.ok(mailboxSchemaSource.includes('passphrase_lookup TEXT NOT NULL UNIQUE'));
+assert.ok(mailboxRepositorySource.includes("is_visible_to_owner, safety_flag"));
+assert.equal(ownerMailboxApiSource.includes('content'), false, 'owner mailbox route cannot return sealed content');
+assert.equal(ownerMailboxApiSource.includes('visitor_notebook_entries'), false, 'owner mailbox route cannot read visitor notebook text');
+for (const path of [
+  '/api/mailbox/register',
+  '/api/mailbox/login',
+  '/api/mailbox/messages',
+  '/api/mailbox/send',
+  '/api/mailbox/status',
+  '/api/mailbox/notebook',
+]) assert.ok(mailboxApiSource.includes(path.replace('/api/mailbox', '${ROOT}')), `missing mailbox route: ${path}`);
+for (const copy of [
+  '这里还没有来信。你可以把第一封信投进海岸。',
+  '已送达灯塔，等待 Myri 巡灯。',
+  '思维壤',
+  '访客记事本',
+  '这里还没有记事。等 Myri 更熟悉你一点，也许会在这里留下几张小纸条。',
+]) assert.ok(mailboxFrontendSource.includes(copy), `mailbox UI is missing: ${copy}`);
 assert.equal(/readLegacy|importLegacy|\bturns\s+WHERE|user_variants|assistant_variants/.test(storeSource), false);
 assert.ok(chatRouter.includes("source: 'd1-json-v4'"));
 assert.ok(storeSource.includes('conversation_states'));

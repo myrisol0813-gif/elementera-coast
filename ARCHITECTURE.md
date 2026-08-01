@@ -10,7 +10,7 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 1. `index.html` is the only app document and loads one module entry: `public/app.js`. `/app.html` and `/gptlike` are URL aliases declared in `_redirects`, not duplicate documents.
 2. Each feature has one controller and one state owner. A feature may call shared services, but it may not scan for or replace another feature's DOM.
 3. Runtime ownership must not depend on global guard flags, delayed reclaims, `MutationObserver`, dynamic script injection, selector sweeps, duplicate DOM normalization, or compatibility loaders.
-4. D1 is the only owner of main-chat conversations, histories, synced model profile, committed Daily content, authored MCP soil, radio messages, and lighthouse letters. Local storage is reserved for explicitly local preferences, preserved pre-server room archives, Daily read cache, and unconfirmed legacy drafts.
+4. D1 is the only owner of main-chat conversations, histories, synced model profile, committed Daily content, authored MCP soil, radio messages, lighthouse letters, and the sealed friend mailbox. Local storage is reserved for explicitly local preferences, preserved pre-server room archives, Daily read cache, and unconfirmed legacy drafts.
 5. Every visible icon is real inline SVG produced by the icon module. No empty pseudo-element, font glyph, base64 duplicate, or selector-dependent icon ownership is allowed.
 6. A failed request is shown as a failed request. The app must not silently switch data owners or resurrect deleted data.
 7. The rebuild contains one explicit local-storage migration and one versioned D1 schema migration. After the local migration succeeds, old keys are removed. There are no permanent fallback readers.
@@ -41,6 +41,9 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 | MCP Streamable HTTP owner | `functions/mcp-router.js`, `functions/mcp-tools.js` | Native Pages JSON-RPC transport, versioned public discovery with the complete approved private tool catalog, no npm-install build dependency |
 | Authored soil and room persistence | `functions/coast-schema.js`, `functions/official-soil-store.js`, `functions/radio-store.js`, `functions/lighthouse-store.js` | Append-only official soil, three-party radio, low-frequency lighthouse letters, provenance and idempotency |
 | Server room API | `functions/coast-api.js`, `functions/radio-myri.js`, `functions/authorized-memory.js` | Same-origin web room routes, API Myri radio response, curated memory reads without raw chat |
+| Friend mailbox entry and UI | `functions/auth.js`, `functions/mailbox-page.js`, `public/mailbox-entry.js`, `public/mailbox.js`, `public/styles/mailbox.css` | Gate entry, passphrase forms, isolated visitor chat shell, slow-delivery status, 思维壤, and 访客记事本 |
+| Friend mailbox persistence and auth | `functions/mailbox-schema.js`, `functions/mailbox-auth.js`, `functions/mailbox-repository.js`, `functions/mailbox-service.js`, `functions/mailbox-api.js` | Hashed passphrases, signed visitor sessions, visitor-scoped messages/queue/notes, and sealed visitor REST routes |
+| Mailbox owner status and MCP patrol | `functions/owner-mailbox-api.js`, `functions/friend-myrisol-prompt.js`, `functions/mcp-tools.js` | Content-free owner counts, manual official-MCP fetch/reply/report, and the friend-facing behavior boundary |
 
 ## UI and behavior acceptance contract
 
@@ -93,6 +96,16 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 - Pre-server local room content remains present in the local export state but is not a canonical fallback reader.
 - Memory remains an honest non-connected placeholder and performs no reads or writes.
 
+### Friend mailbox
+
+- The animated password gate exposes one quiet `海岸信箱` entry with `输入暗号` and `填记名册` flows.
+- A visitor passphrase is never stored as plaintext. PBKDF2 stores the verifier, a server-keyed lookup prevents duplicate registration, and a separate signed HttpOnly cookie owns the visitor session.
+- The visitor page uses the Coast message/composer visual language but loads no main-chat, model, owner-tool, pocket, seed, or main-memory controller.
+- Visitor messages are explicitly slow mail: sending shows delivery and `等待 Myri 巡灯`, never live typing or an API-generated reply.
+- `思维壤` contains only explicit visitor-room整理 notes. `访客记事本` is a separate long-lived lightweight memory and shows only `visitor_visible` entries.
+- The owner web surface can query visitor names, timestamps, counts, patrol time, and attention flags only. Its SQL never selects message, reply, thinking-note, or notebook content.
+- Official Myri patrol is manual. MCP claims one batch, reads each visitor namespace independently, writes an exact batch-bound reply, and finishes with a count-only report. A new visitor message invalidates an older claimed batch so stale context cannot answer over it.
+
 ### Coast Daily
 
 - Daily home opens from the sidebar and contains Summary, Moments, Diary, Album, Widgets, and Pets without redesigning the established entry layout.
@@ -139,10 +152,14 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 - `/api/radio/messages`: list or send messages in the shared radio room.
 - `/api/radio/ask-api-myri`: ask the homepage-selected Coast API Myri to respond in radio.
 - `/api/lighthouse/letters[/:id/read]`: list, write, and explicitly mark lighthouse letters read.
+- `/api/mailbox/register`, `/api/mailbox/login`: create or enter one lightweight visitor identity and set the signed visitor cookie.
+- `/api/mailbox/me`, `/api/mailbox/messages`, `/api/mailbox/send`, `/api/mailbox/status`: visitor-scoped profile, history, delivery, and slow-reply state.
+- `/api/mailbox/thinking-notes`, `/api/mailbox/notebook`, `/api/mailbox/notebook/delete`: current visitor 思维壤 and visitor-visible notebook controls only.
+- `/api/owner/mailbox/visitors`, `/api/owner/mailbox/summary`: owner-session status aggregates without sealed content.
 - `/mcp`: public Streamable HTTP protocol and tool discovery; every tool call requires its declared Auth0 OAuth scope.
 - `/mcp/health`, `/mcp/manifest`, `/.well-known/oauth-protected-resource`: public discovery only; none returns private Coast content.
 
-All mutating web API methods require a same-origin `Origin` or `Referer`. MCP private reads and writes require a verified Auth0 access token and per-tool scope. All app routes and assets require a valid web session.
+All mutating web API methods require a same-origin `Origin` or `Referer`. MCP private reads and writes require a verified Auth0 access token and per-tool scope. Main-house routes and assets require a valid owner web session. `/mailbox` requires its independent visitor session; only the gate and the mailbox's code/style dependencies are public, and none contains Coast records.
 
 ## Local storage registry
 
@@ -169,8 +186,8 @@ The migration imports supported values from the existing keys, then deletes thos
 
 1. Static architecture test: one document and one script entry; no duplicate app document, legacy path, guard flag, observer, ownership timer, dynamic script injection, or missing SVG symbol.
 2. State unit tests: user/assistant branch edit/delete/regenerate/reaction behavior.
-3. D1 tests: chat isolation and profile rules; Daily schema; MCP/radio/lighthouse schema and provenance; conflict handling; image-reference boundary; atomic summary commit; tool-call idempotency.
-4. MCP tests: unauthenticated discovery, OAuth identity allowlists, issuer/audience/expiry/signature verification, per-tool scopes, official signatures, and Streamable HTTP calls.
+3. D1 tests: chat isolation and profile rules; Daily schema; MCP/radio/lighthouse schema and provenance; mailbox visitor isolation and sealed owner aggregates; conflict handling; image-reference boundary; atomic summary commit; tool-call idempotency.
+4. MCP tests: unauthenticated discovery, OAuth identity allowlists, issuer/audience/expiry/signature verification, per-tool scopes, official signatures, manual mailbox patrol/reply/report, and Streamable HTTP calls.
 5. DOM interaction tests: sidebar uniqueness, menus, SVG presence, server radio/lighthouse rooms, panels, Daily server reads and summary confirmation, letter actions, model selection.
 6. Service-worker test: every cached URL exists; API/MCP/OAuth discovery/login are never cached; cache version changes exactly once.
 7. Mobile render checks at 360×800 and 412×915 in light/dark/gold themes.

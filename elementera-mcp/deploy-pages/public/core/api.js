@@ -31,6 +31,13 @@ export const API = Object.freeze({
   lighthouseLetters: '/api/lighthouse/letters',
   lighthouseMemory: '/api/lighthouse/memory',
   dogtalk: '/api/dogtalk',
+  mailboxMe: '/api/mailbox/me',
+  mailboxMessages: '/api/mailbox/messages',
+  mailboxSend: '/api/mailbox/send',
+  mailboxStatus: '/api/mailbox/status',
+  mailboxNotebook: '/api/mailbox/notebook',
+  mailboxNotebookDelete: '/api/mailbox/notebook/delete',
+  mailboxThinkingNotes: '/api/mailbox/thinking-notes',
 });
 
 export class ApiError extends Error {

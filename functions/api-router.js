@@ -4,6 +4,7 @@ import { isDailyApiPath, routeDailyApi } from './daily-api.js';
 import { isDogtalkApiPath, routeDogtalkApi } from './dogtalk-api.js';
 import { isMemoryApiPath, routeMemoryApi } from './memory-router.js';
 import { handleModels, handleSandbox } from './models.js';
+import { isOwnerMailboxApiPath, routeOwnerMailboxApi } from './owner-mailbox-api.js';
 
 export async function routeApi(request, env, session) {
   const url = new URL(request.url);
@@ -20,6 +21,7 @@ export async function routeApi(request, env, session) {
   if (isDogtalkApiPath(url.pathname)) return routeDogtalkApi(request, env, session);
   if (isMemoryApiPath(url.pathname)) return routeMemoryApi(request, env, session);
   if (isCoastRoomApiPath(url.pathname)) return routeCoastRoomApi(request, env, session);
+  if (isOwnerMailboxApiPath(url.pathname)) return routeOwnerMailboxApi(request, env, session);
   if (url.pathname === '/api/models') return handleModels(request, env);
   if (url.pathname === '/api/chat-sandbox') return handleSandbox(request, env);
   return apiError('not_found', 'Not found.', 404);

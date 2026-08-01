@@ -1,4 +1,4 @@
-const CACHE_NAME = 'elementera-coast-app-22';
+const CACHE_NAME = 'elementera-coast-app-23';
 const CORE = Object.freeze([
   '/',
   '/index.html',
@@ -55,7 +55,7 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api/')
     || url.pathname.startsWith('/mcp')
     || url.pathname.startsWith('/.well-known/')
-    || ['/login', '/logout'].includes(url.pathname)) return;
+    || ['/login', '/logout', '/mailbox'].includes(url.pathname)) return;
 
   if (request.mode === 'navigate') {
     event.respondWith(fetch(request).catch(async () => (

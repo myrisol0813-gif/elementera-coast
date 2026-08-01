@@ -2,6 +2,8 @@ import { handleLogin, handleLogout, unauthorized, verifySession } from './auth.j
 import { routeApi } from './api-router.js';
 import { isChatApiPath, routeChatApi } from './chat-router.js';
 import { protectedResponse } from './http.js';
+import { isMailboxApiPath, routeMailboxApi } from './mailbox-api.js';
+import { handleMailboxPage } from './mailbox-page.js';
 import { isMcpPublicPath, routeMcpRequest } from './mcp-router.js';
 
 const PUBLIC_PWA_ASSETS = new Set([
@@ -14,13 +16,29 @@ const PUBLIC_PWA_ASSETS = new Set([
   '/public/icons/icon-maskable-512.png',
 ]);
 
+const PUBLIC_MAILBOX_ASSETS = new Set([
+  '/public/mailbox-entry.js',
+  '/public/mailbox.js',
+  '/public/core/api.js',
+  '/public/core/dom.js',
+  '/public/core/icons.js',
+  '/public/styles/tokens.css',
+  '/public/styles/shell.css',
+  '/public/styles/chat.css',
+  '/public/styles/features.css',
+  '/public/styles/mailbox.css',
+]);
+
 export async function onRequest(context) {
   const { request, env, next } = context;
   const url = new URL(request.url);
 
   if (url.pathname === '/login') return handleLogin(request, env);
   if (url.pathname === '/logout') return handleLogout();
+  if (url.pathname === '/mailbox') return handleMailboxPage(request, env);
+  if (isMailboxApiPath(url.pathname)) return routeMailboxApi(request, env);
   if (['GET', 'HEAD'].includes(request.method) && PUBLIC_PWA_ASSETS.has(url.pathname)) return next();
+  if (['GET', 'HEAD'].includes(request.method) && PUBLIC_MAILBOX_ASSETS.has(url.pathname)) return next();
   if (isMcpPublicPath(url.pathname)) return routeMcpRequest(request, env);
 
   const session = await verifySession(request, env);
