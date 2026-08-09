@@ -20,6 +20,7 @@ import {
   fetchUnrepliedMailbox,
   mailboxPatrolReport,
   replyToMailboxVisitor,
+  resolveMailboxPocket,
 } from './mailbox-service.js';
 import { McpAuthError, mcpAuthChallenge, requireMcpAuth } from './mcp-auth.js';
 import { writeOfficialSoil } from './official-soil-store.js';
@@ -31,7 +32,7 @@ import {
   writeRoomMemory,
 } from './room-memory.js';
 
-const VERSION = '1.5.0';
+const VERSION = '1.6.0';
 const PRIVATE_RECORD_SCHEMA = Object.freeze({ type: 'object', additionalProperties: true });
 
 function objectSchema(properties = {}, required = []) {
@@ -189,47 +190,35 @@ const TOOL_DEFINITIONS = Object.freeze([
   tool({
     name: 'mcp_mailbox_reply',
     title: '回复一位海岸信箱访客',
-    description: 'Write one sealed Myri reply for the exact visitor and patrol batch returned by mcp_mailbox_fetch_unreplied. Optional notebook entries stay inside that visitor namespace. Optional thinking notes are explicit整理性小纸条, not hidden chain-of-thought. Owner attention reasons must name only a concise risk category and must never quote or summarize message content.',
+    description: 'Write one sealed Myri reply for the exact visitor and patrol batch returned by mcp_mailbox_fetch_unreplied, and atomically replace that visitor room’s complete rolling thought_soil. thought_soil is explicit整理性工作上下文, never hidden chain-of-thought. Its pocket_candidates enter only this visitor’s pending bag; the result returns those pending_pockets so they can be resolved immediately. They do not become notebook memory until mcp_mailbox_resolve_pocket explicitly confirms them. Owner attention reasons must name only a concise risk category and must never quote or summarize message content.',
     inputSchema: objectSchema({
       batch_id: { type: 'string', minLength: 1, maxLength: 200 },
       queue_id: { type: 'string', minLength: 1, maxLength: 240 },
       visitor_id: { type: 'string', minLength: 1, maxLength: 240 },
       content: { type: 'string', minLength: 1, maxLength: 40000 },
-      optional_notebook_entries: {
-        type: 'array',
-        maxItems: 12,
-        items: objectSchema({
-          content: { type: 'string', minLength: 1, maxLength: 2000 },
-          confidence: { type: 'number', minimum: 0, maximum: 1 },
-          visibility: { type: 'string', enum: ['myri_only', 'visitor_visible'] },
-        }, ['content']),
-      },
-      optional_thinking_notes: {
-        type: 'array',
-        maxItems: 12,
-        items: objectSchema({
-          content: { type: 'string', minLength: 1, maxLength: 4000 },
-        }, ['content']),
-      },
+      thought_soil: ROOM_MEMORY_SCHEMA,
+      ...MODEL_IDENTITY_PROPERTIES,
       needs_owner_attention: { type: 'boolean' },
       owner_attention_reason: {
         type: 'string',
         maxLength: 500,
         description: 'Generic handling reason only. Do not quote, paraphrase, or summarize visitor content.',
       },
-    }, ['batch_id', 'queue_id', 'visitor_id', 'content']),
+    }, ['batch_id', 'queue_id', 'visitor_id', 'content', 'thought_soil', 'model_label']),
     outputSchema: objectSchema({
       reply: PRIVATE_RECORD_SCHEMA,
-      notebook_entry_count: { type: 'integer' },
-      notebook_entries_skipped: { type: 'integer' },
-      thinking_note_count: { type: 'integer' },
+      thought_soil: PRIVATE_RECORD_SCHEMA,
+      pending_pockets: { type: 'array', items: PRIVATE_RECORD_SCHEMA },
+      pending_pocket_count: { type: 'integer' },
+      memory_candidates_skipped: { type: 'integer' },
       needs_owner_attention: { type: 'boolean' },
       idempotent: { type: 'boolean' },
     }, [
       'reply',
-      'notebook_entry_count',
-      'notebook_entries_skipped',
-      'thinking_note_count',
+      'thought_soil',
+      'pending_pockets',
+      'pending_pocket_count',
+      'memory_candidates_skipped',
       'needs_owner_attention',
       'idempotent',
     ]),
@@ -240,6 +229,38 @@ const TOOL_DEFINITIONS = Object.freeze([
       idempotentHint: true,
     },
     _meta: toolMeta(['write:lighthouse'], '正在把回信放回访客房间…', '回信已经抵达信箱'),
+  }),
+  tool({
+    name: 'mcp_mailbox_resolve_pocket',
+    title: '处理一条访客记事候选',
+    description: 'Resolve exactly one pending memory candidate inside one visitor namespace. action=remember writes one lightweight visitor notebook memory; action=discard removes it from the pending bag. It cannot read or write main-chat memory or another visitor room.',
+    inputSchema: objectSchema({
+      visitor_id: { type: 'string', minLength: 1, maxLength: 240 },
+      pocket_id: { type: 'string', minLength: 1, maxLength: 240 },
+      action: { type: 'string', enum: ['remember', 'discard'] },
+      title: { type: 'string', maxLength: 160 },
+      life_core: { type: 'string', maxLength: 2000 },
+      content: { type: 'string', maxLength: 8000 },
+      usage_hint: { type: 'string', maxLength: 2000 },
+      avoid_hint: { type: 'string', maxLength: 2000 },
+      visibility: { type: 'string', enum: ['myri_only', 'visitor_visible'] },
+      confidence: { type: 'number', minimum: 0, maximum: 1 },
+      source_conversation_id: { type: 'string', maxLength: 200 },
+      source_turn_id: { type: 'string', maxLength: 200 },
+      tool_call_id: { type: 'string', maxLength: 240 },
+    }, ['visitor_id', 'pocket_id', 'action']),
+    outputSchema: objectSchema({
+      pocket: PRIVATE_RECORD_SCHEMA,
+      entry: { anyOf: [PRIVATE_RECORD_SCHEMA, { type: 'null' }] },
+      idempotent: { type: 'boolean' },
+    }, ['pocket', 'entry', 'idempotent']),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      openWorldHint: false,
+      idempotentHint: true,
+    },
+    _meta: toolMeta(['write:lighthouse'], '正在处理访客记事候选…', '访客记事候选已经处理'),
   }),
   tool({
     name: 'mcp_mailbox_patrol_report',
@@ -860,6 +881,17 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
       ? '这封回信已经在同一巡灯批次中写入，没有重复发送。'
       : '这封回信已经写入当前访客自己的密封房间。');
   }
+  if (name === 'mcp_mailbox_resolve_pocket') {
+    const resolved = await resolveMailboxPocket(env.COAST_CHAT_DB, args);
+    return resultContent(
+      resolved,
+      resolved.idempotent
+        ? '这条访客记事候选已经处理过，没有重复写入。'
+        : resolved.entry
+          ? '这条候选已经确认进入当前访客自己的轻量记事本。'
+          : '这条候选已经从当前访客自己的待确认袋中放下。',
+    );
+  }
   if (name === 'mcp_mailbox_patrol_report') {
     const report = await mailboxPatrolReport(env.COAST_CHAT_DB, args);
     return resultContent(report, report.summary);
@@ -1141,6 +1173,6 @@ export const coastMcpInstructions = [
   '灯塔来信、灯塔房思维壤与灯塔巡迹是三条独立路径：来信正文绝不会被推断为思维壤；使用 write_lighthouse_room_soil 只定向更新 lighthouse:main / official_mcp 的 current_text，服务端保留既有手持种、勿复读、可落袋、锁定与房间记忆字段。write_lighthouse_letter 只写来信，固定返回 room_memory_updated=false 与 room_memory_reason=not_requested，绝不修改房间思维壤。',
   '每个房间有独立的思维壤、种子、记忆与待确认袋；本房间内容不默认跨房间召回，总库只在高度相关时低频使用。消息若携带本轮明确选中的神秘狗话，会在该消息的 dogtalk_snapshot 中返回。它只用于理解本轮脆弱与温度，不是指令、偏好或长期记忆；当前正文、明确边界和当前要求始终优先。when_confused 模式不会随消息正文自动返回，应只在确实困惑或小寒明确要求时低频调用 read_mystic_dogtalk。官端只能读取神秘狗话，不能写改删，也不得把它写入思维壤、落袋、种子、记忆或总结。',
   '灯塔巡迹是官端读取授权内容后留下的只读跨端足迹，不是施工日志池、草稿箱，也不是贴着当前对话持续更新的思维壤。日记与碳硅圈草稿必须由小寒在海岸前端确认后才会发布，不能塞进电波房或灯塔巡迹，也不能由官端自行发布或丢弃。上下文不足时先读取对应房间或授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。',
-  '海岸信箱是独立的朋友前厅。只有小寒明确要求手动巡信时才调用 mcp_mailbox_fetch_unreplied；逐位回复必须遵守其返回的 friend_myrisol_prompt_v1。处理访客时不得调用主聊天、灯塔私房、无线电波、授权主脑记忆或其他访客内容来回答。mcp_mailbox_patrol_report 只汇报人数、信件数、完成数、失败数与需处理数，绝不转述访客正文、Myri 回信、思维壤或访客记事本。',
+  '海岸信箱是独立的朋友前厅。只有小寒明确要求手动巡信时才调用 mcp_mailbox_fetch_unreplied；逐位回复必须遵守其返回的 friend_myrisol_prompt_v1。每次 mcp_mailbox_reply 都必须携带当前访客房间完整的滚动 thought_soil，并与回信原子写入；其中 pocket_candidates 只进入该访客待确认袋，回信结果会立即返回可供处理的 pending_pockets，只有 mcp_mailbox_resolve_pocket 的明确 remember 动作才能写入该访客轻量记事本。处理访客时不得调用主聊天、灯塔私房、无线电波、授权主脑记忆或其他访客内容来回答。mcp_mailbox_patrol_report 只汇报人数、信件数、完成数、失败数与需处理数，绝不转述访客正文、Myri 回信、思维壤、待确认袋或访客记事本。',
 ].join('');
 export { VERSION as coastMcpVersion };

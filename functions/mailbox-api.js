@@ -8,14 +8,16 @@ import { apiError, json, readJson, sameOrigin } from './http.js';
 import {
   currentMailboxVisitor,
   deleteVisibleVisitorNotebookEntry,
+  editMailboxMessage,
   loginMailboxVisitor,
   mailboxMessages,
-  mailboxThinkingNotes,
   mailboxVisitorStatus,
   MailboxServiceError,
   registerMailboxVisitor,
+  removeMailboxAccount,
+  removeMailboxMessage,
   sendMailboxMessage,
-  visibleVisitorNotebook,
+  visibleVisitorMemory,
 } from './mailbox-service.js';
 
 const ROOT = '/api/mailbox';
@@ -92,6 +94,29 @@ export async function routeMailboxApi(request, env) {
         messages: await mailboxMessages(env.COAST_CHAT_DB, visitorId),
       });
     }
+    const messageMatch = url.pathname.match(/^\/api\/mailbox\/messages\/([^/]+)$/);
+    if (messageMatch) {
+      const messageId = decodeURIComponent(messageMatch[1]);
+      if (request.method === 'PATCH') {
+        const value = await readJson(request);
+        return json({
+          ok: true,
+          message: await editMailboxMessage(
+            env.COAST_CHAT_DB,
+            visitorId,
+            messageId,
+            value.content,
+          ),
+        });
+      }
+      if (request.method === 'DELETE') {
+        return json({
+          ok: true,
+          ...await removeMailboxMessage(env.COAST_CHAT_DB, visitorId, messageId),
+        });
+      }
+      return methodNotAllowed('PATCH, DELETE');
+    }
     if (url.pathname === `${ROOT}/send`) {
       if (request.method !== 'POST') return methodNotAllowed('POST');
       const value = await readJson(request);
@@ -109,24 +134,28 @@ export async function routeMailboxApi(request, env) {
         ...await mailboxVisitorStatus(env.COAST_CHAT_DB, visitorId),
       });
     }
-    if (url.pathname === `${ROOT}/notebook`) {
+    if (url.pathname === `${ROOT}/memory`) {
       if (request.method !== 'GET') return methodNotAllowed('GET');
       return json({
         ok: true,
-        entries: await visibleVisitorNotebook(env.COAST_CHAT_DB, visitorId),
+        memory: await visibleVisitorMemory(env.COAST_CHAT_DB, visitorId),
       });
     }
-    if (url.pathname === `${ROOT}/notebook/delete`) {
-      if (request.method !== 'POST') return methodNotAllowed('POST');
-      const value = await readJson(request);
-      await deleteVisibleVisitorNotebookEntry(env.COAST_CHAT_DB, visitorId, value.entry_id);
+    const memoryEntryMatch = url.pathname.match(/^\/api\/mailbox\/memory\/entries\/([^/]+)$/);
+    if (memoryEntryMatch) {
+      if (request.method !== 'DELETE') return methodNotAllowed('DELETE');
+      await deleteVisibleVisitorNotebookEntry(
+        env.COAST_CHAT_DB,
+        visitorId,
+        decodeURIComponent(memoryEntryMatch[1]),
+      );
       return json({ ok: true });
     }
-    if (url.pathname === `${ROOT}/thinking-notes`) {
-      if (request.method !== 'GET') return methodNotAllowed('GET');
-      return json({
-        ok: true,
-        notes: await mailboxThinkingNotes(env.COAST_CHAT_DB, visitorId),
+    if (url.pathname === `${ROOT}/account`) {
+      if (request.method !== 'DELETE') return methodNotAllowed('DELETE');
+      const result = await removeMailboxAccount(env.COAST_CHAT_DB, visitorId);
+      return json({ ok: true, ...result }, 200, {
+        'Set-Cookie': clearMailboxSessionCookie(),
       });
     }
     return apiError('not_found', 'Not found.', 404);

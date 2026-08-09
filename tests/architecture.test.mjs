@@ -286,7 +286,7 @@ for (const copy of [
 ]) assert.ok(authSource.includes(copy), `mailbox entrance is missing: ${copy}`);
 assert.ok(middleware.indexOf("isMailboxApiPath(url.pathname)") < middleware.indexOf('verifySession(request, env)'));
 assert.ok(middleware.includes("url.pathname === '/mailbox'"));
-assert.ok(mailboxPageSource.includes('/public/mailbox.js?v=coast-mailbox-01'));
+assert.ok(mailboxPageSource.includes('/public/mailbox.js?v=coast-mailbox-02'));
 assert.equal(/modelButton|models:|memoryPockets|global_seeds|owner-only/.test(mailboxPageSource + mailboxFrontendSource), false);
 for (const table of [
   'mailbox_visitors',
@@ -294,6 +294,8 @@ for (const table of [
   'mailbox_reply_queue',
   'visitor_notebook_entries',
   'mailbox_thinking_notes',
+  'mailbox_thought_soils',
+  'mailbox_memory_pockets',
   'mailbox_patrol_batches',
 ]) assert.ok(mailboxSchemaSource.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `missing mailbox table: ${table}`);
 assert.ok(mailboxSchemaSource.includes('passphrase_hash TEXT NOT NULL UNIQUE'));
@@ -310,8 +312,13 @@ for (const path of [
   '/api/mailbox/messages',
   '/api/mailbox/send',
   '/api/mailbox/status',
-  '/api/mailbox/notebook',
+  '/api/mailbox/memory',
+  '/api/mailbox/account',
 ]) assert.ok(mailboxApiSource.includes(path.replace('/api/mailbox', '${ROOT}')), `missing mailbox route: ${path}`);
+assert.ok(mailboxFrontendSource.includes('thought-soil-entry'));
+assert.ok(mailboxFrontendSource.includes("actionButton('edit', '编辑')"));
+assert.ok(mailboxFrontendSource.includes("actionButton('delete', '删除')"));
+assert.ok(mailboxFrontendSource.includes('删除整个海岸信箱对话？'));
 for (const copy of [
   '这里还没有来信。你可以把第一封信投进海岸。',
   '已送达灯塔，等待 Myri 巡灯。',

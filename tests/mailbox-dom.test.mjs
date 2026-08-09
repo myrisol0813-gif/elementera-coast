@@ -10,6 +10,16 @@ function installWindow(window) {
   globalThis.requestAnimationFrame = (callback) => callback();
 }
 
+async function waitFor(predicate, label, timeout = 1000) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    const value = predicate();
+    if (value) return value;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error(`Timed out waiting for ${label}`);
+}
+
 const entryWindow = new Window({ url: 'https://coast.test/login' });
 installWindow(entryWindow);
 entryWindow.document.body.innerHTML = `
@@ -45,13 +55,15 @@ assert.equal(entryWindow.document.querySelector('#mailboxEntryChoices').hidden, 
 
 const mailboxWindow = new Window({ url: 'https://coast.test/mailbox' });
 installWindow(mailboxWindow);
-mailboxWindow.confirm = () => true;
 mailboxWindow.document.body.innerHTML = `
   <div id="mailboxApp">
     <a data-icon="back"></a>
+    <div id="mailboxConversationMenuWrap">
+      <button id="mailboxConversationMenu" type="button" aria-expanded="false">›</button>
+      <span id="mailboxConversationBubble" hidden><button data-mailbox-action="delete-account">删除整个对话</button></span>
+    </div>
     <span id="mailboxVisitorLabel"></span>
-    <button data-panel="thinking">思维壤</button>
-    <button data-panel="notebook">访客记事本</button>
+    <div class="mailbox-top-actions"><button data-panel="notebook">访客记事本</button></div>
     <div id="mailboxMessageScroller"><div id="mailboxMessages"></div></div>
     <section id="mailboxStatusBar"><strong id="mailboxStatusText"></strong><small id="mailboxStatusMeta"></small></section>
     <button id="mailboxRefreshButton"></button>
@@ -60,29 +72,72 @@ mailboxWindow.document.body.innerHTML = `
     <div id="mailboxToast" hidden></div>
   </div>`;
 
+let messages = [
+  { id: 'v-1', visitor_id: 'visitor-a', role: 'visitor', content: '第一封信', status: 'replied', reply_batch_id: 'batch-1', created_at: '2026-08-01T10:00:00.000Z', updated_at: '2026-08-01T10:00:00.000Z' },
+  { id: 'm-1', visitor_id: 'visitor-a', role: 'myri', content: '第一封回信', status: 'sent', reply_batch_id: 'batch-1', created_at: '2026-08-01T11:00:00.000Z', updated_at: '2026-08-01T11:00:00.000Z' },
+];
+const memory = {
+  thought_soil: {
+    visitor_id: 'visitor-a',
+    current_text: '沿着第一封信继续谈创作。',
+    hand_seeds: [{ name: '星光', life_core: '喜欢星星意象。', usage_hint: '聊创作时使用。', avoid_hint: '' }],
+    do_not_repeat: '不再解释慢速回信。',
+    pocket_candidates: [{ title: '蓝色颜料', life_core: '常用蓝色颜料。', content: '创作偏好候选。' }],
+    revision: 2,
+    model_label: 'GPT-5.6 Thinking',
+    updated_at: '2026-08-01T11:00:00.000Z',
+  },
+  pending_pockets: [{
+    id: 'pocket-1',
+    title: '蓝色颜料',
+    life_core: '常用蓝色颜料。',
+    content: '创作偏好候选。',
+    status: 'pending',
+    created_at: '2026-08-01T11:00:00.000Z',
+    updated_at: '2026-08-01T11:00:00.000Z',
+  }],
+  entries: [{
+    id: 'memory-1',
+    title: '星星意象',
+    life_core: '喜欢在创作里使用星星意象。',
+    content: '一张已经确认的轻量记忆。',
+    usage_hint: '讨论创作时自然记得。',
+    avoid_hint: '',
+    created_at: '2026-08-01T11:10:00.000Z',
+    updated_at: '2026-08-01T11:10:00.000Z',
+  }],
+};
 const requestedPaths = [];
 globalThis.fetch = async (input, options = {}) => {
   const path = String(input);
-  requestedPaths.push([path, options.method || 'GET']);
+  const method = options.method || 'GET';
+  requestedPaths.push([path, method]);
   let value;
   if (path === '/api/mailbox/me') {
     value = { ok: true, visitor_id: 'visitor-a', display_name: '星星', preferred_name: '小星', allow_memory: true };
-  } else if (path === '/api/mailbox/messages') {
-    value = {
-      ok: true,
-      messages: [
-        { id: 'v-1', visitor_id: 'visitor-a', role: 'visitor', content: '第一封信', status: 'waiting_for_myri', created_at: '2026-08-01T10:00:00.000Z', updated_at: '2026-08-01T10:00:00.000Z' },
-        { id: 'm-1', visitor_id: 'visitor-a', role: 'myri', content: '第一封回信', status: 'sent', created_at: '2026-08-01T11:00:00.000Z', updated_at: '2026-08-01T11:00:00.000Z' },
-      ],
-    };
+  } else if (path === '/api/mailbox/messages' && method === 'GET') {
+    value = { ok: true, messages: structuredClone(messages) };
   } else if (path === '/api/mailbox/status') {
-    value = { ok: true, pending_count: 1, last_myri_reply_at: '2026-08-01T11:00:00.000Z', queue_status: 'pending' };
-  } else if (path === '/api/mailbox/thinking-notes') {
-    value = { ok: true, notes: [{ id: 'soil-1', content: '一张整理性小纸条。', created_at: '2026-08-01T11:00:00.000Z', updated_at: '2026-08-01T11:00:00.000Z' }] };
-  } else if (path === '/api/mailbox/notebook') {
-    value = { ok: true, entries: [] };
+    value = { ok: true, pending_count: messages.filter((message) => message.status === 'waiting_for_myri').length, last_myri_reply_at: '2026-08-01T11:00:00.000Z', queue_status: 'replied' };
+  } else if (path === '/api/mailbox/memory' && method === 'GET') {
+    value = { ok: true, memory: structuredClone(memory) };
   } else if (path === '/api/mailbox/send') {
-    value = { ok: true, message: { id: 'v-2', visitor_id: 'visitor-a', role: 'visitor', content: '第二封信', status: 'waiting_for_myri', created_at: '2026-08-01T12:00:00.000Z', updated_at: '2026-08-01T12:00:00.000Z' } };
+    const body = JSON.parse(options.body);
+    const message = { id: 'v-2', visitor_id: 'visitor-a', role: 'visitor', content: body.content, status: 'waiting_for_myri', created_at: '2026-08-01T12:00:00.000Z', updated_at: '2026-08-01T12:00:00.000Z' };
+    messages.push(message);
+    value = { ok: true, message };
+  } else if (path === '/api/mailbox/messages/v-1' && method === 'PATCH') {
+    messages[0] = { ...messages[0], content: JSON.parse(options.body).content, status: 'waiting_for_myri', reply_batch_id: null };
+    value = { ok: true, message: structuredClone(messages[0]) };
+  } else if (path.startsWith('/api/mailbox/messages/') && method === 'DELETE') {
+    const id = decodeURIComponent(path.split('/').at(-1));
+    messages = messages.filter((message) => message.id !== id);
+    value = { ok: true, id, deleted: true };
+  } else if (path === '/api/mailbox/memory/entries/memory-1' && method === 'DELETE') {
+    memory.entries = [];
+    value = { ok: true };
+  } else if (path === '/api/mailbox/account' && method === 'DELETE') {
+    value = { ok: true, visitor_id: 'visitor-a', deleted: true };
   } else {
     value = { ok: true };
   }
@@ -93,16 +148,50 @@ globalThis.fetch = async (input, options = {}) => {
 };
 
 await import(`../elementera-mcp/deploy-pages/public/mailbox.js?dom=${Date.now()}`);
-await new Promise((resolve) => setTimeout(resolve, 10));
+await waitFor(() => mailboxWindow.document.querySelector('.thought-soil-entry'), 'thought soil entry');
 assert.match(mailboxWindow.document.querySelector('#mailboxVisitorLabel').textContent, /小星/);
 assert.match(mailboxWindow.document.querySelector('#mailboxMessages').textContent, /第一封信/);
 assert.match(mailboxWindow.document.querySelector('#mailboxMessages').textContent, /第一封回信/);
+assert.equal(mailboxWindow.document.querySelector('#mailboxStatusText').textContent, 'Myri 的回信已经抵达。');
+assert.equal(mailboxWindow.document.querySelector('.mailbox-top-actions [data-panel="soil"]'), null, 'thought soil is not a topbar drawer');
+const soilEntry = mailboxWindow.document.querySelector('.thought-soil-entry');
+assert.match(soilEntry.textContent, /1 粒手持种/);
+assert.ok(mailboxWindow.document.querySelector('.message.assistant').previousElementSibling.classList.contains('thought-soil-row'));
+assert.equal(mailboxWindow.document.querySelector('.message.user [data-mailbox-action="edit"]') != null, true);
+assert.equal(mailboxWindow.document.querySelector('.message.user [data-mailbox-action="delete"]') != null, true);
+assert.equal(mailboxWindow.document.querySelector('.message.assistant [data-mailbox-action="copy"]') != null, true);
+assert.equal(mailboxWindow.document.querySelector('.message.assistant [data-mailbox-action="delete"]') != null, true);
+
+soilEntry.click();
+await waitFor(() => mailboxWindow.document.querySelector('#mailboxPanel').open, 'soil panel');
+await waitFor(() => mailboxWindow.document.querySelector('#mailboxPanelBody').textContent.includes('沿着第一封信继续谈创作'), 'soil panel content');
+assert.equal(mailboxWindow.document.querySelector('#mailboxPanelTitle').textContent, '思维壤');
+assert.match(mailboxWindow.document.querySelector('#mailboxPanelBody').textContent, /沿着第一封信继续谈创作/);
+assert.match(mailboxWindow.document.querySelector('#mailboxPanelBody').textContent, /手持种 · 1\/7/);
+assert.match(mailboxWindow.document.querySelector('#mailboxPanelBody').textContent, /待确认袋 · 1/);
+assert.match(mailboxWindow.document.querySelector('#mailboxPanelBody').textContent, /GPT-5.6 Thinking/);
+mailboxWindow.document.querySelector('#mailboxPanel').close();
+
+mailboxWindow.document.querySelector('[data-panel="notebook"]').click();
+await waitFor(() => mailboxWindow.document.querySelector('#mailboxPanelTitle').textContent === '访客记事本', 'notebook panel');
+await waitFor(() => mailboxWindow.document.querySelector('#mailboxPanelBody').textContent.includes('星星意象'), 'notebook panel content');
+assert.match(mailboxWindow.document.querySelector('#mailboxPanelBody').textContent, /星星意象/);
+assert.match(mailboxWindow.document.querySelector('#mailboxPanelBody').textContent, /待确认袋 · 1/);
+
+mailboxWindow.prompt = () => '编辑后的第一封信';
+mailboxWindow.document.querySelector('.message.user [data-mailbox-action="edit"]').click();
+await waitFor(() => mailboxWindow.document.querySelector('.message.user')?.textContent.includes('编辑后的第一封信'), 'edited mailbox message');
+assert.ok(requestedPaths.some(([path, method]) => path === '/api/mailbox/messages/v-1' && method === 'PATCH'));
 assert.equal(mailboxWindow.document.querySelector('#mailboxStatusText').textContent, '已送达灯塔，等待 Myri 巡灯。');
 
-mailboxWindow.document.querySelector('[data-panel="thinking"]').click();
-await new Promise((resolve) => setTimeout(resolve, 5));
-assert.equal(mailboxWindow.document.querySelector('#mailboxPanel').open, true);
-assert.match(mailboxWindow.document.querySelector('#mailboxPanelBody').textContent, /一张整理性小纸条/);
+mailboxWindow.document.querySelector('#mailboxConversationMenu').click();
+assert.equal(mailboxWindow.document.querySelector('#mailboxConversationBubble').hidden, false);
+mailboxWindow.document.querySelector('[data-mailbox-action="delete-account"]').click();
+const accountDanger = await waitFor(() => mailboxWindow.document.querySelector('[data-danger-confirm]'), 'account delete confirmation');
+assert.match(accountDanger.textContent, /暗号、全部来信与回信、思维壤、待确认袋和访客记事本都会永久删除/);
+accountDanger.querySelector('[data-danger-cancel]').click();
+await waitFor(() => !mailboxWindow.document.querySelector('[data-danger-confirm]'), 'account delete cancellation');
+assert.equal(requestedPaths.some(([path]) => path === '/api/mailbox/account'), false);
 
 const input = mailboxWindow.document.querySelector('#mailboxPromptInput');
 input.value = '第二封信';
@@ -110,8 +199,8 @@ mailboxWindow.document.querySelector('#mailboxComposer').dispatchEvent(new mailb
   bubbles: true,
   cancelable: true,
 }));
-await new Promise((resolve) => setTimeout(resolve, 5));
-assert.ok(requestedPaths.some(([path, method]) => path === '/api/mailbox/send' && method === 'POST'));
+await waitFor(() => requestedPaths.some(([path, method]) => path === '/api/mailbox/send' && method === 'POST'), 'mailbox send');
+await waitFor(() => mailboxWindow.document.querySelector('#mailboxMessages').textContent.includes('第二封信'), 'sent mailbox message');
 assert.match(mailboxWindow.document.querySelector('#mailboxMessages').textContent, /第二封信/);
 assert.equal(mailboxWindow.document.querySelector('#mailboxMessages').textContent.includes('模型选择'), false);
 

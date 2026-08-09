@@ -13,7 +13,7 @@ const PAGE = `<!doctype html>
   <link rel="stylesheet" href="/public/styles/shell.css?v=coast-app-20">
   <link rel="stylesheet" href="/public/styles/chat.css?v=coast-app-20">
   <link rel="stylesheet" href="/public/styles/features.css?v=coast-app-22">
-  <link rel="stylesheet" href="/public/styles/mailbox.css?v=coast-mailbox-01">
+  <link rel="stylesheet" href="/public/styles/mailbox.css?v=coast-mailbox-02">
 </head>
 <body class="mailbox-body">
   <div id="mailboxApp" class="app-shell mailbox-shell">
@@ -21,11 +21,18 @@ const PAGE = `<!doctype html>
       <header class="topbar mailbox-topbar">
         <a class="icon-button mailbox-back" href="/login?mailbox=1" aria-label="返回海岸入口" data-icon="back"></a>
         <div class="room-heading">
-          <strong>海岸信箱</strong>
+          <div class="mailbox-title-row">
+            <strong>海岸信箱</strong>
+            <span id="mailboxConversationMenuWrap" class="mailbox-conversation-menu-wrap">
+              <button id="mailboxConversationMenu" class="mailbox-conversation-menu-button" type="button" aria-label="访客房间操作" aria-expanded="false">›</button>
+              <span id="mailboxConversationBubble" class="mailbox-conversation-bubble" hidden>
+                <button class="danger" type="button" data-mailbox-action="delete-account">删除整个对话</button>
+              </span>
+            </span>
+          </div>
           <small id="mailboxVisitorLabel">慢速回信房间</small>
         </div>
         <div class="topbar-actions mailbox-top-actions">
-          <button type="button" data-panel="thinking">思维壤</button>
           <button type="button" data-panel="notebook">访客记事本</button>
         </div>
       </header>
@@ -67,7 +74,7 @@ const PAGE = `<!doctype html>
 
     <div id="mailboxToast" class="toast" role="status" aria-live="polite" hidden></div>
   </div>
-  <script type="module" src="/public/mailbox.js?v=coast-mailbox-01"></script>
+  <script type="module" src="/public/mailbox.js?v=coast-mailbox-02"></script>
 </body>
 </html>`;
 

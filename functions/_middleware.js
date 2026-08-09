@@ -20,6 +20,7 @@ const PUBLIC_MAILBOX_ASSETS = new Set([
   '/public/mailbox-entry.js',
   '/public/mailbox.js',
   '/public/core/api.js',
+  '/public/core/danger.js',
   '/public/core/dom.js',
   '/public/core/icons.js',
   '/public/styles/tokens.css',

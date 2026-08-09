@@ -35,9 +35,8 @@ export const API = Object.freeze({
   mailboxMessages: '/api/mailbox/messages',
   mailboxSend: '/api/mailbox/send',
   mailboxStatus: '/api/mailbox/status',
-  mailboxNotebook: '/api/mailbox/notebook',
-  mailboxNotebookDelete: '/api/mailbox/notebook/delete',
-  mailboxThinkingNotes: '/api/mailbox/thinking-notes',
+  mailboxMemory: '/api/mailbox/memory',
+  mailboxAccount: '/api/mailbox/account',
 });
 
 export class ApiError extends Error {

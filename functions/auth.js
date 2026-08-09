@@ -678,7 +678,7 @@ function loginPage(message = '') {
       </dialog>
     </section>
   </main>
-  <script type="module" src="/public/mailbox-entry.js?v=coast-mailbox-01"></script>
+  <script type="module" src="/public/mailbox-entry.js?v=coast-mailbox-02"></script>
 </body>
 </html>`;
 }

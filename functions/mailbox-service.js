@@ -9,15 +9,20 @@ import {
   claimMailboxPatrol,
   completeMailboxPatrol,
   createMailboxVisitor,
+  deleteMailboxMessage,
+  deleteMailboxVisitorAccount,
+  editVisitorMailboxMessage,
   findMailboxVisitorByLookup,
   getMailboxVisitor,
   listMailboxMessages,
-  listMailboxThinkingNotes,
+  listMailboxMemoryPockets,
   listOwnerMailboxVisitors,
   listVisitorNotebook,
   mailboxStatusForVisitor,
   MailboxRepositoryError,
   ownerMailboxSummary,
+  readMailboxThoughtSoil,
+  resolveMailboxMemoryPocket,
   touchMailboxVisitor,
   writeMailboxReply,
   writeVisitorMailboxMessage,
@@ -137,15 +142,64 @@ export async function sendMailboxMessage(db, visitorId, value) {
   return writeVisitorMailboxMessage(db, visitorId, content);
 }
 
+export async function editMailboxMessage(db, visitorId, messageIdValue, value) {
+  await currentMailboxVisitor(db, visitorId);
+  const messageId = text(messageIdValue, '消息编号', 240, { required: true });
+  const content = text(value, '来信正文', 40000, { required: true });
+  try {
+    return await editVisitorMailboxMessage(db, visitorId, messageId, content);
+  } catch (error) {
+    if (error instanceof MailboxRepositoryError) {
+      throw new MailboxServiceError(error.type, error.message, error.status);
+    }
+    throw error;
+  }
+}
+
+export async function removeMailboxMessage(db, visitorId, messageIdValue) {
+  await currentMailboxVisitor(db, visitorId);
+  const messageId = text(messageIdValue, '消息编号', 240, { required: true });
+  try {
+    return await deleteMailboxMessage(db, visitorId, messageId);
+  } catch (error) {
+    if (error instanceof MailboxRepositoryError) {
+      throw new MailboxServiceError(error.type, error.message, error.status);
+    }
+    throw error;
+  }
+}
+
+export async function removeMailboxAccount(db, visitorId) {
+  await currentMailboxVisitor(db, visitorId);
+  try {
+    return await deleteMailboxVisitorAccount(db, visitorId);
+  } catch (error) {
+    if (error instanceof MailboxRepositoryError) {
+      throw new MailboxServiceError(error.type, error.message, error.status);
+    }
+    throw error;
+  }
+}
+
 export async function mailboxVisitorStatus(db, visitorId) {
   await currentMailboxVisitor(db, visitorId);
   return mailboxStatusForVisitor(db, visitorId);
 }
 
-export async function visibleVisitorNotebook(db, visitorId) {
+export async function visibleVisitorMemory(db, visitorId) {
   const visitor = await currentMailboxVisitor(db, visitorId);
-  if (!visitor.allow_memory) return [];
-  return listVisitorNotebook(db, visitorId, { visitorVisibleOnly: true });
+  const [thoughtSoil, pendingPockets, entries] = await Promise.all([
+    readMailboxThoughtSoil(db, visitorId),
+    visitor.allow_memory ? listMailboxMemoryPockets(db, visitorId) : [],
+    visitor.allow_memory
+      ? listVisitorNotebook(db, visitorId, { visitorVisibleOnly: true })
+      : [],
+  ]);
+  return {
+    thought_soil: thoughtSoil,
+    pending_pockets: pendingPockets,
+    entries,
+  };
 }
 
 export async function deleteVisibleVisitorNotebookEntry(db, visitorId, entryIdValue) {
@@ -156,39 +210,68 @@ export async function deleteVisibleVisitorNotebookEntry(db, visitorId, entryIdVa
   }
 }
 
-export async function mailboxThinkingNotes(db, visitorId) {
-  await currentMailboxVisitor(db, visitorId);
-  return listMailboxThinkingNotes(db, visitorId);
+function record(value, name) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    invalid(`${name}格式无效。`);
+  }
+  return value;
 }
 
-function notebookEntries(value) {
-  return array(value, 'optional_notebook_entries', 12).map((raw, index) => {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      invalid(`optional_notebook_entries[${index}] 格式无效。`);
-    }
-    const confidence = raw.confidence == null ? 1 : Number(raw.confidence);
-    if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
-      invalid(`optional_notebook_entries[${index}].confidence 超出范围。`);
-    }
-    const visibility = raw.visibility == null ? 'myri_only' : String(raw.visibility);
-    if (!['myri_only', 'visitor_visible'].includes(visibility)) {
-      invalid(`optional_notebook_entries[${index}].visibility 不是允许的选项。`);
-    }
+function handSeeds(value) {
+  return array(value, 'thought_soil.hand_seeds', 7).map((raw, index) => {
+    const item = record(raw, `thought_soil.hand_seeds[${index}]`);
+    const lifeCore = text(
+      item.life_core ?? item.name,
+      `thought_soil.hand_seeds[${index}].life_core`,
+      1200,
+      { required: true },
+    );
     return {
-      content: text(raw.content, `optional_notebook_entries[${index}].content`, 2000, { required: true }),
-      confidence,
-      visibility,
+      name: text(item.name, `thought_soil.hand_seeds[${index}].name`, 160) || lifeCore.slice(0, 160),
+      life_core: lifeCore,
+      usage_hint: text(item.usage_hint, `thought_soil.hand_seeds[${index}].usage_hint`, 1200),
+      avoid_hint: text(item.avoid_hint, `thought_soil.hand_seeds[${index}].avoid_hint`, 1200),
     };
   });
 }
 
-function thinkingNotes(value) {
-  return array(value, 'optional_thinking_notes', 12).map((raw, index) => {
-    const content = typeof raw === 'string' ? raw : raw?.content;
+function pocketCandidates(value) {
+  return array(value, 'thought_soil.pocket_candidates', 7).map((raw, index) => {
+    const item = record(raw, `thought_soil.pocket_candidates[${index}]`);
+    const lifeCore = text(
+      item.life_core ?? item.title ?? item.content,
+      `thought_soil.pocket_candidates[${index}].life_core`,
+      2000,
+      { required: true },
+    );
+    const title = text(
+      item.title,
+      `thought_soil.pocket_candidates[${index}].title`,
+      160,
+    ) || lifeCore.slice(0, 160);
     return {
-      content: text(content, `optional_thinking_notes[${index}].content`, 4000, { required: true }),
+      title,
+      life_core: lifeCore,
+      content: text(
+        item.content,
+        `thought_soil.pocket_candidates[${index}].content`,
+        8000,
+      ) || lifeCore,
+      usage_hint: text(item.usage_hint, `thought_soil.pocket_candidates[${index}].usage_hint`, 2000),
+      avoid_hint: text(item.avoid_hint, `thought_soil.pocket_candidates[${index}].avoid_hint`, 2000),
+      source_excerpt: text(item.source_excerpt, `thought_soil.pocket_candidates[${index}].source_excerpt`, 2000),
     };
   });
+}
+
+function thoughtSoil(value) {
+  const soil = record(value, 'thought_soil');
+  return {
+    current_text: text(soil.current_text, 'thought_soil.current_text', 4000),
+    hand_seeds: handSeeds(soil.hand_seeds),
+    do_not_repeat: text(soil.do_not_repeat, 'thought_soil.do_not_repeat', 4000),
+    pocket_candidates: pocketCandidates(soil.pocket_candidates),
+  };
 }
 
 export async function fetchUnrepliedMailbox(db, input = {}) {
@@ -214,10 +297,49 @@ export async function replyToMailboxVisitor(db, input = {}) {
       queue_id: text(input.queue_id, 'queue_id', 240, { required: true }),
       visitor_id: text(input.visitor_id, 'visitor_id', 240, { required: true }),
       content: text(input.content, '回信正文', 40000, { required: true }),
-      notebook_entries: notebookEntries(input.optional_notebook_entries),
-      thinking_notes: thinkingNotes(input.optional_thinking_notes),
+      thought_soil: thoughtSoil(input.thought_soil),
+      model_label: text(input.model_label, 'model_label', 120, { required: true }),
+      model_nickname: text(input.model_nickname, 'model_nickname', 60),
+      source_conversation_id: text(input.source_conversation_id, 'source_conversation_id', 200),
+      source_turn_id: text(input.source_turn_id, 'source_turn_id', 200),
+      tool_call_id: text(input.tool_call_id, 'tool_call_id', 240),
       needs_owner_attention: needsOwnerAttention,
       owner_attention_reason: ownerAttentionReason || null,
+    });
+  } catch (error) {
+    if (error instanceof MailboxRepositoryError) {
+      throw new MailboxServiceError(error.type, error.message, error.status);
+    }
+    throw error;
+  }
+}
+
+export async function resolveMailboxPocket(db, input = {}) {
+  const action = String(input.action || '');
+  if (!['remember', 'discard'].includes(action)) invalid('action 不是允许的选项。');
+  const confidence = input.confidence == null ? 1 : Number(input.confidence);
+  if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+    invalid('confidence 超出范围。');
+  }
+  const visibility = input.visibility == null ? 'visitor_visible' : String(input.visibility);
+  if (!['myri_only', 'visitor_visible'].includes(visibility)) {
+    invalid('visibility 不是允许的选项。');
+  }
+  try {
+    return await resolveMailboxMemoryPocket(db, {
+      visitor_id: text(input.visitor_id, 'visitor_id', 240, { required: true }),
+      pocket_id: text(input.pocket_id, 'pocket_id', 240, { required: true }),
+      action,
+      title: text(input.title, 'title', 160),
+      life_core: text(input.life_core, 'life_core', 2000),
+      content: text(input.content, 'content', 8000),
+      usage_hint: input.usage_hint == null ? undefined : text(input.usage_hint, 'usage_hint', 2000),
+      avoid_hint: input.avoid_hint == null ? undefined : text(input.avoid_hint, 'avoid_hint', 2000),
+      confidence,
+      visibility,
+      source_conversation_id: text(input.source_conversation_id, 'source_conversation_id', 200),
+      source_turn_id: text(input.source_turn_id, 'source_turn_id', 200),
+      tool_call_id: text(input.tool_call_id, 'tool_call_id', 240),
     });
   } catch (error) {
     if (error instanceof MailboxRepositoryError) {

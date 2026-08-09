@@ -495,7 +495,7 @@ const initialize = await mcp({
   },
 });
 assert.equal(initialize.result.serverInfo.name, 'elementera-coast-porch');
-assert.equal(initialize.result.serverInfo.version, '1.5.0');
+assert.equal(initialize.result.serverInfo.version, '1.6.0');
 assert.match(initialize.result.instructions, /dogtalk_snapshot/);
 assert.match(initialize.result.instructions, /不得把它写入思维壤、落袋、种子、记忆或总结/);
 assert.match(initialize.result.instructions, /room_memory_reason=not_requested/);
@@ -510,6 +510,7 @@ assert.deepEqual(toolList.result.tools.map((tool) => tool.name), [
   'list_lighthouse_letters',
   'mcp_mailbox_fetch_unreplied',
   'mcp_mailbox_reply',
+  'mcp_mailbox_resolve_pocket',
   'mcp_mailbox_patrol_report',
   'read_mystic_dogtalk',
   'search_authorized_memory',
@@ -582,12 +583,19 @@ const mailboxFetchTool = toolList.result.tools.find(
 const mailboxReplyTool = toolList.result.tools.find(
   (tool) => tool.name === 'mcp_mailbox_reply',
 );
+const mailboxResolveTool = toolList.result.tools.find(
+  (tool) => tool.name === 'mcp_mailbox_resolve_pocket',
+);
 const mailboxReportTool = toolList.result.tools.find(
   (tool) => tool.name === 'mcp_mailbox_patrol_report',
 );
 assert.deepEqual(mailboxFetchTool.securitySchemes[0].scopes, ['read:coast']);
 assert.deepEqual(mailboxReplyTool.securitySchemes[0].scopes, ['write:lighthouse']);
+assert.deepEqual(mailboxResolveTool.securitySchemes[0].scopes, ['write:lighthouse']);
 assert.deepEqual(mailboxReportTool.securitySchemes[0].scopes, ['read:coast']);
+assert.ok(mailboxReplyTool.inputSchema.required.includes('thought_soil'));
+assert.equal('optional_notebook_entries' in mailboxReplyTool.inputSchema.properties, false);
+assert.equal('optional_thinking_notes' in mailboxReplyTool.inputSchema.properties, false);
 
 const mcpMailboxVisitor = await registerMailboxVisitor(db, env, {
   display_name: '门廊测试访客',
@@ -619,16 +627,54 @@ const mcpMailboxReply = await mcp({
       queue_id: mcpMailboxQueue.queue_id,
       visitor_id: mcpMailboxVisitor.id,
       content: 'MCP 写回当前访客的密封回信。',
-      optional_notebook_entries: [{
-        content: '这是访客可见的测试记事。',
-        visibility: 'visitor_visible',
-      }],
-      optional_thinking_notes: [{ content: '这是当前访客房间的测试思维壤。' }],
+      thought_soil: {
+        current_text: '这是当前访客房间的测试思维壤。',
+        hand_seeds: [],
+        do_not_repeat: '',
+        pocket_candidates: [{
+          title: '测试记事',
+          life_core: '这是访客可见的测试记事。',
+          content: '只有确认后才会进入访客记事本。',
+        }],
+      },
+      model_label: 'GPT-5.6 Thinking',
+      tool_call_id: 'mcp-mailbox-reply-1',
     },
   },
 }, fullToken);
 assert.equal(mcpMailboxReply.result.structuredContent.reply.visitor_id, mcpMailboxVisitor.id);
 assert.equal('content' in mcpMailboxReply.result.structuredContent.reply, false);
+assert.equal(mcpMailboxReply.result.structuredContent.pending_pocket_count, 1);
+assert.equal(mcpMailboxReply.result.structuredContent.pending_pockets.length, 1);
+assert.equal(
+  mcpMailboxReply.result.structuredContent.pending_pockets[0].visitor_id,
+  mcpMailboxVisitor.id,
+);
+assert.equal(mcpMailboxReply.result.structuredContent.thought_soil.current_text, '这是当前访客房间的测试思维壤。');
+const mcpMailboxPocket = (await mcp({
+  jsonrpc: '2.0',
+  id: 2021,
+  method: 'tools/call',
+  params: { name: 'mcp_mailbox_fetch_unreplied', arguments: {} },
+}, fullToken)).result.structuredContent.visitors;
+assert.equal(mcpMailboxPocket.length, 0, 'a replied visitor must leave the unreplied queue');
+const pendingPocketId = mcpMailboxReply.result.structuredContent.pending_pockets[0].id;
+const mcpMailboxResolved = await mcp({
+  jsonrpc: '2.0',
+  id: 2022,
+  method: 'tools/call',
+  params: {
+    name: 'mcp_mailbox_resolve_pocket',
+    arguments: {
+      visitor_id: mcpMailboxVisitor.id,
+      pocket_id: pendingPocketId,
+      action: 'remember',
+      visibility: 'visitor_visible',
+      tool_call_id: 'mcp-mailbox-memory-1',
+    },
+  },
+}, fullToken);
+assert.equal(mcpMailboxResolved.result.structuredContent.entry.title, '测试记事');
 const mcpMailboxReport = await mcp({
   jsonrpc: '2.0',
   id: 203,
@@ -2045,11 +2091,11 @@ assert.equal((await listOfficialSoils(db)).length, 0, 'an MCP retry must not res
 const manifest = await routeMcpRequest(new Request('https://coast.test/mcp/manifest'), env);
 assert.equal(manifest.status, 200);
 assert.equal(manifest.headers.get('cache-control'), 'private, no-store');
-assert.equal(manifest.headers.get('x-coast-mcp-catalog-version'), '1.5.0');
+assert.equal(manifest.headers.get('x-coast-mcp-catalog-version'), '1.6.0');
 const manifestBody = await manifest.json();
 assert.equal(manifestBody.authentication, 'oauth2');
-assert.equal(manifestBody.version, '1.5.0');
-assert.equal(manifestBody.tool_catalog_version, '1.5.0');
+assert.equal(manifestBody.version, '1.6.0');
+assert.equal(manifestBody.tool_catalog_version, '1.6.0');
 assert.equal(manifestBody.tool_count, toolList.result.tools.length);
 assert.deepEqual(manifestBody.tools, toolList.result.tools.map((tool) => tool.name));
 assert.deepEqual(manifestBody.tool_definitions, toolList.result.tools);
@@ -2074,9 +2120,9 @@ assert.equal((await metadata.json()).authorization_servers[0], issuer);
 const health = await routeMcpRequest(new Request('https://coast.test/mcp/health'), {});
 assert.equal(health.status, 200);
 assert.equal(health.headers.get('cache-control'), 'private, no-store');
-assert.equal(health.headers.get('x-coast-mcp-catalog-version'), '1.5.0');
+assert.equal(health.headers.get('x-coast-mcp-catalog-version'), '1.6.0');
 const healthBody = await health.json();
-assert.equal(healthBody.version, '1.5.0');
+assert.equal(healthBody.version, '1.6.0');
 assert.equal(healthBody.transport, 'streamable-http');
 
 globalThis.fetch = originalFetch;

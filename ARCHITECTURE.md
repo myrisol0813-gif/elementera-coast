@@ -41,9 +41,9 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 | MCP Streamable HTTP owner | `functions/mcp-router.js`, `functions/mcp-tools.js` | Native Pages JSON-RPC transport, versioned public discovery with the complete approved private tool catalog, no npm-install build dependency |
 | Authored soil and room persistence | `functions/coast-schema.js`, `functions/official-soil-store.js`, `functions/radio-store.js`, `functions/lighthouse-store.js` | Append-only official soil, three-party radio, low-frequency lighthouse letters, provenance and idempotency |
 | Server room API | `functions/coast-api.js`, `functions/radio-myri.js`, `functions/authorized-memory.js` | Same-origin web room routes, API Myri radio response, curated memory reads without raw chat |
-| Friend mailbox entry and UI | `functions/auth.js`, `functions/mailbox-page.js`, `public/mailbox-entry.js`, `public/mailbox.js`, `public/styles/mailbox.css` | Gate entry, passphrase forms, isolated visitor chat shell, slow-delivery status, 思维壤, and 访客记事本 |
-| Friend mailbox persistence and auth | `functions/mailbox-schema.js`, `functions/mailbox-auth.js`, `functions/mailbox-repository.js`, `functions/mailbox-service.js`, `functions/mailbox-api.js` | Hashed passphrases, signed visitor sessions, visitor-scoped messages/queue/notes, and sealed visitor REST routes |
-| Mailbox owner status and MCP patrol | `functions/owner-mailbox-api.js`, `functions/friend-myrisol-prompt.js`, `functions/mcp-tools.js` | Content-free owner counts, manual official-MCP fetch/reply/report, and the friend-facing behavior boundary |
+| Friend mailbox entry and UI | `functions/auth.js`, `functions/mailbox-page.js`, `public/mailbox-entry.js`, `public/mailbox.js`, `public/styles/mailbox.css` | Gate entry, passphrase forms, isolated visitor chat shell, per-message edit/delete controls, latest-reply 思维壤, 访客记事本, and full-room deletion |
+| Friend mailbox persistence and auth | `functions/mailbox-schema.js`, `functions/mailbox-auth.js`, `functions/mailbox-repository.js`, `functions/mailbox-service.js`, `functions/mailbox-api.js` | Hashed passphrases, signed visitor sessions, visitor-scoped messages/queue, rolling soil, pending memory pockets, structured notebook entries, and sealed visitor REST routes |
+| Mailbox owner status and MCP patrol | `functions/owner-mailbox-api.js`, `functions/friend-myrisol-prompt.js`, `functions/mcp-tools.js` | Content-free owner counts, manual official-MCP fetch/reply/resolve/report, and the friend-facing behavior boundary |
 
 ## UI and behavior acceptance contract
 
@@ -100,11 +100,14 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 
 - The animated password gate exposes one quiet `海岸信箱` entry with `输入暗号` and `填记名册` flows.
 - A visitor passphrase is never stored as plaintext. A server-keyed HMAC peppers the verifier before the Workers-compatible PBKDF2 derivation, a separate keyed lookup prevents duplicate registration, and a signed HttpOnly cookie owns the visitor session.
-- The visitor page uses the Coast message/composer visual language but loads no main-chat, model, owner-tool, pocket, seed, or main-memory controller.
+- The visitor page uses the Coast message/composer visual language but loads no main-chat, model, owner-tool, main-pocket, seed, or main-memory controller. Its mailbox memory UI reads only the signed visitor namespace.
 - Visitor messages are explicitly slow mail: sending shows delivery and `等待 Myri 巡灯`, never live typing or an API-generated reply.
-- `思维壤` contains only explicit visitor-room整理 notes. `访客记事本` is a separate long-lived lightweight memory and shows only `visitor_visible` entries.
+- Visitor messages reuse the homepage edit/delete action UI; Myri replies reuse copy/delete. Editing a previously answered visitor message reopens it for patrol, and deleting the last visitor source in a reply batch also removes that batch reply.
+- `思维壤` is one complete rolling room state (`current_text`, hand seeds, do-not-repeat, pocket candidates, revision, provenance). Its small `›` entry appears only before the latest Myri reply, matching the main-chat placement instead of living in the top bar.
+- Soil pocket candidates upsert into only that visitor's pending bag. They become structured lightweight `访客记事本` memory only after an explicit official-MCP resolve action; the visitor UI sees only `visitor_visible` confirmed entries.
+- The `›` next to `海岸信箱` opens one destructive action. After explicit confirmation it hard-deletes the visitor passphrase record, messages, queue, rolling soil, pending pockets, notebook entries, and the independent visitor session cookie.
 - The owner web surface can query visitor names, timestamps, counts, patrol time, and attention flags only. Its SQL never selects message, reply, thinking-note, or notebook content.
-- Official Myri patrol is manual. MCP claims one batch, reads each visitor namespace independently, writes an exact batch-bound reply, and finishes with a count-only report. A new visitor message invalidates an older claimed batch so stale context cannot answer over it.
+- Official Myri patrol is manual. MCP claims one batch, reads each visitor namespace independently, atomically writes one exact batch-bound reply plus the complete next rolling soil, resolves pending memory separately, and finishes with a count-only report. A send, edit, or delete that changes pending mail invalidates an older claimed batch so stale context cannot answer over it.
 
 ### Coast Daily
 
@@ -153,8 +156,9 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 - `/api/radio/ask-api-myri`: ask the homepage-selected Coast API Myri to respond in radio.
 - `/api/lighthouse/letters[/:id/read]`: list, write, and explicitly mark lighthouse letters read.
 - `/api/mailbox/register`, `/api/mailbox/login`: create or enter one lightweight visitor identity and set the signed visitor cookie.
-- `/api/mailbox/me`, `/api/mailbox/messages`, `/api/mailbox/send`, `/api/mailbox/status`: visitor-scoped profile, history, delivery, and slow-reply state.
-- `/api/mailbox/thinking-notes`, `/api/mailbox/notebook`, `/api/mailbox/notebook/delete`: current visitor 思维壤 and visitor-visible notebook controls only.
+- `/api/mailbox/me`, `/api/mailbox/messages[/:id]`, `/api/mailbox/send`, `/api/mailbox/status`: visitor-scoped profile, history, message edit/delete, delivery, and slow-reply state.
+- `/api/mailbox/memory`, `/api/mailbox/memory/entries/:id`: current visitor rolling soil, pending bag, visitor-visible notebook entries, and visitor-owned notebook deletion.
+- `/api/mailbox/account`: confirmed hard deletion of the current visitor identity and its complete mailbox namespace; clears the visitor cookie.
 - `/api/owner/mailbox/visitors`, `/api/owner/mailbox/summary`: owner-session status aggregates without sealed content.
 - `/mcp`: public Streamable HTTP protocol and tool discovery; every tool call requires its declared Auth0 OAuth scope.
 - `/mcp/health`, `/mcp/manifest`, `/.well-known/oauth-protected-resource`: public discovery only; none returns private Coast content.
