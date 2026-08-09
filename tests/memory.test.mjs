@@ -583,7 +583,7 @@ assert.match(providerPayload.messages[0].content, /当前窗口种子/);
 assert.match(providerPayload.messages[0].content, /当前用户输入优先/);
 assert.deepEqual(providerPayload.messages.at(-1), { role: 'user', content: '潮汐钥匙' });
 assert.ok(chatData.memory.selected_entry_ids.length > 0);
-assert.equal(chatData.context.mode, 'estimated_characters');
+assert.equal(chatData.context.mode, 'estimated_tokens');
 assert.equal(chatData.context.budget, 2000);
 assert.equal(chatData.context.recent_turns, 2);
 

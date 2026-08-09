@@ -13,6 +13,8 @@ export function createRouter(root, { onOpen = () => {}, onClose = () => {} } = {
     if (!current) {
       root.hidden = true;
       root.replaceChildren();
+      delete root.dataset.route;
+      root.className = 'app-overlay';
       onClose();
       return;
     }

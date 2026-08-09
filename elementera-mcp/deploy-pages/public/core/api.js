@@ -37,6 +37,20 @@ export const API = Object.freeze({
   mailboxStatus: '/api/mailbox/status',
   mailboxMemory: '/api/mailbox/memory',
   mailboxAccount: '/api/mailbox/account',
+  calendarEvents: '/api/calendar/events',
+  calendarDay: '/api/calendar/day',
+  calendarNotes: '/api/calendar/notes',
+  calendarEnv: '/api/calendar/env',
+  calendarEnvSeen: '/api/calendar/env/seen',
+  calendarUnseen: '/api/calendar/unseen',
+  calendarUnseenSeen: '/api/calendar/unseen/seen',
+  contextWorldbook: '/api/context/worldbook',
+  contextWorldbookTest: '/api/context/worldbook/test-match',
+  contextModes: '/api/context/modes',
+  contextModeCurrent: '/api/context/modes/current',
+  contextTools: '/api/context/tools',
+  contextToolRuns: '/api/context/tool-runs',
+  contextPreview: '/api/context/preview',
 });
 
 export class ApiError extends Error {

@@ -43,7 +43,12 @@ export function recallSettings(value = {}) {
     conversationPocketLimit: integer(value.conversationPocketLimit, defaults.conversationPocketLimit, 0, 6),
     globalPocketLimit: integer(value.globalPocketLimit, defaults.globalPocketLimit, 0, 6),
     seedCooldownTurns: integer(value.seedCooldownTurns, defaults.seedCooldownTurns, 0, 8),
-    maxInjectedEntries: defaults.maxInjectedEntries,
+    maxInjectedEntries: integer(
+      value.maxInjectedEntries ?? value.memoryLimit ?? value.memory_limit,
+      defaults.maxInjectedEntries,
+      0,
+      12,
+    ),
     soilBudget: integer(value.soilBudget, MEMORY_CONFIG.soil.contextBudget, 200, 2400),
   };
 }

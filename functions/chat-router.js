@@ -1,18 +1,13 @@
 import { apiError, json, readJson, sameOrigin } from './http.js';
-import { DAILY_MODEL_TOOLS, executeDailyModelTool } from './daily-model-tools.js';
 import {
-  DOGTALK_MODEL_TOOL,
-  executeDogtalkModelTool,
-  isDogtalkModelTool,
-} from './dogtalk-model-tool.js';
-import {
-  dogtalkContext,
   DogtalkStoreError,
-  saveMysticDogtalkWithSnapshot,
 } from './dogtalk-store.js';
-import { buildCrossSurfaceContext } from './cross-surface-recall.js';
-import { buildMemoryContext, formatMemoryContext } from './memory-recall.js';
-import { MEMORY_OWNER_ID } from './memory-store.js';
+import {
+  assembleContextForChat,
+  budgetContextMessages,
+  estimateContextTokens as estimateTokens,
+} from './context-assembler.js';
+import { executeRegisteredTool } from './tool-registry.js';
 import {
   ModelRequestError,
   modelErrorResponse,
@@ -45,7 +40,6 @@ const BODY_LIMIT = 2 * 1024 * 1024;
 const CONVERSATIONS_PATH = '/api/chat/conversations';
 const FORMAL_CHAT_PATH = '/api/chat';
 const LANDING_LETTER_PATH = '/api/chat/landing-letter';
-const CHAT_MODEL_TOOLS = Object.freeze([...DAILY_MODEL_TOOLS, DOGTALK_MODEL_TOOL]);
 
 function methodNotAllowed(allow) {
   return apiError('method_not_allowed', 'Method not allowed.', 405, { allow });
@@ -171,20 +165,23 @@ function safeStreamError(error) {
   return { type: 'stream_error', message: '流式生成中断，请稍后重试。' };
 }
 
-function streamFormalChat(request, env, input, assembled, memory, executeTool, dogtalkSubmission = null) {
+function streamFormalChat(request, env, input, assembled, dogtalkSubmission = null) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
       try {
+        if (assembled.settings.context_debug) {
+          controller.enqueue(encoder.encode(sseEvent('context_debug', assembled.debug)));
+        }
         for await (const item of performFormalChatStream(env, {
           model: input.model,
           messages: assembled.messages,
           settings: input.settings,
-          tools: CHAT_MODEL_TOOLS,
+          tools: assembled.tools,
         }, {
           allowSystem: assembled.messages[0]?.role === 'system',
           signal: request.signal,
-          executeTool,
+          executeTool: assembled.executeTool,
         })) {
           controller.enqueue(encoder.encode(sseEvent(item.event, item.data)));
         }
@@ -202,7 +199,7 @@ function streamFormalChat(request, env, input, assembled, memory, executeTool, d
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
       'X-Content-Type-Options': 'nosniff',
-      'X-Coast-Memory-Selected': JSON.stringify(memory?.trace?.selected || []),
+      'X-Coast-Memory-Selected': JSON.stringify(assembled.memory?.trace?.selected || []),
       'X-Coast-Dogtalk-Snapshot': dogtalkSubmission?.snapshot?.id || '',
     },
   });
@@ -228,99 +225,59 @@ async function formalChat(request, env) {
     if (!sourceTurnId) {
       throw new ChatStoreError('dogtalk_turn_required', '神秘狗话需要跟随当前消息轮次。', 400);
     }
-    dogtalkSubmission = await saveMysticDogtalkWithSnapshot(
-      env.COAST_CHAT_DB,
-      {
-        ...value.dogtalk,
-        room_scope: 'conversation',
-        conversation_id: conversationId,
-      },
-      {
-        source_type: 'turn',
-        source_id: sourceTurnId,
-      },
-    );
-  }
-
-  let memory = null;
-  let softContext = '';
-  let crossSurface = { context: '', selected: [], triggered: false };
-  let dogtalk = { context: '', selected: false };
-  try {
-    [memory, crossSurface, dogtalk] = await Promise.all([
-      buildMemoryContext(env, MEMORY_OWNER_ID, conversationId, lastUser.content, {
-        recent_entry_ids: value.recent_entry_ids,
-        mode: 'chat',
-        settings: requestSettings,
-        conversation_turns: messages.filter((message) => message?.role === 'user').length,
-      }),
-      buildCrossSurfaceContext(env.COAST_CHAT_DB, lastUser.content),
-      dogtalkContext(env.COAST_CHAT_DB, {
-        room_scope: 'conversation',
-        conversation_id: conversationId,
-      }, lastUser.content, { consume_direct: true }).catch((error) => {
-        console.warn('[chat-dogtalk:recall]', String(error?.message || error).slice(0, 160));
-        return { context: '', selected: false };
-      }),
-    ]);
-    softContext = [
-      formatMemoryContext(memory, requestSettings),
-      crossSurface.context,
-      dogtalk.context,
-    ].filter(Boolean).join('\n\n');
-  } catch (error) {
-    console.error('[chat-memory:recall]', error);
-  }
-
-  const assembled = budgetChatMessages(messages, softContext, requestSettings);
-  const executeTool = (toolCall) => {
-    const toolName = String(toolCall?.function?.name || toolCall?.name || '');
-    if (isDogtalkModelTool(toolName)) {
-      return executeDogtalkModelTool(env.COAST_CHAT_DB, toolCall, {
-        conversation_id: conversationId,
-        user_query: lastUser.content,
-      });
-    }
-    return executeDailyModelTool(env.COAST_CHAT_DB, toolCall, {
+    dogtalkSubmission = await executeRegisteredTool(env.COAST_CHAT_DB, 'dogtalk.save', value.dogtalk, {
+      actor: 'xiaohan',
+      permission: 'owner',
+      surface: 'main_chat',
+      room_scope: 'conversation',
       conversation_id: conversationId,
       source_turn_id: sourceTurnId,
-      local_date: localDate(value.local_date),
-      model_label: value.model,
     });
-  };
+  }
+
+  const assembled = await assembleContextForChat(env, {
+    conversationId,
+    sourceTurnId,
+    messages,
+    lastUser,
+    settings: requestSettings,
+    localDate: localDate(value.local_date),
+    localDateTime: value.local_datetime,
+    modeKey: value.mode_key,
+    surface: 'main_chat',
+    recentEntryIds: value.recent_entry_ids,
+    model: value.model,
+    permission: 'owner',
+  });
   if (value.stream === true) {
     return streamFormalChat(request, env, {
       model: value.model,
       settings: requestSettings,
-    }, assembled, memory, executeTool, dogtalkSubmission);
+    }, assembled, dogtalkSubmission);
   }
   const result = await performFormalChatWithTools(env, {
     model: value.model,
     messages: assembled.messages,
     settings: requestSettings,
-    tools: CHAT_MODEL_TOOLS,
+    tools: assembled.tools,
   }, {
     allowSystem: assembled.messages[0]?.role === 'system',
-    executeTool,
+    executeTool: assembled.executeTool,
   });
   return json({
     ...result,
     max_tokens: requestSettings.max_tokens ?? null,
     context: assembled.trace,
     memory: {
-      selected_entry_ids: memory?.trace?.selected || [],
-      selected_cross_surface_ids: crossSurface.selected,
-      cross_surface_triggered: crossSurface.triggered,
-      dogtalk_selected: dogtalk.selected,
+      selected_entry_ids: assembled.memory?.trace?.selected || [],
+      selected_cross_surface_ids: assembled.cross_surface.selected,
+      cross_surface_triggered: assembled.cross_surface.triggered,
+      dogtalk_selected: assembled.dogtalk.selected,
       dogtalk_snapshot_id: dogtalkSubmission?.snapshot?.id || null,
-      vector_enabled: Boolean(memory?.trace?.vector_enabled),
+      vector_enabled: Boolean(assembled.memory?.trace?.vector_enabled),
     },
+    ...(assembled.settings.context_debug ? { context_debug: assembled.debug } : {}),
   });
-}
-
-function integer(value, fallback, min, max) {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.trunc(number))) : fallback;
 }
 
 function requestSettingsWithOutputFloor(rawSettings, fallbackLength = '') {
@@ -342,63 +299,11 @@ export function landingRequestSettings(rawSettings = {}) {
 }
 
 export function estimateContextTokens(value) {
-  let wide = 0;
-  let narrow = 0;
-  for (const character of String(value || '')) {
-    if (/[㐀-鿿豈-﫿぀-ヿ가-힯]/u.test(character)) wide += 1;
-    else narrow += 1;
-  }
-  return wide + Math.ceil(narrow / 4);
-}
-
-function messageTokens(message) {
-  return estimateContextTokens(message?.content) + 4;
+  return estimateTokens(value);
 }
 
 export function budgetChatMessages(messages, softContext = '', rawSettings = {}) {
-  const recentTurns = integer(rawSettings.recentTurns, 8, 1, 20);
-  const budget = integer(rawSettings.contextBudget, 6000, 256, 12000);
-  const hasSoftContext = Boolean(String(softContext || '').trim());
-  const historyLimit = Math.min(recentTurns * 2, hasSoftContext ? 19 : 20);
-  const source = (Array.isArray(messages) ? messages : [])
-    .filter((message) => ['user', 'assistant'].includes(message?.role) && typeof message.content === 'string')
-    .slice(-historyLimit);
-  const lastUserIndex = source.findLastIndex((message) => message.role === 'user');
-  const kept = source.map((message, index) => ({ message, index }));
-  let includeSoftContext = hasSoftContext;
-  const trimmed = { assistants: 0, users: 0, soft_context: false };
-  const total = () => kept.reduce((sum, item) => sum + messageTokens(item.message), 0)
-    + (includeSoftContext ? messageTokens({ content: softContext }) : 0);
-  const removeOldest = (role) => {
-    const position = kept.findIndex((item) => item.message.role === role
-      && !(role === 'user' && item.index === lastUserIndex));
-    if (position < 0) return false;
-    kept.splice(position, 1);
-    return true;
-  };
-
-  while (total() > budget && removeOldest('assistant')) trimmed.assistants += 1;
-  while (total() > budget && removeOldest('user')) trimmed.users += 1;
-  if (total() > budget && includeSoftContext) {
-    includeSoftContext = false;
-    trimmed.soft_context = true;
-  }
-
-  const result = kept.map((item) => item.message);
-  if (includeSoftContext) result.unshift({ role: 'system', content: softContext });
-  const estimatedTokens = total();
-  return {
-    messages: result,
-    trace: {
-      mode: 'estimated_characters',
-      budget,
-      estimated_tokens: estimatedTokens,
-      recent_turns: recentTurns,
-      current_user_preserved: lastUserIndex >= 0 && kept.some((item) => item.index === lastUserIndex),
-      over_budget: estimatedTokens > budget,
-      trimmed,
-    },
-  };
+  return budgetContextMessages(messages, softContext, rawSettings);
 }
 
 function activeStateMessages(state) {
@@ -448,38 +353,25 @@ async function landingLetter(request, env) {
   const state = await readConversationState(env.COAST_CHAT_DB, targetConversationId);
   const messages = [...activeStateMessages(state), { role: 'user', content: letterText }];
   const lastUser = messages.at(-1);
-  let memory = null;
-  let softContext = '';
-  let dogtalk = { context: '', selected: false };
-  try {
-    [memory, dogtalk] = await Promise.all([
-      buildMemoryContext(env, MEMORY_OWNER_ID, targetConversationId, lastUser.content, {
-        recent_entry_ids: value.recent_entry_ids,
-        mode: 'chat',
-        settings: requestSettings,
-        conversation_turns: messages.filter((message) => message.role === 'user').length,
-      }),
-      dogtalkContext(env.COAST_CHAT_DB, {
-        room_scope: 'conversation',
-        conversation_id: targetConversationId,
-      }, lastUser.content, { consume_direct: true }).catch((error) => {
-        console.warn('[chat-dogtalk:landing-recall]', String(error?.message || error).slice(0, 160));
-        return { context: '', selected: false };
-      }),
-    ]);
-    softContext = [
-      formatMemoryContext(memory, requestSettings),
-      dogtalk.context,
-    ].filter(Boolean).join('\n\n');
-  } catch (error) {
-    console.error('[chat-memory:landing-recall]', error);
-  }
-  const assembled = budgetChatMessages(messages, softContext, requestSettings);
-  const generated = await performFormalChat(env, {
+  const assembled = await assembleContextForChat(env, {
+    conversationId: targetConversationId,
+    messages,
+    lastUser,
+    settings: requestSettings,
+    localDate: localDate(value.local_date),
+    localDateTime: value.local_datetime,
+    modeKey: value.mode_key,
+    surface: 'landing',
+    recentEntryIds: value.recent_entry_ids,
+    model: modelId,
+    permission: 'owner',
+  });
+  const generated = await performFormalChatWithTools(env, {
     model: modelId,
     messages: assembled.messages,
     settings: requestSettings,
-  }, { allowSystem: assembled.messages[0]?.role === 'system' });
+    tools: assembled.tools,
+  }, { allowSystem: assembled.messages[0]?.role === 'system', executeTool: assembled.executeTool });
   const assistantText = generated?.message?.content || '';
   if (!assistantText.trim()) throw new ChatStoreError('empty_model_reply', '模型读完了信，但没有返回文字。', 502);
 
@@ -506,10 +398,11 @@ async function landingLetter(request, env) {
     max_tokens: requestSettings.max_tokens,
     context: assembled.trace,
     memory: {
-      selected_entry_ids: memory?.trace?.selected || [],
-      dogtalk_selected: dogtalk.selected,
-      vector_enabled: Boolean(memory?.trace?.vector_enabled),
+      selected_entry_ids: assembled.memory?.trace?.selected || [],
+      dogtalk_selected: assembled.dogtalk.selected,
+      vector_enabled: Boolean(assembled.memory?.trace?.vector_enabled),
     },
+    ...(assembled.settings.context_debug ? { context_debug: assembled.debug } : {}),
   });
 }
 

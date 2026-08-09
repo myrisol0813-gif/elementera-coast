@@ -46,7 +46,39 @@ function isStallQuery(query) {
 }
 
 function isExplicitRecall(query) {
-  return /(你还记得|还记得吗|回想|找一下.*记忆|搜索.*记忆|记忆里|种子库|总记忆|落袋|袋里|放下的东西)/u.test(String(query || ''));
+  return /(你还记得|还记得吗|回想|找一下.*记忆|搜索.*记忆|记忆里|种子库|总记忆|落袋|袋里|放下的东西|历史版本|旧版本|被替代的记忆)/u.test(String(query || ''));
+}
+
+function ageDays(value) {
+  const timestamp = Date.parse(String(value || ''));
+  return Number.isFinite(timestamp) ? Math.max(0, (Date.now() - timestamp) / 86400000) : 365;
+}
+
+function recallModifiers(entry, modeKey) {
+  const confidence = {
+    user_confirmed: 0.015,
+    system_confirmed: 0.008,
+    model_inferred: -0.02,
+    imported: -0.035,
+    low: -0.09,
+  }[entry.source_confidence] ?? 0;
+  const referenceAge = ageDays(entry.last_confirmed_at || entry.updated_at);
+  const protectedMemory = entry.memory_level === 'core'
+    || entry.source_confidence === 'user_confirmed'
+    || ageDays(entry.last_confirmed_at) <= 60;
+  const freshness = referenceAge <= 14
+    ? 0.015
+    : -Math.min(protectedMemory ? 0.045 : 0.14, Math.log2(1 + referenceAge / 45) * 0.028);
+  const policy = entry.facet_policy && typeof entry.facet_policy === 'object'
+    ? entry.facet_policy[modeKey] : null;
+  const tags = Array.isArray(entry.memory_tags) ? entry.memory_tags : [];
+  const mode = policy || tags.includes(modeKey) ? 0.08 : 0;
+  return { confidence, freshness, mode, total: confidence + freshness + mode };
+}
+
+function topicKey(entry) {
+  const tagged = Array.isArray(entry.memory_tags) ? entry.memory_tags[0] : '';
+  return lower(tagged || entry.title).replace(/[\s\p{P}\p{S}]+/gu, '').slice(0, 80);
 }
 
 function poolLimit(pool, settings, { stall, explicit }) {
@@ -72,11 +104,16 @@ function vectorFilter(pool, conversationId) {
 
 async function retrievePool(env, db, pool, conversationId, query, queryValues, recentIds, options) {
   const entries = pool.entryType === 'pocket'
-    ? await listRecallPocketPool(db, { conversation_id: conversationId, scope: pool.scope })
+    ? await listRecallPocketPool(db, {
+      conversation_id: conversationId,
+      scope: pool.scope,
+      include_superseded: options.explicit,
+    })
     : await listRecallPool(db, {
       conversation_id: conversationId,
       entry_type: pool.entryType,
       scope: pool.scope,
+      include_superseded: options.explicit,
     });
   let semantic = [];
   let vectorError = null;
@@ -99,11 +136,13 @@ async function retrievePool(env, db, pool, conversationId, query, queryValues, r
   const ranked = entries.map((entry) => {
     const keyword = keywordScore(entry, query);
     const semanticScore = entry.embedding_status === 'ready' ? semanticScores.get(entry.id) || 0 : 0;
-    const score = Math.max(keyword, semanticScore) + Math.min(keyword, semanticScore) * 0.12;
+    const modifiers = recallModifiers(entry, options.modeKey);
+    const score = Math.max(0, Math.max(keyword, semanticScore) + Math.min(keyword, semanticScore) * 0.12 + modifiers.total);
     return {
       entry,
       score,
       reason: keyword >= semanticScore && keyword > 0 ? 'keyword' : semanticScore > 0 ? 'semantic' : 'none',
+      modifiers,
     };
   }).filter((candidate) => {
     if (candidate.score < threshold) return false;
@@ -120,7 +159,12 @@ async function retrievePool(env, db, pool, conversationId, query, queryValues, r
       limit,
       d1_candidates: entries.length,
       vector_candidates: semantic.length,
-      selected: ranked.slice(0, limit).map((candidate) => ({ id: candidate.entry.id, score: candidate.score, reason: candidate.reason })),
+      selected: ranked.slice(0, limit).map((candidate) => ({
+        id: candidate.entry.id,
+        score: candidate.score,
+        reason: candidate.reason,
+        modifiers: candidate.modifiers,
+      })),
       ...(vectorError ? { vector_error: vectorError } : {}),
     },
   };
@@ -149,15 +193,20 @@ export async function buildMemoryContext(env, owner, conversationId, query, opti
   const results = Object.fromEntries(POOLS.map((pool) => [pool.key, []]));
   const traces = [];
   const selectedAcrossPools = new Set();
+  const selectedTopics = new Set();
   for (const pool of pools) {
     const result = await retrievePool(env, db, pool, conversationId, query, queryValues, recentIds, {
       explicit,
       stall,
       settings,
+      modeKey: String(options.mode_key || 'normal_chat'),
     });
     results[pool.key] = result.entries.filter((entry) => {
       if (selectedAcrossPools.has(entry.id)) return false;
+      const topic = topicKey(entry);
+      if (topic && selectedTopics.has(topic)) return false;
       selectedAcrossPools.add(entry.id);
+      if (topic) selectedTopics.add(topic);
       return true;
     });
     result.trace.selected = result.trace.selected.filter((candidate) => results[pool.key].some((entry) => entry.id === candidate.id));
@@ -172,7 +221,7 @@ export async function buildMemoryContext(env, owner, conversationId, query, opti
     }
   }
   const selectedIds = pools.flatMap((pool) => results[pool.key].map((entry) => entry.id));
-  if (options.mode !== 'explicit') await markEntriesRecalled(db, selectedIds);
+  if (options.mode !== 'explicit' && options.record_recall !== false) await markEntriesRecalled(db, selectedIds);
   return {
     ...results,
     soil: await readSoil(db, conversationId),
@@ -195,22 +244,28 @@ function clipped(value, max) {
 }
 
 function seedLine(entry) {
-  return `- ${clipped(entry.title, 100)}｜${clipped(entry.life_core, 480)}${entry.usage_hint ? `｜使用：${clipped(entry.usage_hint, 240)}` : ''}${entry.avoid_hint ? `｜避免：${clipped(entry.avoid_hint, 240)}` : ''}`;
+  return `- ${clipped(entry.title, 100)}｜${clipped(entry.life_core, 480)}${entry.usage_hint ? `｜使用：${clipped(entry.usage_hint, 240)}` : ''}${entry.avoid_hint ? `｜避免：${clipped(entry.avoid_hint, 240)}` : ''}${entry.contradiction_note ? `｜可能冲突：${clipped(entry.contradiction_note, 240)}；不可压过当前输入` : ''}`;
 }
 
 function memoryLine(entry) {
-  return `- ${clipped(entry.title, 100)}｜${clipped(entry.life_core, 520)}${entry.avoid_hint ? `｜避免：${clipped(entry.avoid_hint, 240)}` : ''}`;
+  return `- ${clipped(entry.title, 100)}｜${clipped(entry.life_core, 520)}${entry.avoid_hint ? `｜避免：${clipped(entry.avoid_hint, 240)}` : ''}${entry.contradiction_note ? `｜可能冲突：${clipped(entry.contradiction_note, 240)}；不可压过当前输入` : ''}`;
 }
 
 function pocketLine(entry) {
-  return `- ${clipped(entry.title, 100)}｜${clipped(entry.life_core, 520)}${entry.content ? `｜内容：${clipped(entry.content, 520)}` : ''}${entry.usage_hint ? `｜使用：${clipped(entry.usage_hint, 240)}` : ''}${entry.avoid_hint ? `｜避免：${clipped(entry.avoid_hint, 240)}` : ''}`;
+  return `- ${clipped(entry.title, 100)}｜${clipped(entry.life_core, 520)}${entry.content ? `｜内容：${clipped(entry.content, 520)}` : ''}${entry.usage_hint ? `｜使用：${clipped(entry.usage_hint, 240)}` : ''}${entry.avoid_hint ? `｜避免：${clipped(entry.avoid_hint, 240)}` : ''}${entry.contradiction_note ? `｜可能冲突：${clipped(entry.contradiction_note, 240)}；不可压过当前输入` : ''}`;
 }
 
 export function formatMemoryContext(result, rawSettings = {}) {
+  return [
+    formatSoilContext(result, rawSettings),
+    formatRecallMemoryContext(result),
+  ].filter(Boolean).join('\n\n');
+}
+
+export function formatSoilContext(result, rawSettings = {}) {
   const settings = recallSettings(rawSettings);
   const soilControl = soilSettings(rawSettings);
   const soil = result?.soil || {};
-  const blocks = [];
   const soilLines = [
     '【思维壤｜当前窗口的轻量便签，不是规则】',
     `当前：${clipped(soil.current_text, settings.soilBudget) || '未整理'}`,
@@ -221,8 +276,10 @@ export function formatMemoryContext(result, rawSettings = {}) {
   if (soil.do_not_repeat) soilLines.push(`勿复读：${clipped(soil.do_not_repeat, 600)}`);
   const soilPriority = '请只作为当前对话方向参考；当前用户输入优先。';
   const soilBody = soilLines.join('\n').slice(0, Math.max(0, settings.soilBudget - soilPriority.length - 1));
-  blocks.push(`${soilBody}\n${soilPriority}`);
+  return `${soilBody}\n${soilPriority}`;
+}
 
+export function formatRecallMemoryContext(result) {
   const optional = ['【可选上下文｜不要求逐条复述】'];
   if (result.conversation_seeds?.length) optional.push('当前窗口种子：', ...result.conversation_seeds.map(seedLine));
   if (result.conversation_memories?.length) optional.push('当前窗口记忆：', ...result.conversation_memories.map(memoryLine));
@@ -238,9 +295,9 @@ export function formatMemoryContext(result, rawSettings = {}) {
       '约束：当前用户输入优先。不要为了使用记忆而使用记忆，也不要汇报“召回了记忆”。',
       '若内容与当前输入冲突，以当前输入与最新修订为准；必须尊重避免提示。',
     );
-    blocks.push(optional.join('\n'));
+    return optional.join('\n');
   }
-  return blocks.filter(Boolean).join('\n\n');
+  return '';
 }
 
 export async function searchMemory(env, owner, value = {}) {

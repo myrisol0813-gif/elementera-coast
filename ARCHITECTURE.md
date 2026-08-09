@@ -2,6 +2,7 @@
 
 Status: canonical Pages application contract
 Rebuild origin: `main@e21505e7e58c90eb422cad29981e5ea5c59bfe6c`
+Calendar/context extension baseline: `main@b960077`
 
 This contract covers the Cloudflare Pages document, browser runtime, service worker, root `functions/` API, and the production Streamable HTTP MCP porch at `/mcp`. The old standalone Node service under `elementera-mcp/` remains a separate historical development runtime and is not loaded by or deployed as part of the Pages application.
 
@@ -10,7 +11,7 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 1. `index.html` is the only app document and loads one module entry: `public/app.js`. `/app.html` and `/gptlike` are URL aliases declared in `_redirects`, not duplicate documents.
 2. Each feature has one controller and one state owner. A feature may call shared services, but it may not scan for or replace another feature's DOM.
 3. Runtime ownership must not depend on global guard flags, delayed reclaims, `MutationObserver`, dynamic script injection, selector sweeps, duplicate DOM normalization, or compatibility loaders.
-4. D1 is the only owner of main-chat conversations, histories, synced model profile, committed Daily content, authored MCP soil, radio messages, lighthouse letters, and the sealed friend mailbox. Local storage is reserved for explicitly local preferences, preserved pre-server room archives, Daily read cache, and unconfirmed legacy drafts.
+4. D1 is the only owner of main-chat conversations, histories, synced model profile, committed Daily content, authored MCP soil, radio messages, lighthouse letters, the sealed friend mailbox, Coast Calendar, Worldbook, mode state, memory facets, and tool-run records. Local storage is reserved for explicitly local preferences, run-control choices, preserved pre-server room archives, Daily read cache, and unconfirmed legacy drafts.
 5. Every visible icon is real inline SVG produced by the icon module. No empty pseudo-element, font glyph, base64 duplicate, or selector-dependent icon ownership is allowed.
 6. A failed request is shown as a failed request. The app must not silently switch data owners or resurrect deleted data.
 7. The rebuild contains one explicit local-storage migration and one versioned D1 schema migration. After the local migration succeeds, old keys are removed. There are no permanent fallback readers.
@@ -32,6 +33,9 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 | Coast Daily UI | `public/features/daily.js`, `public/features/daily-client.js` | Existing Daily views, server requests, summary confirmation, one-time legacy-draft migration |
 | Island letter and lovebook | `public/features/letters.js` | Per-main-window/per-model letter state and editing |
 | Run control and API sandbox | `public/features/tools.js` | Request preferences, cleanup, fixed sandbox request |
+| Coast Calendar UI | `public/features/calendar.js` | Owner-only month/day views, event editor, notes, today strip, unread badge |
+| Context UI | `public/features/context.js` | Mode switcher, Worldbook editor/test, lightweight status, Context Inspector |
+| Toolroom UI | `public/features/toolroom.js` | Owner-only registry catalog and redacted run records |
 | Auth and protected routing | `functions/auth.js`, `functions/_middleware.js` | Gate, cookie session, protected assets/API |
 | Model API | `functions/models.js`, `functions/api-router.js` | Catalog, formal chat, sandbox |
 | Main-chat API | `functions/chat-router.js`, `functions/chat-store.js`, `functions/chat-schema.js` | Conversations, histories, profile, title, versioned D1 migration |
@@ -44,6 +48,12 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 | Friend mailbox entry and UI | `functions/auth.js`, `functions/mailbox-page.js`, `public/mailbox-entry.js`, `public/mailbox.js`, `public/styles/mailbox.css` | Gate entry, passphrase forms, isolated visitor chat shell, per-message edit/delete controls, latest-reply 思维壤, 访客记事本, and full-room deletion |
 | Friend mailbox persistence and auth | `functions/mailbox-schema.js`, `functions/mailbox-auth.js`, `functions/mailbox-repository.js`, `functions/mailbox-service.js`, `functions/mailbox-api.js` | Hashed passphrases, signed visitor sessions, visitor-scoped messages/queue, rolling soil, pending memory pockets, structured notebook entries, and sealed visitor REST routes |
 | Mailbox owner status and MCP patrol | `functions/owner-mailbox-api.js`, `functions/friend-myrisol-prompt.js`, `functions/mcp-tools.js` | Content-free owner counts, manual official-MCP fetch/reply/resolve/report, and the friend-facing behavior boundary |
+| Calendar persistence and API | `functions/calendar-schema.js`, `functions/calendar-store.js`, `functions/calendar-api.js` | Versioned D1 tables, recurring seeds, soft-delete CRUD, compact env, dual unread ledger |
+| Calendar MCP tools | `functions/calendar-mcp-tools.js`, `functions/mcp-tools.js` | Auth0-scoped official reads/writes and `[NEW]` change visibility |
+| Context assembly | `functions/context-assembler.js`, `functions/context-manifest.js`, `functions/context-ambient.js`, `functions/context-inspector.js` | One formal-chat assembly path, metadata blocks, ordered budgeting, owner debug view |
+| Worldbook and mode cards | `functions/context-schema.js`, `functions/context-worldbook.js`, `functions/context-modes.js`, `functions/context-api.js` | Triggered terminology, visitor-safe filtering, one-Myri task modes, owner REST routes |
+| Memory facets | `functions/memory-facets.js`, `functions/memory-recall.js`, `functions/memory-store.js` | Mode-specific render faces, confidence/freshness relevance, supersession and contradiction handling |
+| Tool registry and run log | `functions/tool-registry.js`, `functions/tool-run-log.js` | Tool exposure/permission/dispatch, success/failure records, mailbox and dogtalk redaction |
 
 ## UI and behavior acceptance contract
 
@@ -59,7 +69,7 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 ### Sidebar
 
 - Exactly one status block displays `同轨第 N 日`, `距 8.12 N 天`, and `距 8.13 N 天`.
-- Exactly one main-room block contains `无线电波的两端`, `灯塔来信`, `轨迹 / 记忆`, and `海岸日报`.
+- Exactly one main-room block contains `无线电波的两端`, `灯塔来信`, `轨迹 / 记忆`, `海岸日报`, and owner-only `海岸日历`.
 - Exactly one local room-window block lists radio and lighthouse windows.
 - Exactly one main-chat block lists D1 conversations.
 - Every conversation row has one ellipsis menu with `改名` and `删除`.
@@ -80,11 +90,21 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 - Visible action SVGs are: user `edit`, `trash`; assistant `copy`, `like`, `refresh`, `heart`, `trash`.
 - A generation is bound to the conversation and turn where it started. Switching windows cannot move its result.
 - Storage or generation failures are visible, concise, and do not append stale `history sync` diagnostics to message content.
+- Formal chat and island-letter generation both call `assembleContextForChat`; neither owns a second memory or model-tool path.
+- The compact strip beside the composer shows the current mode and context counts, and opens the owner-only Context Inspector.
+
+### Coast Calendar
+
+- The calendar is a private shared notebook for Xiaohan and Myri, not a public or visitor calendar.
+- Month and day views read D1. Manual events support create/edit/soft-delete; notes support create/soft-delete; recurring seeds remain read-only in the ordinary editor.
+- The initial `06-05`, `07-11`, and `08-13` seeds are inserted idempotently and materialized into a bounded future range.
+- Every event/note write appends one calendar change. Myri-to-Xiaohan changes light the web badge; Xiaohan-to-Myri changes appear as `[NEW]` to official calendar reads until explicitly seen.
+- `calendar_injection` is exactly `off`, `today_only`, `only_when_events`, or `manual`. Empty calendar env has `empty=true` and no context shell.
 
 ### Wolf Den and Serpent Desk
 
 - Wolf Den keeps profile, applications info, themes, bubble/accent choices, JSON/HTML export, JSON import, balance placeholder, model box, and current model.
-- Serpent Desk keeps Myri portrait, bubble preference placeholder, notes, construction status, local diagnostics, system-prompt draft, run control, and API sandbox.
+- Serpent Desk keeps Myri portrait, bubble preference placeholder, notes, Context Inspector, mode cards, Coast Worldbook, tool runs, construction status, local diagnostics, system-prompt draft, run control, and API sandbox.
 - Settings use one panel router and deterministic back destinations.
 
 ### Radio and lighthouse
@@ -94,7 +114,7 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 - Xiaohan can send a web message and explicitly ask the homepage-selected API Myri to respond as `✦Myrisol`.
 - Lighthouse is a D1-backed low-frequency letter shelf with subject, body, source metadata, and read state. It is not an instant model chat.
 - Pre-server local room content remains present in the local export state but is not a canonical fallback reader.
-- Memory remains an honest non-connected placeholder and performs no reads or writes.
+- Room memory remains separately owned by the memory feature; radio/lighthouse chat controllers do not reach into owner main-chat recall through their DOM path.
 
 ### Friend mailbox
 
@@ -131,8 +151,41 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 
 - Model catalog comes from `/api/models`; chat/free/image groups, search, refresh, add/remove, and selection remain.
 - At least one chat model remains selected.
-- Run control keeps recent turns, context/token budgets, output length, scratchpad/seed placeholders, and temporary-context cleanup.
+- Run control keeps recent turns, estimated-token budget, output length, soil/recall limits, mode/context switches, ambient switches, Worldbook/facet limits, and temporary-context cleanup.
 - Sandbox checks `/api/health` and sends its fixed non-private test through `/api/chat-sandbox`; it never writes chat history.
+
+## Context assembly contract
+
+Every formal owner-chat request has one canonical order:
+
+1. base system prompt;
+2. critical Context Manifest;
+3. Coast Ambient Context;
+4. current mode card;
+5. current-conversation thinking soil;
+6. `before_memory` Worldbook matches;
+7. mode-specific memory facets;
+8. ordinary confirmed-memory recall;
+9. `after_memory` Worldbook matches;
+10. explicit cross-surface recall;
+11. low-weight dogtalk when selected;
+12. registry-derived tool capability summary;
+13. recent messages and the current user input.
+
+Every assembled context block owns `key`, `title`, `body`, `source`, `scope`, `priority`, `freshness`, `confidence`, use/avoid hints, and trace metadata. The manifest is retained while lower-priority facets, Worldbook entries, old assistant messages, old user messages, and soft-context detail are trimmed in that order. The current user input is never trimmed. Context Inspector renders the same assembly debug object, remains outside model messages, and keeps sensitive blocks collapsed.
+
+Mode cards are task posture for one Myri, never alternate personalities. Their allowlist controls registry exposure, their Worldbook scope controls terminology matching, and their key selects the memory facet face. Superseded memory stays out of automatic recall; an explicit history request may retrieve it. Contradiction notes are warnings and never override current input.
+
+## D1 extension registry
+
+Versioned extension migrations own these tables and columns:
+
+- `coast-calendar-v1`: `coast_calendar_events`, `coast_calendar_notes`, `coast_calendar_changes`, `coast_calendar_recurring_seeds`.
+- `coast-context-v1`: `coast_worldbook_entries`, `coast_mode_cards`, `coast_context_state`.
+- `coast-tool-runs-v1`: `coast_tool_runs`.
+- `coast-memory-facets-v1`: facet tags, supersession, contradiction, confirmation time, source confidence, and facet policy columns on `memory_entries` and `memory_pockets`.
+
+All four migrations are idempotent, record themselves in `schema_migrations`, and keep D1 as canonical owner. Worldbook and memory remain distinct stores.
 
 ## API contract
 
@@ -160,10 +213,15 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 - `/api/mailbox/memory`, `/api/mailbox/memory/entries/:id`: current visitor rolling soil, pending bag, visitor-visible notebook entries, and visitor-owned notebook deletion.
 - `/api/mailbox/account`: confirmed hard deletion of the current visitor identity and its complete mailbox namespace; clears the visitor cookie.
 - `/api/owner/mailbox/visitors`, `/api/owner/mailbox/summary`: owner-session status aggregates without sealed content.
+- `/api/calendar/events[/:id]`, `/api/calendar/day/:date`, `/api/calendar/notes[/:id]`: owner-only calendar event/day/note CRUD with soft deletion.
+- `/api/calendar/env`, `/api/calendar/env/seen`, `/api/calendar/unseen`, `/api/calendar/unseen/seen`: compact calendar context and Xiaohan-side unread acknowledgement.
+- `/api/context/worldbook[/:id]`, `/api/context/worldbook/test-match`: owner Worldbook CRUD and deterministic trigger preview.
+- `/api/context/modes[/:mode_key]`, `/api/context/modes/current`: mode-card administration and per-conversation selection/settings.
+- `/api/context/tools`, `/api/context/tool-runs`, `/api/context/preview`: current registry catalog, privacy-aware run records, and generation-free context inspection.
 - `/mcp`: public Streamable HTTP protocol and tool discovery; every tool call requires its declared Auth0 OAuth scope.
 - `/mcp/health`, `/mcp/manifest`, `/.well-known/oauth-protected-resource`: public discovery only; none returns private Coast content.
 
-All mutating web API methods require a same-origin `Origin` or `Referer`. MCP private reads and writes require a verified Auth0 access token and per-tool scope. Main-house routes and assets require a valid owner web session. `/mailbox` requires its independent visitor session; only the gate and the mailbox's code/style dependencies are public, and none contains Coast records.
+All mutating web API methods require a same-origin `Origin` or `Referer`. MCP private reads and writes require a verified Auth0 access token and per-tool scope. The MCP catalog includes `calendar.today`, `calendar.list`, `calendar.create`, `calendar.update`, `calendar.delete`, `calendar.comment`, `calendar.env`, and `calendar.seen`. Main-house routes and assets require a valid owner web session. `/mailbox` requires its independent visitor session; only the gate and the mailbox's code/style dependencies are public, and none contains Coast records. Visitor surfaces receive neither owner calendar data, owner mode cards, owner memory, nor non-visitor-safe Worldbook/tools. Mailbox bodies, replies, soil, pockets, and notebook text never enter `coast_tool_runs`.
 
 ## Local storage registry
 
@@ -190,9 +248,9 @@ The migration imports supported values from the existing keys, then deletes thos
 
 1. Static architecture test: one document and one script entry; no duplicate app document, legacy path, guard flag, observer, ownership timer, dynamic script injection, or missing SVG symbol.
 2. State unit tests: user/assistant branch edit/delete/regenerate/reaction behavior.
-3. D1 tests: chat isolation and profile rules; Daily schema; MCP/radio/lighthouse schema and provenance; mailbox visitor isolation and sealed owner aggregates; conflict handling; image-reference boundary; atomic summary commit; tool-call idempotency.
-4. MCP tests: unauthenticated discovery, OAuth identity allowlists, issuer/audience/expiry/signature verification, per-tool scopes, official signatures, manual mailbox patrol/reply/report, and Streamable HTTP calls.
-5. DOM interaction tests: sidebar uniqueness, menus, SVG presence, server radio/lighthouse rooms, panels, Daily server reads and summary confirmation, letter actions, model selection.
+3. D1 tests: chat isolation and profile rules; Daily schema; MCP/radio/lighthouse schema and provenance; mailbox visitor isolation and sealed owner aggregates; calendar schema/CRUD/seeds/unread; Worldbook/modes/facets/tool runs; conflict handling; image-reference boundary; atomic summary commit; tool-call idempotency.
+4. MCP tests: unauthenticated discovery, OAuth identity allowlists, issuer/audience/expiry/signature verification, per-tool scopes, official signatures, calendar reads/writes, manual mailbox patrol/reply/report, and Streamable HTTP calls.
+5. DOM interaction tests: sidebar uniqueness, menus, SVG presence, server radio/lighthouse rooms, calendar/context owners, panels, Daily server reads and summary confirmation, letter actions, model selection.
 6. Service-worker test: every cached URL exists; API/MCP/OAuth discovery/login are never cached; cache version changes exactly once.
 7. Mobile render checks at 360×800 and 412×915 in light/dark/gold themes.
 8. Connector readback of every changed file and final branch diff before any main deployment.

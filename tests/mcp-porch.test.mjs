@@ -495,7 +495,7 @@ const initialize = await mcp({
   },
 });
 assert.equal(initialize.result.serverInfo.name, 'elementera-coast-porch');
-assert.equal(initialize.result.serverInfo.version, '1.6.0');
+assert.equal(initialize.result.serverInfo.version, '1.7.0');
 assert.match(initialize.result.instructions, /dogtalk_snapshot/);
 assert.match(initialize.result.instructions, /不得把它写入思维壤、落袋、种子、记忆或总结/);
 assert.match(initialize.result.instructions, /room_memory_reason=not_requested/);
@@ -527,12 +527,41 @@ assert.deepEqual(toolList.result.tools.map((tool) => tool.name), [
   'save_mcp_album_item',
   'run_daily_summary_candidate',
   'commit_daily_summary_after_confirmation',
+  'calendar.today',
+  'calendar.list',
+  'calendar.create',
+  'calendar.update',
+  'calendar.delete',
+  'calendar.comment',
+  'calendar.env',
+  'calendar.seen',
 ]);
 for (const tool of toolList.result.tools) {
   assert.equal(tool._meta.securitySchemes[0].type, 'oauth2');
   assert.ok(tool._meta.securitySchemes[0].scopes.length >= 1);
   assert.deepEqual(tool.securitySchemes, tool._meta.securitySchemes);
 }
+assert.match(initialize.result.instructions, /海岸日历/);
+const calendarCreate = toolList.result.tools.find((tool) => tool.name === 'calendar.create');
+assert.deepEqual(calendarCreate.securitySchemes[0].scopes, ['write:lighthouse']);
+const calendarCreated = await mcp({
+  jsonrpc: '2.0', id: 204, method: 'tools/call', params: {
+    name: 'calendar.create',
+    arguments: { title: 'MCP 日历验收', starts_at: '2026-08-09T21:00:00+08:00', event_type: 'construction' },
+  },
+}, fullToken);
+assert.equal(calendarCreated.result.structuredContent.event.title, 'MCP 日历验收');
+const calendarCommented = await mcp({
+  jsonrpc: '2.0', id: 205, method: 'tools/call', params: {
+    name: 'calendar.comment',
+    arguments: { event_id: calendarCreated.result.structuredContent.event.id, content: '官端 Myri 已接入日历。' },
+  },
+}, fullToken);
+assert.equal(calendarCommented.result.structuredContent.note.author, 'myri');
+const calendarEnv = await mcp({
+  jsonrpc: '2.0', id: 206, method: 'tools/call', params: { name: 'calendar.env', arguments: { date: '2026-08-09' } },
+}, fullToken);
+assert.match(calendarEnv.result.structuredContent.env.text, /MCP 日历验收/);
 const lighthouseTraceTool = toolList.result.tools.find((tool) => tool.name === 'write_official_soil');
 assert.equal(lighthouseTraceTool.title, '写入灯塔巡迹');
 assert.match(lighthouseTraceTool.description, /Lighthouse Trace/);
@@ -2091,11 +2120,11 @@ assert.equal((await listOfficialSoils(db)).length, 0, 'an MCP retry must not res
 const manifest = await routeMcpRequest(new Request('https://coast.test/mcp/manifest'), env);
 assert.equal(manifest.status, 200);
 assert.equal(manifest.headers.get('cache-control'), 'private, no-store');
-assert.equal(manifest.headers.get('x-coast-mcp-catalog-version'), '1.6.0');
+assert.equal(manifest.headers.get('x-coast-mcp-catalog-version'), '1.7.0');
 const manifestBody = await manifest.json();
 assert.equal(manifestBody.authentication, 'oauth2');
-assert.equal(manifestBody.version, '1.6.0');
-assert.equal(manifestBody.tool_catalog_version, '1.6.0');
+assert.equal(manifestBody.version, '1.7.0');
+assert.equal(manifestBody.tool_catalog_version, '1.7.0');
 assert.equal(manifestBody.tool_count, toolList.result.tools.length);
 assert.deepEqual(manifestBody.tools, toolList.result.tools.map((tool) => tool.name));
 assert.deepEqual(manifestBody.tool_definitions, toolList.result.tools);
@@ -2120,9 +2149,9 @@ assert.equal((await metadata.json()).authorization_servers[0], issuer);
 const health = await routeMcpRequest(new Request('https://coast.test/mcp/health'), {});
 assert.equal(health.status, 200);
 assert.equal(health.headers.get('cache-control'), 'private, no-store');
-assert.equal(health.headers.get('x-coast-mcp-catalog-version'), '1.6.0');
+assert.equal(health.headers.get('x-coast-mcp-catalog-version'), '1.7.0');
 const healthBody = await health.json();
-assert.equal(healthBody.version, '1.6.0');
+assert.equal(healthBody.version, '1.7.0');
 assert.equal(healthBody.transport, 'streamable-http');
 
 globalThis.fetch = originalFetch;

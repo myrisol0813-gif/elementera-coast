@@ -13,7 +13,7 @@ window.document.close();
 
 for (const name of [
   'window', 'document', 'localStorage', 'navigator', 'HTMLElement', 'HTMLFormElement', 'HTMLInputElement',
-  'HTMLTextAreaElement', 'Event', 'CustomEvent', 'MouseEvent', 'KeyboardEvent', 'FileReader', 'Blob',
+  'HTMLTextAreaElement', 'Event', 'CustomEvent', 'MouseEvent', 'KeyboardEvent', 'FileReader', 'Blob', 'FormData',
 ]) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: window[name] || window });
 globalThis.requestAnimationFrame = (callback) => callback(Date.now());
 window.requestAnimationFrame = globalThis.requestAnimationFrame;
@@ -134,6 +134,20 @@ const lighthouseBodies = [];
 const dogtalks = new Map();
 let roomSequence = 0;
 let dogtalkSequence = 0;
+let calendarSequence = 0;
+const calendarEvents = [];
+const calendarNotes = [];
+const contextModes = [{
+  id: 'mode_normal_chat', mode_key: 'normal_chat', title: '普通聊天', description: '自然聊天与共同生活。',
+  prompt: '保持自然。', enabled: true, scope: 'owner', tool_allowlist: ['calendar.today', 'memory.search'],
+  worldbook_scope: 'owner', default_context_settings: {}, created_at: now(), updated_at: now(),
+}];
+const contextSettings = {
+  ambient: { time: true, calendar: true, tools: true, room: true, model: true },
+  calendar_injection: 'only_when_events', worldbook_enabled: true, memory_facets_enabled: true,
+  context_debug: true, context_budget: 12000, recent_message_turns: 12, soil_budget: 1200,
+  worldbook_limit: 6, memory_limit: 8,
+};
 
 function dogtalkKey(roomScope, conversationId = '') {
   return roomScope === 'conversation'
@@ -250,6 +264,75 @@ globalThis.fetch = async (input, options = {}) => {
   const url = new URL(String(input), 'http://coast.test');
   const method = options.method || 'GET';
   const body = options.body ? JSON.parse(options.body) : {};
+  if (url.pathname === '/api/calendar/unseen') return response({ ok: true, count: 0, days: [], change_ids: [] });
+  if (url.pathname === '/api/calendar/unseen/seen' || url.pathname === '/api/calendar/env/seen') return response({ ok: true, seen: 0 });
+  if (url.pathname === '/api/calendar/events') {
+    if (method === 'GET') {
+      const from = url.searchParams.get('from') || '0000-01-01';
+      const to = url.searchParams.get('to') || '9999-12-31';
+      return response({ ok: true, events: calendarEvents.filter((event) => event.starts_at.slice(0, 10) >= from && event.starts_at.slice(0, 10) <= to) });
+    }
+    const event = {
+      id: `calendar-event-${++calendarSequence}`, created_by: 'user', source: 'manual', is_archived: false,
+      created_at: now(), updated_at: now(), ...body,
+    };
+    calendarEvents.push(event);
+    return response({ ok: true, event }, 201);
+  }
+  const calendarEventMatch = url.pathname.match(/^\/api\/calendar\/events\/([^/]+)$/);
+  if (calendarEventMatch) {
+    const event = calendarEvents.find((item) => item.id === decodeURIComponent(calendarEventMatch[1]));
+    if (method === 'PATCH') Object.assign(event, body, { updated_at: now() });
+    if (method === 'DELETE') event.is_archived = true;
+    return response({ ok: true, event });
+  }
+  const calendarDayMatch = url.pathname.match(/^\/api\/calendar\/day\/(\d{4}-\d{2}-\d{2})$/);
+  if (calendarDayMatch) {
+    const date = calendarDayMatch[1];
+    return response({
+      ok: true, date,
+      events: calendarEvents.filter((event) => !event.is_archived && event.starts_at.slice(0, 10) === date),
+      notes: calendarNotes.filter((note) => !note.is_archived && note.date === date),
+    });
+  }
+  if (url.pathname === '/api/calendar/notes') {
+    const note = {
+      id: `calendar-note-${++calendarSequence}`, author: 'user', is_archived: false,
+      rotation: 0, created_at: now(), updated_at: now(), ...body,
+    };
+    calendarNotes.push(note);
+    return response({ ok: true, note }, 201);
+  }
+  const calendarNoteMatch = url.pathname.match(/^\/api\/calendar\/notes\/([^/]+)$/);
+  if (calendarNoteMatch) {
+    const note = calendarNotes.find((item) => item.id === decodeURIComponent(calendarNoteMatch[1]));
+    if (method === 'PATCH') Object.assign(note, body, { updated_at: now() });
+    if (method === 'DELETE') note.is_archived = true;
+    return response({ ok: true, note });
+  }
+  if (url.pathname === '/api/context/modes') return response({ ok: true, modes: contextModes });
+  if (url.pathname === '/api/context/modes/current') return response({
+    ok: true,
+    state: { scope_id: `conversation:${url.searchParams.get('conversation_id') || body.conversation_id || 'conv-1'}`, mode: contextModes[0], settings: contextSettings, updated_at: now() },
+  });
+  if (url.pathname === '/api/context/preview') {
+    const block = (key, title, bodyText, sensitive = false) => ({
+      key, title, body: bodyText, source: 'dom_test', scope: 'current_runtime', priority: key === 'context_manifest' ? 'critical' : 'high',
+      freshness: 'live', confidence: 'system_confirmed', use_hint: '用于 DOM 验收。', avoid_hint: '不要压过当前输入。', trace: {}, sensitive,
+    });
+    const manifest = block('context_manifest', 'Context Manifest', '【上下文目录】\n当前房间：主聊天');
+    return response({ ok: true, debug: {
+      manifest, ambient: null, mode: contextModes[0],
+      blocks: [block('ambient_context', 'Coast Ambient Context', '【海岸环境】')],
+      worldbook_matches: [], memory_facets: [], tools: [{ tool_key: 'calendar.today' }],
+      budget: { budget: 12000, estimated_tokens: 180, trimmed: {}, current_user_preserved: true },
+      selected_memory_ids: [], vector_enabled: false, generated_at: now(),
+    } });
+  }
+  if (url.pathname === '/api/context/worldbook') return response({ ok: true, entries: [] });
+  if (url.pathname === '/api/context/worldbook/test-match') return response({ ok: true, matches: [] });
+  if (url.pathname === '/api/context/tools') return response({ ok: true, tools: [{ tool_key: 'calendar.today', description: '读取今日日历', model_exposed: true }] });
+  if (url.pathname === '/api/context/tool-runs') return response({ ok: true, runs: [] });
   if (url.pathname === '/api/chat/profile') {
     if (method === 'PUT') profile = body.profile;
     return response({ ok: true, profile });
@@ -992,6 +1075,42 @@ assert.ok(document.querySelectorAll('svg.icon').length >= 15);
 assert.equal(document.querySelector('#newChatButton svg').getAttribute('viewBox'), '0 0 32 32');
 assert.equal(document.querySelector('[data-action="settings:wolf"] svg').getAttribute('viewBox'), '0 0 128 128');
 assert.equal(document.querySelector('#modelName').textContent, '4.1 Nano ›');
+await waitFor(() => document.querySelector('#contextStatus')?.hidden === false, 'context status strip');
+
+document.querySelector('[data-action="calendar:open"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'calendar-month', 'calendar month route');
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('海岸日历'));
+assert.equal(document.querySelectorAll('.calendar-day-cell').length, 42);
+document.querySelector('[data-action="calendar:new-event"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'calendar-editor', 'calendar event editor');
+document.querySelector('[name="title"]').value = 'DOM 海岸日历验收';
+document.querySelector('[data-submit="calendar:save-event"]').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'calendar-day', 'calendar day after create');
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('DOM 海岸日历验收'));
+const noteForm = document.querySelector('[data-submit="calendar:add-note"]');
+noteForm.querySelector('[name="content"]').value = 'DOM 便签验收';
+noteForm.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+await waitFor(() => document.querySelector('#overlayRoot').textContent.includes('DOM 便签验收'), 'calendar note create');
+document.querySelector('[data-action="calendar:delete-note"]').click();
+await waitFor(() => !document.querySelector('#overlayRoot').textContent.includes('DOM 便签验收'), 'calendar note delete');
+document.querySelector('.calendar-event-main').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'calendar-editor', 'calendar event edit route');
+document.querySelector('[name="title"]').value = 'DOM 日历已修订';
+document.querySelector('[data-submit="calendar:save-event"]').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'calendar-day' && document.querySelector('#overlayRoot').textContent.includes('DOM 日历已修订'), 'calendar event update');
+document.querySelector('[data-action="calendar:delete-event"]').click();
+await waitFor(() => !document.querySelector('#overlayRoot').textContent.includes('DOM 日历已修订'), 'calendar event delete');
+document.querySelector('[data-action="router:back"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'calendar-month', 'calendar back to month');
+document.querySelector('[data-action="router:back"]').click();
+await waitFor(() => !document.querySelector('#overlayRoot')?.dataset.route, 'calendar overlay close');
+
+document.querySelector('#contextStatus [data-action="context:inspector"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'context-inspector', 'context inspector route');
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('Context Manifest'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('【上下文目录】'));
+document.querySelector('[data-action="router:back"]').click();
+await waitFor(() => !document.querySelector('#overlayRoot')?.dataset.route, 'context inspector close');
 
 const input = document.querySelector('#promptInput');
 for (const options of [
@@ -1276,7 +1395,7 @@ document.querySelector('[data-action="settings:wolf"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'wolf', 'wolf settings route');
 document.querySelector('[data-action="tools:run-control"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'run-control', 'API cottage route');
-for (const label of ['上下文预算（粗略）', '自然', '最大输出 token', '思维壤预算', '思维壤整理频率', '每个完成轮次自动整理一次', '手持种上限', '种子冷却轮数', '没东西聊时当前种子上限', '当前窗口种子召回上限', '总记忆召回上限', '查看向量状态']) {
+for (const label of ['上下文预算（估算 token）', '自然', '最大输出 token', '思维壤预算', '思维壤整理频率', '每个完成轮次自动整理一次', '手持种上限', '种子冷却轮数', '没东西聊时当前种子上限', '当前窗口种子召回上限', '总记忆召回上限', '查看向量状态']) {
   assert.ok(document.querySelector('#overlayRoot').textContent.includes(label));
 }
 for (const [name, value] of [

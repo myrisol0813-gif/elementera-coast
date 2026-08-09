@@ -13,6 +13,9 @@ import { createRooms } from './features/rooms.js';
 import { createSettings } from './features/settings.js';
 import { createShell } from './features/shell.js';
 import { createTools } from './features/tools.js';
+import { createCalendar } from './features/calendar.js';
+import { createContext } from './features/context.js';
+import { createToolroom } from './features/toolroom.js';
 
 const storage = createStorage();
 let toastTimer = 0;
@@ -39,10 +42,14 @@ const tools = createTools({ storage, router, toast, memory });
 const settings = createSettings({ storage, shell, chat, router, toast });
 const daily = createDaily({ storage, router, toast, chat });
 const letters = createLetters({ storage, chat, models, router, toast });
+const calendar = createCalendar({ router, toast });
+const context = createContext({ chat, router, toast });
+const toolroom = createToolroom({ chat, router });
 
 chat.setRunSettingsProvider(tools.getSettings);
 chat.setMemoryController(memory);
 chat.setRoomController(rooms);
+chat.setContextController(context);
 
 const controllers = Object.freeze({
   chat,
@@ -54,6 +61,9 @@ const controllers = Object.freeze({
   rooms,
   daily,
   letters,
+  calendar,
+  context,
+  toolroom,
 });
 
 document.addEventListener('click', async (event) => {
@@ -81,7 +91,7 @@ document.addEventListener('click', async (event) => {
     const danger = dangerConfirmationFor(`${namespace}:${name}`);
     if (danger && !await confirmDanger(danger)) return;
     await controller.handleAction(name, target, event);
-    if ((namespace === 'chat' || namespace === 'memory' || namespace === 'rooms') && name === 'open') {
+    if ((namespace === 'chat' || namespace === 'memory' || namespace === 'rooms' || namespace === 'calendar') && name === 'open') {
       shell.closeSidebar();
     }
   } catch (error) {
@@ -120,6 +130,7 @@ async function start() {
   rooms.start();
   models.start();
   await chat.start();
+  await Promise.all([calendar.start(), context.start()]);
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch((error) => {
       console.warn('[service-worker]', error);

@@ -13,7 +13,7 @@ const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 const headers = await read(join(pages, '_headers'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-24"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-25"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 
@@ -79,10 +79,10 @@ assert.deepEqual([mailboxSnake.readUInt32BE(16), mailboxSnake.readUInt32BE(20)],
 assert.equal(mailboxSnake[25], 6, 'mailbox illustration must retain an alpha channel');
 const defaultMyriAvatar = await readFile(join(pages, 'public/media/myri-default-avatar.jpg'));
 assert.deepEqual([...defaultMyriAvatar.subarray(0, 3)], [255, 216, 255], 'default Myri avatar must be a JPEG');
-for (const id of ['coastStatus', 'mainRooms', 'chatConversationSection', 'chatConversationList', 'modelQuickPicker', 'chatWindow', 'roomWindow', 'mainDogtalkComposer', 'roomDogtalkComposer']) {
+for (const id of ['coastStatus', 'mainRooms', 'chatConversationSection', 'chatConversationList', 'modelQuickPicker', 'chatWindow', 'roomWindow', 'mainDogtalkComposer', 'roomDogtalkComposer', 'calendarUnread', 'contextStatus']) {
   assert.equal((index.match(new RegExp(`id="${id}"`, 'g')) || []).length, 1, `${id} must have one owner`);
 }
-for (const label of ['同轨第', '距 8.12', '距 8.13', '无线电波的两端', '灯塔来信', '轨迹 / 记忆', '海岸日报', '主聊天窗口']) {
+for (const label of ['同轨第', '距 8.12', '距 8.13', '无线电波的两端', '灯塔来信', '轨迹 / 记忆', '海岸日报', '海岸日历', '主聊天窗口']) {
   assert.ok(index.includes(label), `missing UI contract: ${label}`);
 }
 assert.equal(/modules\/legacy|p3-chat-core|conversation-controller|shell-controller/.test(index), false);
@@ -90,7 +90,7 @@ assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(join(pages, 'service-worker.js'));
-assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-24';$/m);
+assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-25';$/m);
 assert.ok(worker.includes("url.pathname.startsWith('/api/')"));
 assert.ok(worker.includes("url.pathname.startsWith('/mcp')"));
 assert.ok(worker.includes("url.pathname.startsWith('/.well-known/')"));
@@ -125,6 +125,7 @@ const moduleFiles = [
   'content/letters.js',
   'features/chat-state.js', 'features/chat.js', 'features/daily-client.js', 'features/daily.js', 'features/dogtalk.js', 'features/letters.js',
   'features/memory.js', 'features/models.js', 'features/rooms.js', 'features/settings.js', 'features/shell.js', 'features/tools.js',
+  'features/calendar.js', 'features/context.js', 'features/toolroom.js',
 ].map((path) => join(moduleRoot, path));
 
 for (const file of moduleFiles) {
@@ -257,6 +258,14 @@ const memoryRecallSource = await read(join(repo, 'functions/memory-recall.js'));
 const memoryRouterSource = await read(join(repo, 'functions/memory-router.js'));
 const dogtalkStoreSource = await read(join(repo, 'functions/dogtalk-store.js'));
 const dogtalkApiSource = await read(join(repo, 'functions/dogtalk-api.js'));
+const calendarSchemaSource = await read(join(repo, 'functions/calendar-schema.js'));
+const calendarStoreSource = await read(join(repo, 'functions/calendar-store.js'));
+const calendarApiSource = await read(join(repo, 'functions/calendar-api.js'));
+const contextAssemblerSource = await read(join(repo, 'functions/context-assembler.js'));
+const contextManifestSource = await read(join(repo, 'functions/context-manifest.js'));
+const contextSchemaSource = await read(join(repo, 'functions/context-schema.js'));
+const toolRegistrySource = await read(join(repo, 'functions/tool-registry.js'));
+const toolRunSource = await read(join(repo, 'functions/tool-run-log.js'));
 const toolsSource = await read(join(moduleRoot, 'features/tools.js'));
 const mcpOwnerSource = (await Promise.all([
   'mcp-router.js',
@@ -361,10 +370,46 @@ assert.ok(dailyToolsSource.includes("name: 'create_moment'"));
 assert.ok(dailyToolsSource.includes("name: 'create_diary_draft'"));
 assert.ok(dailyToolsSource.includes("name: 'save_album_reference'"));
 assert.equal(dailyToolsSource.includes("name: 'create_diary'"), false, 'ordinary chat must use the draft-only diary tool');
-assert.ok(chatRouter.includes('DAILY_MODEL_TOOLS'));
-assert.ok(chatRouter.includes('executeDailyModelTool'));
-assert.ok(chatRouter.includes('DOGTALK_MODEL_TOOL'));
-assert.ok(chatRouter.includes('executeDogtalkModelTool'));
+assert.ok(chatRouter.includes('assembleContextForChat'));
+assert.equal(chatRouter.includes('DAILY_MODEL_TOOLS'), false, 'chat-router delegates model tools to the registry');
+assert.equal(chatRouter.includes('executeDailyModelTool'), false, 'chat-router cannot execute Daily tools directly');
+assert.equal(chatRouter.includes('DOGTALK_MODEL_TOOL'), false, 'chat-router delegates dogtalk tool exposure');
+assert.equal(chatRouter.includes('executeDogtalkModelTool'), false, 'chat-router cannot execute dogtalk directly');
+assert.ok(chatRouter.includes("executeRegisteredTool(env.COAST_CHAT_DB, 'dogtalk.save'"), 'dogtalk writes use the registry owner');
+assert.equal(chatRouter.includes('saveMysticDogtalkWithSnapshot'), false, 'chat-router cannot bypass the registry for dogtalk writes');
+for (const table of ['coast_calendar_events', 'coast_calendar_notes', 'coast_calendar_changes', 'coast_calendar_recurring_seeds']) {
+  assert.ok(calendarSchemaSource.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `missing calendar table: ${table}`);
+}
+for (const fragment of ['`${ROOT}/events`', '\\/api\\/calendar\\/day', '`${ROOT}/notes`', '`${ROOT}/env`', '`${ROOT}/unseen`']) {
+  assert.ok(calendarApiSource.includes(fragment), `missing calendar route fragment: ${fragment}`);
+}
+assert.ok(calendarStoreSource.includes('seedCalendarRecurringEvents'));
+for (const table of ['coast_worldbook_entries', 'coast_mode_cards', 'coast_context_state']) {
+  assert.ok(contextSchemaSource.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `missing context table: ${table}`);
+}
+assert.ok(contextAssemblerSource.includes('buildContextManifest'));
+assert.ok(contextAssemblerSource.includes('modelToolsForContext'));
+for (const ordered of [
+  "ambient.block",
+  "modeContextBlock(mode)",
+  "memoryBlock('thinking_soil'",
+  'worldbookBlock(worldbookBefore)',
+  "facetsBlock(facets)",
+  "memoryBlock('memory_recall'",
+  "key: 'worldbook_after_memory'",
+  "memoryBlock('cross_surface'",
+  "memoryBlock('dogtalk'",
+  'toolsBlock(registeredTools)',
+]) assert.ok(contextAssemblerSource.includes(ordered), `context assembler is missing ordered block: ${ordered}`);
+assert.ok(contextManifestSource.includes('当前用户输入'));
+assert.ok(toolRegistrySource.includes("tool_key: 'daily.create_moment'"));
+assert.ok(toolRegistrySource.includes("'calendar.create': 'calendar_create'"));
+assert.ok(toolRunSource.includes('mailbox_content_redacted'));
+assert.ok(toolRunSource.includes('dogtalk_content_redacted'));
+assert.ok(memoryStoreSource.includes("'coast-memory-facets-v1'"));
+assert.equal(/bridgeContext|legacyContextAdapter|temporaryContextCompat|fallbackOldAssembler|MutationObserver/.test(
+  [contextAssemblerSource, contextManifestSource, toolRegistrySource, calendarStoreSource].join('\n'),
+), false, 'new context architecture cannot contain bridge or fallback owners');
 for (const contract of [
   "const TYPE = 'xiaohan_mystic_dogtalk'",
   "const OWNER = 'xiaohan'",
@@ -466,13 +511,13 @@ assert.ok(embeddingSource.includes("`${pocket.id}:conversation`"));
 assert.ok(embeddingSource.includes("`${pocket.id}:global`"));
 assert.ok(memoryRouterSource.includes('upsertSoilPocketCandidates'));
 assert.ok(memorySource.includes('确认落袋'));
-assert.ok(chatRouter.includes('buildMemoryContext'));
-assert.ok(chatRouter.includes("role: 'system'"));
+assert.ok(contextAssemblerSource.includes('buildMemoryContext'));
+assert.ok(contextAssemblerSource.includes("role: 'system'"));
 assert.ok(chatRouter.includes("'/api/chat/landing-letter'"));
 assert.ok(schemaSource.includes('conversation_landing_letters'));
 assert.ok(chatSource.includes('branch.user && !branch.user.hidden'));
 assert.equal(/memory_edges|sleep|dream|梦边|自动核心/.test(memoryStoreSource + memoryRecallSource + memoryRouterSource), false);
-for (const label of ['上下文预算（粗略）', '最大输出 token', '思维壤预算', '思维壤整理频率', '每个完成轮次自动整理一次', '手持种上限', '种子冷却轮数', '没东西聊时当前种子上限', '当前窗口种子召回上限', '总种子召回上限', '当前窗口记忆召回上限', '总记忆召回上限', '清空当前思维壤', '打开待确认袋', '查看向量状态']) {
+for (const label of ['上下文预算（估算 token）', '最大输出 token', '思维壤预算', '思维壤整理频率', '每个完成轮次自动整理一次', '手持种上限', '种子冷却轮数', '没东西聊时当前种子上限', '当前窗口种子召回上限', '总种子召回上限', '当前窗口记忆召回上限', '总记忆召回上限', '清空当前思维壤', '打开待确认袋', '查看向量状态']) {
   assert.ok(toolsSource.includes(label), `API cottage is missing: ${label}`);
 }
 assert.ok(chatRouter.includes('budgetChatMessages'));

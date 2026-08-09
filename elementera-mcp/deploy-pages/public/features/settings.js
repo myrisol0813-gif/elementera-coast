@@ -37,6 +37,7 @@ export function createSettings({ storage, shell, chat, router, toast }) {
     subtitle: 'Myri workspace · local writable notes',
     className: 'settings-panel',
     body: group('Myri', row('Myri 画像', '头像、描述、偏好', 'settings:myri-profile') + row('Myri 气泡', '记录视觉偏好', 'settings:myri-bubble') + row('桌面便签', '小蛇书桌本地便签', 'settings:note'))
+      + group('上下文与工具', row('Context Inspector', '目录、情境面、召回、预算 trace', 'context:inspector') + row('当前情境', '同一个 Myri 的任务姿态', 'context:modes') + row('海岸词典', '触发式项目概念与测试命中', 'context:worldbook') + row('工具运行记录', '成功、失败与隐私摘要', 'toolroom:open'))
       + group('施工', row('施工状态', '版本、存储与 owner', 'settings:work') + row('本地诊断', '聊天与浏览器状态', 'settings:diagnostics') + row('System Prompt 草稿', '本地草稿，不发送不生效', 'settings:system') + row('运行水闸', '请求预算、召回预留、清理', 'tools:run-control') + row('API 免费沙盒测试', 'OpenRouter free endpoint · 不写入聊天', 'tools:sandbox')),
   }));
 

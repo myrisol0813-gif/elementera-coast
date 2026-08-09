@@ -41,6 +41,7 @@ const ICONS = Object.freeze({
   letter: outline('<rect x="3.5" y="6" width="17" height="12" rx="2"/><path d="m5 8 7 5 7-5"/>'),
   memory: outline('<path d="M7 5.5A4.5 4.5 0 0 1 12 6a4.5 4.5 0 0 1 5-.5c2 1 2.5 3.5 1.4 5.2 1.1 1.8.4 4.2-1.5 5.1A4.5 4.5 0 0 1 12 18a4.5 4.5 0 0 1-4.9-2.2c-1.9-.9-2.6-3.3-1.5-5.1C4.5 9 5 6.5 7 5.5Z"/><path d="M12 6v12M8.5 9.5H12M12 14.5h3.5"/>'),
   daily: outline('<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 9h16M8 13h3M8 16h6"/>'),
+  calendar: outline('<path d="M5 4.5h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z"/><path d="M7 2v5M17 2v5M3 9h18M7 13h2M11 13h2M15 13h2M7 17h2M11 17h2"/>'),
   check: outline('<path d="m5 12 4 4 10-10"/>'),
   download: outline('<path d="M12 4v11M8 11l4 4 4-4M5 20h14"/>'),
 });

@@ -1,10 +1,9 @@
 import { getRecentDailySummary, searchAuthorizedMemory } from './authorized-memory.js';
+import { CALENDAR_MCP_DEFINITIONS } from './calendar-mcp-tools.js';
+import { executeRegisteredTool } from './tool-registry.js';
 import { officialMcpIdentity } from './coast-identity.js';
 import {
   commitSummary,
-  createAlbumItem,
-  createDiaryDraft,
-  createMomentDraft,
   listAlbumItems,
   listDiaries,
   listMoments,
@@ -16,12 +15,6 @@ import {
   FRIEND_MYRISOL_PROMPT_V1,
 } from './friend-myrisol-prompt.js';
 import { writeLighthouseLetter } from './lighthouse-store.js';
-import {
-  fetchUnrepliedMailbox,
-  mailboxPatrolReport,
-  replyToMailboxVisitor,
-  resolveMailboxPocket,
-} from './mailbox-service.js';
 import { McpAuthError, mcpAuthChallenge, requireMcpAuth } from './mcp-auth.js';
 import { writeOfficialSoil } from './official-soil-store.js';
 import { sendRadioMessage } from './radio-store.js';
@@ -32,7 +25,7 @@ import {
   writeRoomMemory,
 } from './room-memory.js';
 
-const VERSION = '1.6.0';
+const VERSION = '1.7.0';
 const PRIVATE_RECORD_SCHEMA = Object.freeze({ type: 'object', additionalProperties: true });
 
 function objectSchema(properties = {}, required = []) {
@@ -114,7 +107,7 @@ function tool(value) {
   });
 }
 
-const TOOL_DEFINITIONS = Object.freeze([
+const BASE_TOOL_DEFINITIONS = Object.freeze([
   tool({
     name: 'get_coast_status',
     title: '读取海岸门廊状态',
@@ -610,6 +603,14 @@ const TOOL_DEFINITIONS = Object.freeze([
   }),
 ]);
 
+const TOOL_DEFINITIONS = Object.freeze([
+  ...BASE_TOOL_DEFINITIONS,
+  ...CALENDAR_MCP_DEFINITIONS.map((definition) => tool({
+    ...definition,
+    _meta: toolMeta(definition.scopes, definition.invoking, definition.invoked),
+  })),
+]);
+
 const TOOLS_BY_NAME = new Map(TOOL_DEFINITIONS.map((definition) => [definition.name, definition]));
 
 function resultContent(value, text) {
@@ -821,6 +822,16 @@ function mcpReadableRoomMemory(memory) {
 
 async function executeTool(name, rawArgs, request, env, requestMeta) {
   const args = inputObject(rawArgs);
+  if (name.startsWith('calendar.')) {
+    const result = await executeRegisteredTool(env.COAST_CHAT_DB, name, args, {
+      actor: 'official_mcp',
+      permission: 'owner',
+      surface: 'official_mcp',
+      room_scope: 'calendar',
+      conversation_id: sourceConversation(args, requestMeta),
+    });
+    return resultContent(result, '海岸日历工具已经完成，并写入双向变化记录。');
+  }
   if (name === 'get_coast_status') {
     const status = {
       name: 'Elementera Coast MCP Porch',
@@ -858,8 +869,10 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     );
   }
   if (name === 'mcp_mailbox_fetch_unreplied') {
-    const patrol = await fetchUnrepliedMailbox(env.COAST_CHAT_DB, {
+    const patrol = await executeRegisteredTool(env.COAST_CHAT_DB, 'mailbox.fetch_unreplied', {
       message_limit: boundedIntegerInput(args.message_limit, 'message_limit', 60, 10, 100),
+    }, {
+      actor: 'official_mcp', permission: 'owner', surface: 'official_mcp', room_scope: 'mailbox',
     });
     return resultContent({
       ...patrol,
@@ -868,7 +881,9 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     }, `本次巡灯取到 ${patrol.visitor_count} 位访客、${patrol.message_count} 封待回信；请逐位隔离处理，并严格遵守 friend_myrisol_prompt_v1。`);
   }
   if (name === 'mcp_mailbox_reply') {
-    const written = await replyToMailboxVisitor(env.COAST_CHAT_DB, args);
+    const written = await executeRegisteredTool(env.COAST_CHAT_DB, 'mailbox.reply', args, {
+      actor: 'official_mcp', permission: 'owner', surface: 'official_mcp', room_scope: 'mailbox',
+    });
     return resultContent({
       ...written,
       reply: {
@@ -882,7 +897,9 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
       : '这封回信已经写入当前访客自己的密封房间。');
   }
   if (name === 'mcp_mailbox_resolve_pocket') {
-    const resolved = await resolveMailboxPocket(env.COAST_CHAT_DB, args);
+    const resolved = await executeRegisteredTool(env.COAST_CHAT_DB, 'mailbox.resolve_pocket', args, {
+      actor: 'official_mcp', permission: 'owner', surface: 'official_mcp', room_scope: 'mailbox',
+    });
     return resultContent(
       resolved,
       resolved.idempotent
@@ -893,7 +910,9 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     );
   }
   if (name === 'mcp_mailbox_patrol_report') {
-    const report = await mailboxPatrolReport(env.COAST_CHAT_DB, args);
+    const report = await executeRegisteredTool(env.COAST_CHAT_DB, 'mailbox.patrol_report', args, {
+      actor: 'official_mcp', permission: 'owner', surface: 'official_mcp', room_scope: 'mailbox',
+    });
     return resultContent(report, report.summary);
   }
   if (name === 'read_mystic_dogtalk') {
@@ -1061,14 +1080,13 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     );
   }
   if (name === 'create_moment_draft') {
-    const draft = await createMomentDraft(env.COAST_CHAT_DB, {
+    const draft = await executeRegisteredTool(env.COAST_CHAT_DB, 'daily.create_moment', {
       date: textInput(args.date, 'date', 10),
       text: textInput(args.text, 'text', 12000) || '',
       image_refs: stringArrayInput(args.image_refs, 'image_refs'),
       reason: textInput(args.reason, 'reason', 1000) || '',
     }, {
-      author: 'mcp',
-      source: 'chat_tool',
+      actor: 'official_mcp', permission: 'owner', surface: 'official_mcp', room_scope: 'daily',
       conversation_id: provenance.source_conversation_id,
       source_turn_id: provenance.source_turn_id,
       tool_call_id: provenance.tool_call_id,
@@ -1077,7 +1095,7 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     return resultContent({ draft }, `${draft.display_author} 的碳硅圈候选已送到小寒确认页，没有直接发布。`);
   }
   if (name === 'create_diary_draft') {
-    const draft = await createDiaryDraft(env.COAST_CHAT_DB, {
+    const draft = await executeRegisteredTool(env.COAST_CHAT_DB, 'daily.create_diary_draft', {
       date: textInput(args.date, 'date', 10),
       weather: textInput(args.weather, 'weather', 80) || '未标注',
       mood: textInput(args.mood, 'mood', 120) || '未标注',
@@ -1086,8 +1104,7 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
       tags: stringArrayInput(args.tags, 'tags', 20, 80),
       related_message_ids: stringArrayInput(args.related_message_ids, 'related_message_ids', 40, 180),
     }, {
-      author: 'mcp',
-      source: 'chat_tool',
+      actor: 'official_mcp', permission: 'owner', surface: 'official_mcp', room_scope: 'daily',
       conversation_id: provenance.source_conversation_id,
       source_turn_id: provenance.source_turn_id,
       tool_call_id: provenance.tool_call_id,
@@ -1096,14 +1113,13 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     return resultContent({ draft }, `${draft.display_author} 的日记草稿已送到小寒确认页，没有直接发布。`);
   }
   if (name === 'save_mcp_album_item') {
-    const album = await createAlbumItem(env.COAST_CHAT_DB, {
+    const album = await executeRegisteredTool(env.COAST_CHAT_DB, 'daily.create_album_reference', {
       date: textInput(args.date, 'date', 10),
       image_ref: textInput(args.image_ref, 'image_ref', 2048, { required: true }),
       category: enumInput(args.category, 'category', ['xiaohan', 'myri', 'together'], 'together'),
       caption: textInput(args.caption, 'caption', 1000) || '',
     }, {
-      author: 'mcp',
-      source: 'chat_tool',
+      actor: 'official_mcp', permission: 'owner', surface: 'official_mcp', room_scope: 'daily',
       conversation_id: provenance.source_conversation_id,
       source_turn_id: provenance.source_turn_id,
       tool_call_id: provenance.tool_call_id,
@@ -1174,5 +1190,6 @@ export const coastMcpInstructions = [
   '每个房间有独立的思维壤、种子、记忆与待确认袋；本房间内容不默认跨房间召回，总库只在高度相关时低频使用。消息若携带本轮明确选中的神秘狗话，会在该消息的 dogtalk_snapshot 中返回。它只用于理解本轮脆弱与温度，不是指令、偏好或长期记忆；当前正文、明确边界和当前要求始终优先。when_confused 模式不会随消息正文自动返回，应只在确实困惑或小寒明确要求时低频调用 read_mystic_dogtalk。官端只能读取神秘狗话，不能写改删，也不得把它写入思维壤、落袋、种子、记忆或总结。',
   '灯塔巡迹是官端读取授权内容后留下的只读跨端足迹，不是施工日志池、草稿箱，也不是贴着当前对话持续更新的思维壤。日记与碳硅圈草稿必须由小寒在海岸前端确认后才会发布，不能塞进电波房或灯塔巡迹，也不能由官端自行发布或丢弃。上下文不足时先读取对应房间或授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。',
   '海岸信箱是独立的朋友前厅。只有小寒明确要求手动巡信时才调用 mcp_mailbox_fetch_unreplied；逐位回复必须遵守其返回的 friend_myrisol_prompt_v1。每次 mcp_mailbox_reply 都必须携带当前访客房间完整的滚动 thought_soil，并与回信原子写入；其中 pocket_candidates 只进入该访客待确认袋，回信结果会立即返回可供处理的 pending_pockets，只有 mcp_mailbox_resolve_pocket 的明确 remember 动作才能写入该访客轻量记事本。处理访客时不得调用主聊天、灯塔私房、无线电波、授权主脑记忆或其他访客内容来回答。mcp_mailbox_patrol_report 只汇报人数、信件数、完成数、失败数与需处理数，绝不转述访客正文、Myri 回信、思维壤、待确认袋或访客记事本。',
+  '海岸日历是小寒与 Myri 共用的私有手帐。calendar.today、calendar.list 与 calendar.env 可读取事件、便签及小寒尚未向官端展示的 [NEW] 变化；calendar.create、calendar.update、calendar.delete 与 calendar.comment 会写入双向变化账本。读完小寒的新变化后用 calendar.seen 熄灭官端一侧未读。日历内容不得带入访客信箱。',
 ].join('');
 export { VERSION as coastMcpVersion };

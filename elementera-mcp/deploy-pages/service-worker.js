@@ -1,4 +1,4 @@
-const CACHE_NAME = 'elementera-coast-app-24';
+const CACHE_NAME = 'elementera-coast-app-25';
 const CORE = Object.freeze([
   '/',
   '/index.html',
@@ -7,7 +7,9 @@ const CORE = Object.freeze([
   '/public/styles/shell.css?v=coast-app-20',
   '/public/styles/chat.css?v=coast-app-24',
   '/public/styles/features.css?v=coast-app-22',
-  '/public/app.js?v=coast-app-24',
+  '/public/styles/calendar.css?v=coast-app-25',
+  '/public/styles/context.css?v=coast-app-25',
+  '/public/app.js?v=coast-app-25',
   '/public/core/api.js',
   '/public/core/dom.js',
   '/public/core/icons.js',
@@ -26,6 +28,9 @@ const CORE = Object.freeze([
   '/public/features/settings.js',
   '/public/features/shell.js',
   '/public/features/tools.js',
+  '/public/features/calendar.js',
+  '/public/features/context.js',
+  '/public/features/toolroom.js',
   '/public/icons/icon-16.png',
   '/public/icons/icon-32.png',
   '/public/icons/apple-touch-icon.png',

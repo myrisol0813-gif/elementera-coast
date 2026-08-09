@@ -1,0 +1,416 @@
+.calendar-sidebar-entry > span:nth-child(2) {
+  min-width: 0;
+  flex: 1;
+}
+
+.sidebar-count {
+  min-width: 20px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 10px;
+  text-align: center;
+}
+
+.calendar-panel .feature-body {
+  background:
+    radial-gradient(circle at 8% 0, color-mix(in srgb, var(--accent) 9%, transparent), transparent 30%),
+    var(--bg);
+}
+
+.calendar-today-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 0 0 16px;
+  padding: 13px 15px;
+  border: 1px solid color-mix(in srgb, var(--accent) 23%, var(--line));
+  border-radius: 17px;
+  background: color-mix(in srgb, var(--surface-raised) 92%, var(--accent));
+  text-align: left;
+  cursor: pointer;
+}
+
+.calendar-today-strip small,
+.calendar-today-strip strong {
+  display: block;
+}
+
+.calendar-today-strip small {
+  margin-bottom: 4px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.calendar-today-strip strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-book {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface-raised);
+  box-shadow: 0 12px 35px color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+.calendar-month-head {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
+  align-items: center;
+  padding: 10px 8px 7px;
+}
+
+.calendar-month-head h2 {
+  margin: 0;
+  font-family: ui-serif, Georgia, "Songti SC", serif;
+  font-size: 19px;
+  font-weight: 650;
+  text-align: center;
+}
+
+.calendar-month-head button {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  font-size: 26px;
+  cursor: pointer;
+}
+
+.calendar-month-head button:hover {
+  background: var(--surface-soft);
+}
+
+.calendar-weekdays,
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.calendar-weekdays {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+.calendar-weekdays span {
+  padding: 7px 0;
+}
+
+.calendar-day-cell {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-width: 0;
+  min-height: 78px;
+  padding: 7px 5px;
+  border: 0;
+  border-right: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.calendar-day-cell:nth-child(7n) {
+  border-right: 0;
+}
+
+.calendar-day-cell.is-outside {
+  color: var(--muted);
+  opacity: .52;
+}
+
+.calendar-day-cell.is-today .calendar-day-number {
+  width: 23px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  text-align: center;
+}
+
+.calendar-day-number {
+  position: relative;
+  display: inline-block;
+  justify-self: start;
+  min-width: 22px;
+  padding: 3px;
+  font-size: 11px;
+}
+
+.calendar-new-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 3px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.calendar-day-number .calendar-new-dot {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  margin: 0;
+}
+
+.calendar-cell-events {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.calendar-chip {
+  overflow: hidden;
+  padding: 2px 4px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent) 11%, var(--surface-soft));
+  color: var(--text-soft);
+  font-size: 8px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-chip.type-birthday,
+.calendar-chip.type-anniversary {
+  background: color-mix(in srgb, #e8899f 17%, var(--surface-soft));
+}
+
+.calendar-chip.type-construction,
+.calendar-chip.type-work {
+  background: color-mix(in srgb, #5b8fc9 17%, var(--surface-soft));
+}
+
+.calendar-cell-events small {
+  padding-left: 3px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.calendar-legend {
+  margin: 14px 4px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.calendar-day-events,
+.calendar-note-board {
+  margin-bottom: 24px;
+}
+
+.calendar-day-events > h2,
+.calendar-section-head h2 {
+  margin: 0 0 10px;
+  font-family: ui-serif, Georgia, "Songti SC", serif;
+  font-size: 18px;
+}
+
+.calendar-event {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-left: 4px solid color-mix(in srgb, var(--accent) 72%, var(--line));
+  border-radius: 15px;
+  background: var(--surface-raised);
+}
+
+.calendar-event.type-birthday,
+.calendar-event.type-anniversary {
+  border-left-color: #d97991;
+}
+
+.calendar-event.type-work,
+.calendar-event.type-construction {
+  border-left-color: #5a89bd;
+}
+
+.calendar-event-main {
+  display: block;
+  min-width: 0;
+  padding: 13px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.calendar-event-main small,
+.calendar-event-main strong,
+.calendar-event-main p {
+  display: block;
+}
+
+.calendar-event-main small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.calendar-event-main strong {
+  margin-top: 4px;
+  font-size: 15px;
+}
+
+.calendar-event-main p {
+  margin: 6px 0 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.calendar-delete,
+.calendar-seed-label {
+  margin-right: 10px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.calendar-delete {
+  color: var(--danger);
+  cursor: pointer;
+}
+
+.calendar-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.calendar-section-head small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.calendar-notes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+  margin-bottom: 14px;
+}
+
+.calendar-note {
+  min-height: 112px;
+  padding: 14px;
+  border-radius: 3px 13px 5px 12px;
+  background: #f3e7bd;
+  color: #403824;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, .11);
+  transform: rotate(var(--note-rotation));
+}
+
+.calendar-note.note-tide { background: #d7e8ed; color: #25383d; }
+.calendar-note.note-rose { background: #f0d9df; color: #432c33; }
+.calendar-note.note-gold { background: #ead79f; color: #3f331c; }
+
+.calendar-note p {
+  margin: 0;
+  font-family: ui-serif, Georgia, "Songti SC", serif;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.calendar-note footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+  font-size: 9px;
+  opacity: .66;
+}
+
+.calendar-note footer button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.calendar-note-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 15px;
+  background: var(--surface-soft);
+}
+
+.calendar-note-form textarea,
+.calendar-note-form select,
+.calendar-note-form button,
+.calendar-editor select {
+  border: 0;
+  border-radius: 11px;
+  background: var(--surface-raised);
+}
+
+.calendar-note-form textarea {
+  min-width: 0;
+  padding: 10px;
+  resize: vertical;
+}
+
+.calendar-note-form select,
+.calendar-note-form button {
+  padding: 8px 10px;
+}
+
+.calendar-note-form button {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  cursor: pointer;
+}
+
+.calendar-check {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.calendar-check input {
+  width: 18px;
+  min-height: 18px;
+}
+
+.calendar-editor select {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 13px;
+}
+
+.calendar-empty {
+  padding: 18px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 520px) {
+  .calendar-panel .feature-body { padding-inline: 9px; }
+  .calendar-day-cell { min-height: 62px; padding: 5px 3px; }
+  .calendar-chip { font-size: 7px; }
+  .calendar-notes { grid-template-columns: 1fr; }
+  .calendar-note-form { grid-template-columns: minmax(0, 1fr) auto; }
+  .calendar-note-form textarea { grid-column: 1 / -1; }
+}

@@ -24,6 +24,10 @@ function localDateKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+function localDateTimeKey(date = new Date()) {
+  return `${localDateKey(date)} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
 export function shortModelName(modelId) {
   const bare = String(modelId || '').split('/').at(-1)?.replace(/:free$/i, '') || '';
   if (!bare) return '';
@@ -224,6 +228,7 @@ export function createChat({ storage, toast, dogtalk }) {
     generation: null,
     memory: null,
     rooms: null,
+    context: null,
     profileListeners: new Set(),
     runSettings: () => storage.read().runControl,
   };
@@ -477,6 +482,7 @@ export function createChat({ storage, toast, dogtalk }) {
       setStatus('');
       renderMessages(conversationId);
       runtime.memory?.onConversationChanged(conversationId)?.catch((error) => console.warn('[memory:conversation]', error));
+      runtime.context?.onConversationChanged(conversationId)?.catch((error) => console.warn('[context:conversation]', error));
       dogtalk?.mount(ui.dogtalk, {
         room_scope: 'conversation',
         conversation_id: conversationId,
@@ -598,6 +604,7 @@ export function createChat({ storage, toast, dogtalk }) {
       conversation_id: conversationId,
       source_turn_id: turnId,
       local_date: localDateKey(),
+      local_datetime: localDateTimeKey(),
       model: modelId,
       messages: contextMessages(appended.state, turnId),
       recent_entry_ids: requestContext.recentEntryIds,
@@ -616,6 +623,10 @@ export function createChat({ storage, toast, dogtalk }) {
         const selected = await requestChatStream(payload, {
           signal: controller.signal,
           onEvent(item) {
+            if (item.event === 'context_debug') {
+              runtime.context?.captureDebug(item.data);
+              return;
+            }
             if (item.event === 'meta') {
               streamModelId = String(item.data?.model || '').slice(0, 180);
               patchGeneratedVariant(conversationId, turnId, appended, {
@@ -674,6 +685,7 @@ export function createChat({ storage, toast, dogtalk }) {
           body: JSON.stringify(payload),
         });
         finishReason = String(data?.finish_reason || '');
+        runtime.context?.captureDebug(data.context_debug);
         patch = {
           content: data?.message?.content || '模型没有返回文本。',
           errorDetail: '',
@@ -753,10 +765,13 @@ export function createChat({ storage, toast, dogtalk }) {
           model: modelId,
           letter_text: letterText,
           recent_entry_ids: requestContext.recentEntryIds,
+          local_date: localDateKey(),
+          local_datetime: localDateTimeKey(),
           settings: requestContext.settings,
         }),
       });
       setHistory(conversationId, data.history || {});
+      runtime.context?.captureDebug(data.context_debug);
       if (data.conversation) {
         runtime.conversations = runtime.conversations.map((item) => item.id === conversationId ? data.conversation : item);
         renderConversationList();
@@ -1070,6 +1085,7 @@ export function createChat({ storage, toast, dogtalk }) {
     getCurrentConversationId: () => runtime.currentId,
     getCurrentConversation: () => runtime.conversations.find((item) => item.id === runtime.currentId) || null,
     getProfile: () => runtime.profile,
+    getRunSettings: () => runtime.runSettings() || {},
     sendLandingLetter,
     updateProfile,
     importFlatMessages: async (messages) => {
@@ -1091,6 +1107,9 @@ export function createChat({ storage, toast, dogtalk }) {
     },
     setRoomController(controller) {
       runtime.rooms = controller;
+    },
+    setContextController(controller) {
+      runtime.context = controller;
     },
   });
 }
