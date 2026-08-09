@@ -23,6 +23,8 @@ const PUBLIC_MAILBOX_ASSETS = new Set([
   '/public/core/danger.js',
   '/public/core/dom.js',
   '/public/core/icons.js',
+  '/public/media/mailbox-snake.png',
+  '/public/media/myri-default-avatar.jpg',
   '/public/styles/tokens.css',
   '/public/styles/shell.css',
   '/public/styles/chat.css',

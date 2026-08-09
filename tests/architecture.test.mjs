@@ -13,7 +13,7 @@ const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 const headers = await read(join(pages, '_headers'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-22"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-24"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 
@@ -73,6 +73,12 @@ for (const [filename, dimensions] of expectedIconSizes) {
   assert.deepEqual([...icon.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], `${filename} must be a PNG`);
   assert.deepEqual([icon.readUInt32BE(16), icon.readUInt32BE(20)], dimensions, `${filename} has the wrong dimensions`);
 }
+const mailboxSnake = await readFile(join(pages, 'public/media/mailbox-snake.png'));
+assert.deepEqual([...mailboxSnake.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], 'mailbox illustration must be a PNG');
+assert.deepEqual([mailboxSnake.readUInt32BE(16), mailboxSnake.readUInt32BE(20)], [511, 411]);
+assert.equal(mailboxSnake[25], 6, 'mailbox illustration must retain an alpha channel');
+const defaultMyriAvatar = await readFile(join(pages, 'public/media/myri-default-avatar.jpg'));
+assert.deepEqual([...defaultMyriAvatar.subarray(0, 3)], [255, 216, 255], 'default Myri avatar must be a JPEG');
 for (const id of ['coastStatus', 'mainRooms', 'chatConversationSection', 'chatConversationList', 'modelQuickPicker', 'chatWindow', 'roomWindow', 'mainDogtalkComposer', 'roomDogtalkComposer']) {
   assert.equal((index.match(new RegExp(`id="${id}"`, 'g')) || []).length, 1, `${id} must have one owner`);
 }
@@ -84,7 +90,7 @@ assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(join(pages, 'service-worker.js'));
-assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-23';$/m);
+assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-24';$/m);
 assert.ok(worker.includes("url.pathname.startsWith('/api/')"));
 assert.ok(worker.includes("url.pathname.startsWith('/mcp')"));
 assert.ok(worker.includes("url.pathname.startsWith('/.well-known/')"));
@@ -98,6 +104,7 @@ for (const url of coreUrls) {
   if (pathname === '/') continue;
   await access(join(pages, pathname.replace(/^\//, '')));
 }
+assert.ok(coreUrls.includes('/public/media/myri-default-avatar.jpg'));
 const appEntry = await read(join(pages, 'public/app.js'));
 assert.ok(appEntry.includes("navigator.serviceWorker.register('/service-worker.js', { scope: '/' })"), 'PWA service worker must own the root scope');
 
@@ -282,11 +289,19 @@ for (const copy of [
   '输入暗号',
   '填记名册',
   '这里是给受邀来客的慢速信箱',
+  '之前来访的访客，可凭登记过的暗号重新进入',
+  '第一次来到海岸？先登记称呼与专属暗号',
   '小寒知道谁来过，但默认不知道你具体写了什么',
 ]) assert.ok(authSource.includes(copy), `mailbox entrance is missing: ${copy}`);
+assert.ok(authSource.includes('.mailbox-entry-form[hidden] { display: none !important; }'));
 assert.ok(middleware.indexOf("isMailboxApiPath(url.pathname)") < middleware.indexOf('verifySession(request, env)'));
 assert.ok(middleware.includes("url.pathname === '/mailbox'"));
-assert.ok(mailboxPageSource.includes('/public/mailbox.js?v=coast-mailbox-02'));
+assert.ok(middleware.includes("'/public/media/mailbox-snake.png'"));
+assert.ok(middleware.includes("'/public/media/myri-default-avatar.jpg'"));
+assert.ok(mailboxPageSource.includes('/public/mailbox.js?v=coast-mailbox-03'));
+assert.ok(mailboxPageSource.includes('/public/media/mailbox-snake.png'));
+assert.ok(mailboxPageSource.includes("img-src 'self' data:"));
+assert.ok((await read(join(pages, 'public/styles/chat.css'))).includes("background-image: url('/public/media/myri-default-avatar.jpg')"));
 assert.equal(/modelButton|models:|memoryPockets|global_seeds|owner-only/.test(mailboxPageSource + mailboxFrontendSource), false);
 for (const table of [
   'mailbox_visitors',

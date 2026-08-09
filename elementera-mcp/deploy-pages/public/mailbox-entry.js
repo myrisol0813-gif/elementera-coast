@@ -1,22 +1,30 @@
 const entryButton = document.querySelector('#mailboxEntryButton');
 const modal = document.querySelector('#mailboxEntryModal');
 const closeButton = document.querySelector('#mailboxEntryClose');
+const entryTitle = document.querySelector('#mailbox-entry-title');
 const choices = document.querySelector('#mailboxEntryChoices');
 const loginForm = document.querySelector('#mailboxLoginForm');
 const registerForm = document.querySelector('#mailboxRegisterForm');
 
 function setPane(name = 'choices') {
+  modal.dataset.mailboxPane = name;
   choices.hidden = name !== 'choices';
   loginForm.hidden = name !== 'login';
   registerForm.hidden = name !== 'register';
+  if (entryTitle) entryTitle.textContent = {
+    choices: '海岸信箱',
+    login: '输入暗号',
+    register: '填记名册',
+  }[name] || '海岸信箱';
   modal.querySelectorAll('[data-mailbox-error]').forEach((node) => { node.textContent = ''; });
   const form = name === 'login' ? loginForm : name === 'register' ? registerForm : null;
-  form?.querySelector('input')?.focus();
+  if (modal.open) (form?.querySelector('input') || choices.querySelector('[data-mailbox-choice]'))?.focus();
 }
 
 function openEntry() {
   setPane('choices');
   modal.showModal();
+  choices.querySelector('[data-mailbox-choice]')?.focus();
 }
 
 async function request(path, body) {

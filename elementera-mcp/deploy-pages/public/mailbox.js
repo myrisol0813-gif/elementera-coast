@@ -84,7 +84,7 @@ function visitorMessage(message) {
 
 function myriMessage(message) {
   return `<article class="message assistant mailbox-myri-message" data-message-id="${escapeAttribute(message.id)}">
-    <div class="avatar mailbox-myri-avatar" aria-hidden="true">≋</div>
+    <div class="avatar mailbox-myri-avatar" aria-hidden="true"></div>
     <div class="content">
       <div class="assistant-text">${formatRichText(message.content)}</div>
       <small class="mailbox-message-meta">Myrisol · ${escapeHtml(timeLabel(message.created_at))}</small>

@@ -136,7 +136,7 @@
 
 .mailbox-myri-avatar {
   border-color: color-mix(in srgb, #f2b84b 38%, var(--line));
-  background: color-mix(in srgb, #fff0d8 56%, var(--surface-soft));
+  background-color: color-mix(in srgb, #fff0d8 56%, var(--surface-soft));
   color: #b57b17;
   cursor: default;
 }
@@ -154,13 +154,16 @@
 }
 
 .mailbox-status-bar {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   width: min(760px, calc(100% - 28px));
+  min-height: 96px;
   margin: 0 auto 5px;
-  padding: 10px 13px;
+  padding: 12px 132px 12px 14px;
+  overflow: hidden;
   border: 1px solid color-mix(in srgb, #f2b84b 20%, var(--line));
   border-radius: 14px;
   background: color-mix(in srgb, #fff0d8 28%, var(--surface-soft));
@@ -185,7 +188,18 @@
 
 .mailbox-status-bar button {
   background: var(--surface-raised);
+  justify-self: start;
   white-space: nowrap;
+}
+
+.mailbox-status-illustration {
+  position: absolute;
+  right: -4px;
+  bottom: -9px;
+  width: 132px;
+  height: auto;
+  pointer-events: none;
+  user-select: none;
 }
 
 .mailbox-composer {
@@ -294,6 +308,12 @@
   .mailbox-status-bar {
     width: calc(100% - 22px);
     margin-bottom: 3px;
+    padding-right: 112px;
+  }
+
+  .mailbox-status-illustration {
+    right: -8px;
+    width: 116px;
   }
 }
 
@@ -308,11 +328,10 @@
   }
 
   .mailbox-status-bar {
-    grid-template-columns: 1fr;
-    gap: 8px;
+    padding-right: 102px;
   }
 
-  .mailbox-status-bar button {
-    justify-self: start;
+  .mailbox-status-illustration {
+    width: 106px;
   }
 }

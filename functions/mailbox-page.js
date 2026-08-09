@@ -11,9 +11,9 @@ const PAGE = `<!doctype html>
   <title>海岸信箱 · Elementera Coast</title>
   <link rel="stylesheet" href="/public/styles/tokens.css?v=coast-app-20">
   <link rel="stylesheet" href="/public/styles/shell.css?v=coast-app-20">
-  <link rel="stylesheet" href="/public/styles/chat.css?v=coast-app-20">
+  <link rel="stylesheet" href="/public/styles/chat.css?v=coast-app-24">
   <link rel="stylesheet" href="/public/styles/features.css?v=coast-app-22">
-  <link rel="stylesheet" href="/public/styles/mailbox.css?v=coast-mailbox-02">
+  <link rel="stylesheet" href="/public/styles/mailbox.css?v=coast-mailbox-03">
 </head>
 <body class="mailbox-body">
   <div id="mailboxApp" class="app-shell mailbox-shell">
@@ -50,6 +50,7 @@ const PAGE = `<!doctype html>
             <small id="mailboxStatusMeta">小寒知道谁来过，但默认不知道你具体写了什么。</small>
           </div>
           <button id="mailboxRefreshButton" type="button">查看回信</button>
+          <img class="mailbox-status-illustration" src="/public/media/mailbox-snake.png" alt="" aria-hidden="true">
         </section>
 
         <form id="mailboxComposer" class="composer composer--room mailbox-composer" autocomplete="off">
@@ -74,7 +75,7 @@ const PAGE = `<!doctype html>
 
     <div id="mailboxToast" class="toast" role="status" aria-live="polite" hidden></div>
   </div>
-  <script type="module" src="/public/mailbox.js?v=coast-mailbox-02"></script>
+  <script type="module" src="/public/mailbox.js?v=coast-mailbox-03"></script>
 </body>
 </html>`;
 
@@ -83,7 +84,7 @@ function html(request) {
     status: 200,
     headers: securityHeaders({
       'Content-Type': 'text/html; charset=UTF-8',
-      'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+      'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
     }),
   });
 }

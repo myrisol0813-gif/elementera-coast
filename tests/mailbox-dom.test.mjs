@@ -25,6 +25,7 @@ installWindow(entryWindow);
 entryWindow.document.body.innerHTML = `
   <button id="mailboxEntryButton" type="button">海岸信箱</button>
   <dialog id="mailboxEntryModal">
+    <strong id="mailbox-entry-title">海岸信箱</strong>
     <button id="mailboxEntryClose" type="button">关闭</button>
     <section id="mailboxEntryChoices">
       <button type="button" data-mailbox-choice="login">输入暗号</button>
@@ -47,11 +48,21 @@ globalThis.fetch = async () => new Response(JSON.stringify({ ok: true }), {
 await import(`../elementera-mcp/deploy-pages/public/mailbox-entry.js?dom=${Date.now()}`);
 entryWindow.document.querySelector('#mailboxEntryButton').click();
 assert.equal(entryWindow.document.querySelector('#mailboxEntryModal').open, true);
+assert.equal(entryWindow.document.querySelector('#mailboxEntryChoices').hidden, false);
+assert.equal(entryWindow.document.querySelector('#mailboxLoginForm').hidden, true);
+assert.equal(entryWindow.document.querySelector('#mailboxRegisterForm').hidden, true);
 entryWindow.document.querySelector('[data-mailbox-choice="login"]').click();
 assert.equal(entryWindow.document.querySelector('#mailboxEntryChoices').hidden, true);
 assert.equal(entryWindow.document.querySelector('#mailboxLoginForm').hidden, false);
+assert.equal(entryWindow.document.querySelector('#mailboxRegisterForm').hidden, true);
+assert.equal(entryWindow.document.querySelector('#mailbox-entry-title').textContent, '输入暗号');
 entryWindow.document.querySelector('[data-mailbox-back]').click();
 assert.equal(entryWindow.document.querySelector('#mailboxEntryChoices').hidden, false);
+entryWindow.document.querySelector('[data-mailbox-choice="register"]').click();
+assert.equal(entryWindow.document.querySelector('#mailboxEntryChoices').hidden, true);
+assert.equal(entryWindow.document.querySelector('#mailboxLoginForm').hidden, true);
+assert.equal(entryWindow.document.querySelector('#mailboxRegisterForm').hidden, false);
+assert.equal(entryWindow.document.querySelector('#mailbox-entry-title').textContent, '填记名册');
 
 const mailboxWindow = new Window({ url: 'https://coast.test/mailbox' });
 installWindow(mailboxWindow);
@@ -161,6 +172,7 @@ assert.equal(mailboxWindow.document.querySelector('.message.user [data-mailbox-a
 assert.equal(mailboxWindow.document.querySelector('.message.user [data-mailbox-action="delete"]') != null, true);
 assert.equal(mailboxWindow.document.querySelector('.message.assistant [data-mailbox-action="copy"]') != null, true);
 assert.equal(mailboxWindow.document.querySelector('.message.assistant [data-mailbox-action="delete"]') != null, true);
+assert.equal(mailboxWindow.document.querySelector('.mailbox-myri-avatar').textContent, '');
 
 soilEntry.click();
 await waitFor(() => mailboxWindow.document.querySelector('#mailboxPanel').open, 'soil panel');

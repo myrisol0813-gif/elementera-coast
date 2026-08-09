@@ -349,7 +349,7 @@ export function createChat({ storage, toast, dogtalk }) {
         </div>
       </article>` : '';
       const assistant = branch.assistant ? `<article class="message assistant" data-turn="${escapeAttribute(turn.id)}">
-        <button class="avatar" type="button" data-action="settings:avatar" aria-label="更换助手头像">${runtime.profile.assistant_avatar_dataurl ? '' : '⌁'}</button>
+        <button class="avatar" type="button" data-action="settings:avatar" aria-label="更换助手头像"></button>
         <div class="content">
           <div class="assistant-text">${formatRichText(branch.assistant.content)}${branch.assistant.errorDetail ? `<span class="message-error">${escapeHtml(branch.assistant.errorDetail)}</span>` : ''}${loading ? '<span class="typing-cursor"></span>' : ''}</div>
           <div class="message-actions">

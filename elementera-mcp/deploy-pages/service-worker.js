@@ -1,13 +1,13 @@
-const CACHE_NAME = 'elementera-coast-app-23';
+const CACHE_NAME = 'elementera-coast-app-24';
 const CORE = Object.freeze([
   '/',
   '/index.html',
   '/manifest.json',
   '/public/styles/tokens.css?v=coast-app-20',
   '/public/styles/shell.css?v=coast-app-20',
-  '/public/styles/chat.css?v=coast-app-20',
+  '/public/styles/chat.css?v=coast-app-24',
   '/public/styles/features.css?v=coast-app-22',
-  '/public/app.js?v=coast-app-22',
+  '/public/app.js?v=coast-app-24',
   '/public/core/api.js',
   '/public/core/dom.js',
   '/public/core/icons.js',
@@ -33,6 +33,7 @@ const CORE = Object.freeze([
   '/public/icons/icon-512.png',
   '/public/icons/icon-maskable-512.png',
   '/public/icons/gptlike-icon.svg',
+  '/public/media/myri-default-avatar.jpg',
 ]);
 
 self.addEventListener('install', (event) => {

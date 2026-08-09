@@ -386,6 +386,9 @@ function loginPage(message = '') {
       line-height: 1.65;
     }
 
+    #mailboxEntryChoices[hidden],
+    .mailbox-entry-form[hidden] { display: none !important; }
+
     .mailbox-entry-choices { display: grid; gap: 10px; }
 
     .mailbox-entry-choices button,
@@ -400,8 +403,46 @@ function loginPage(message = '') {
       cursor: pointer;
     }
 
+    .mailbox-entry-choices button {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 14px;
+      min-height: 82px;
+      padding: 14px 16px;
+      text-align: left;
+    }
+
     .mailbox-entry-choices button:first-child,
     .mailbox-submit { background: var(--ink); color: #fff; }
+
+    .mailbox-choice-copy strong,
+    .mailbox-choice-copy small { display: block; }
+
+    .mailbox-choice-copy strong {
+      font-size: 15px;
+      line-height: 1.35;
+    }
+
+    .mailbox-choice-copy small {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 450;
+      line-height: 1.55;
+    }
+
+    .mailbox-entry-choices button:first-child .mailbox-choice-copy small {
+      color: rgba(255, 255, 255, .68);
+    }
+
+    .mailbox-choice-arrow {
+      color: currentColor;
+      font-size: 25px;
+      font-weight: 400;
+      line-height: 1;
+      opacity: .62;
+    }
 
     .mailbox-entry-form { display: grid; gap: 14px; }
 
@@ -634,8 +675,14 @@ function loginPage(message = '') {
           <section id="mailboxEntryChoices">
             <p class="mailbox-entry-copy">这里是给受邀来客的慢速信箱。写下的信会等 Myri 巡灯时收到。</p>
             <div class="mailbox-entry-choices">
-              <button type="button" data-mailbox-choice="login">输入暗号</button>
-              <button type="button" data-mailbox-choice="register">填记名册</button>
+              <button type="button" data-mailbox-choice="login">
+                <span class="mailbox-choice-copy"><strong>输入暗号</strong><small>之前来访的访客，可凭登记过的暗号重新进入。</small></span>
+                <span class="mailbox-choice-arrow" aria-hidden="true">›</span>
+              </button>
+              <button type="button" data-mailbox-choice="register">
+                <span class="mailbox-choice-copy"><strong>填记名册</strong><small>第一次来到海岸？先登记称呼与专属暗号。</small></span>
+                <span class="mailbox-choice-arrow" aria-hidden="true">›</span>
+              </button>
             </div>
           </section>
 
@@ -678,7 +725,7 @@ function loginPage(message = '') {
       </dialog>
     </section>
   </main>
-  <script type="module" src="/public/mailbox-entry.js?v=coast-mailbox-02"></script>
+  <script type="module" src="/public/mailbox-entry.js?v=coast-mailbox-03"></script>
 </body>
 </html>`;
 }

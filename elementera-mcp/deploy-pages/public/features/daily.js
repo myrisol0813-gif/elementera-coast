@@ -187,7 +187,7 @@ export function createDaily({ storage, router, toast, chat }) {
     const image = storage.read().preferences.myriAvatar || '';
     return image
       ? `<span class="daily-avatar is-myri has-image" style="background-image:url(${escapeAttribute(image)})"></span>`
-      : '<span class="daily-avatar is-myri">M</span>';
+      : '<span class="daily-avatar is-myri has-image" style="background-image:url(\'/public/media/myri-default-avatar.jpg\')"></span>';
   }
 
   function momentAvatar(author) {
