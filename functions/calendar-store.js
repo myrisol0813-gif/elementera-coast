@@ -497,36 +497,79 @@ export async function calendarEnvironment(db, {
     includeUpcoming ? listCalendarEvents(db, { from: addDays(date, 1), to: addDays(date, 90) }) : Promise.resolve([]),
     includeNew ? listCalendarUnseenChanges(db, 'myri', { limit: 60 }) : Promise.resolve([]),
   ]);
-  const lines = [];
   const newTargetIds = new Set(unseen.map((change) => change.target_id));
+  const todayLines = [];
   for (const event of day.events) {
     const typeLabel = EVENT_TYPE_LABELS[event.event_type] || event.event_type;
-    lines.push(`${newTargetIds.has(event.id) ? '[NEW] ' : ''}${timeLabel(event)} ${typeLabel ? `${typeLabel}：` : ''}${event.title}`);
+    todayLines.push(`${newTargetIds.has(event.id) ? '[NEW] ' : ''}${timeLabel(event)} ${typeLabel ? `${typeLabel}：` : ''}${event.title}`);
   }
   for (const note of day.notes) {
-    lines.push(`${newTargetIds.has(note.id) ? '[NEW] ' : ''}便签：${note.content.slice(0, 180)}`);
+    todayLines.push(`${newTargetIds.has(note.id) ? '[NEW] ' : ''}便签：${note.content.slice(0, 180)}`);
   }
-  for (const event of upcoming.filter((item) => ['birthday', 'anniversary'].includes(item.event_type)).slice(0, 3)) {
-    const days = Math.round((Date.parse(`${event.starts_at.slice(0, 10)}T00:00:00.000Z`) - Date.parse(`${date}T00:00:00.000Z`)) / 86400000);
-    lines.push(`${Number(event.starts_at.slice(5, 7))}/${Number(event.starts_at.slice(8, 10))} ${event.title}还有 ${days} 天`);
-  }
+  const upcomingAnniversaries = upcoming
+    .filter((item) => ['birthday', 'anniversary'].includes(item.event_type))
+    .slice(0, 3)
+    .map((event) => {
+      const days = Math.round((Date.parse(`${event.starts_at.slice(0, 10)}T00:00:00.000Z`) - Date.parse(`${date}T00:00:00.000Z`)) / 86400000);
+      return {
+        id: event.id,
+        title: event.title,
+        date: event.starts_at.slice(0, 10),
+        month_day: event.starts_at.slice(5, 10),
+        days_remaining: days,
+        text: `${Number(event.starts_at.slice(5, 7))}/${Number(event.starts_at.slice(8, 10))} ${event.title}还有 ${days} 天`,
+      };
+    });
   const newOnly = unseen.filter((change) => !newTargetIds.has(change.target_id)
     || ![...day.events, ...day.notes].some((item) => item.id === change.target_id));
+  const changeLines = [];
   for (const change of newOnly.slice(0, 4)) {
     const snapshot = change.snapshot || {};
-    lines.push(`[NEW] 小寒${change.action}了「${String(snapshot.title || snapshot.content || '日历内容').slice(0, 100)}」`);
+    changeLines.push(`[NEW] 小寒${change.action}了「${String(snapshot.title || snapshot.content || '日历内容').slice(0, 100)}」`);
   }
-  if (!lines.length) {
-    return { date, empty: true, text: '', events: [], notes: [], new_changes: [], change_ids: [] };
-  }
-  return {
+  const eventCount = day.events.length;
+  const noteCount = day.notes.length;
+  const anniversaryCount = upcomingAnniversaries.length;
+  const calendarEmpty = eventCount === 0 && noteCount === 0 && anniversaryCount === 0;
+  const empty = calendarEmpty && changeLines.length === 0;
+  const calendarEmptyReason = anniversaryCount > 0
+    ? 'upcoming_anniversary'
+    : eventCount > 0 || noteCount > 0
+      ? 'today_content'
+      : changeLines.length
+        ? 'new_change_only'
+        : 'no_today_or_upcoming';
+  const common = {
     date,
-    empty: false,
-    text: ['【今日海岸日历】', ...lines].join('\n'),
+    event_count: eventCount,
+    note_count: noteCount,
+    anniversary_count: anniversaryCount,
+    calendar_empty: calendarEmpty,
+    calendar_empty_reason: calendarEmptyReason,
+    upcoming_anniversaries: upcomingAnniversaries,
     events: day.events,
     notes: day.notes,
     new_changes: unseen,
     change_ids: unseen.map((change) => change.id),
+  };
+  if (empty) {
+    return { ...common, empty: true, text: '' };
+  }
+  const lines = [
+    '【海岸日历】',
+    eventCount || noteCount
+      ? `今日：${eventCount} 条事件，${noteCount} 张便签。`
+      : '今日：无事件，无便签。',
+    ...todayLines.map((line) => `- ${line}`),
+    ...(upcomingAnniversaries.length
+      ? [`近期纪念日：${upcomingAnniversaries.map((item) => item.text).join('；')}。`]
+      : []),
+    ...(changeLines.length ? ['未读变化：', ...changeLines.map((line) => `- ${line}`)] : []),
+  ];
+  return {
+    ...common,
+    empty: false,
+    text: lines.join('\n'),
   };
 }
 

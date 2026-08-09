@@ -61,6 +61,7 @@ function soilSourceLabel(item, source, soil) {
 }
 
 export function createRooms({ router, toast, dogtalk }) {
+  let contextController = null;
   const state = {
     active: 'conversation',
     asking: false,
@@ -97,6 +98,7 @@ export function createRooms({ router, toast, dogtalk }) {
 
   function activateMain() {
     state.active = 'conversation';
+    contextController?.useMainSurface();
     if (!ui.chatWindow) bindUi();
     if (ui.chatWindow) ui.chatWindow.hidden = false;
     if (ui.roomWindow) {
@@ -113,9 +115,9 @@ export function createRooms({ router, toast, dogtalk }) {
     const radio = kind === 'radio';
     ui.roomTitle.textContent = ROOM_COPY[kind].title;
     ui.roomSubtitle.textContent = ROOM_COPY[kind].subtitle;
-    ui.roomActions.innerHTML = radio
+    ui.roomActions.innerHTML = `${radio
       ? `<button class="room-top-action" type="button" data-action="rooms:ask-api" ${state.asking ? 'disabled' : ''}>${state.asking ? '✦ 回应中…' : '让海岸 API ✦ 回应'}</button>`
-      : '';
+      : ''}<button class="room-top-action" type="button" data-action="rooms:context-inspector">Context</button>`;
     ui.roomActions.hidden = false;
   }
 
@@ -311,12 +313,20 @@ export function createRooms({ router, toast, dogtalk }) {
     await load('lighthouse');
   }
 
+  async function openContextInspector() {
+    const kind = state.active;
+    if (!ROOM_COPY[kind] || !contextController) return;
+    await contextController.previewSurface(kind, state[kind].items);
+    return contextController.openInspector();
+  }
+
   function handleAction(name, target) {
     if (name === 'open') return open(target.dataset.kind);
     if (name === 'retry') return load(target.dataset.kind);
     if (name === 'ask-api') return askApi();
     if (name === 'withdraw-radio') return withdrawRadio(target.dataset.id);
     if (name === 'mark-read') return markRead(target.dataset.id);
+    if (name === 'context-inspector') return openContextInspector();
   }
 
   function handleSubmit(name) {
@@ -340,6 +350,7 @@ export function createRooms({ router, toast, dogtalk }) {
       if (state.active === kind) renderRoom();
       return state[kind].memory;
     },
+    setContextController: (controller) => { contextController = controller; },
     handleAction,
     handleSubmit,
   });

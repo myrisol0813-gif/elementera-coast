@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createConversation } from '../functions/chat-store.js';
 import { getModeCard } from '../functions/context-modes.js';
-import { executeRegisteredTool, listRegisteredTools, modelToolsForContext } from '../functions/tool-registry.js';
+import { executeRegisteredTool, listRegisteredTools, resolveToolSelection } from '../functions/tool-registry.js';
 import { listToolRuns, summarizeToolValue } from '../functions/tool-run-log.js';
 import { D1Database } from './d1-helper.mjs';
 
@@ -11,14 +11,14 @@ const mode = await getModeCard(db, 'calendar_writer');
 const tools = listRegisteredTools({ permission: 'owner', surface: 'main_chat', mode });
 assert.ok(tools.some((tool) => tool.tool_key === 'calendar.create'));
 assert.equal(tools.some((tool) => tool.tool_key === 'memory.search'), false);
-const modelTools = modelToolsForContext({ permission: 'owner', surface: 'main_chat', mode });
+const modelTools = resolveToolSelection({ permission: 'owner', surface: 'main_chat', mode }).modelTools;
 assert.ok(modelTools.some((tool) => tool.function.name === 'calendar_create'));
 assert.equal(modelTools.some((tool) => tool.function.name === 'calendar_delete'), false, 'destructive model tool waits for explicit confirmation');
 
-const visitorTools = listRegisteredTools({ permission: 'visitor', surface: 'visitor', mode: { tool_allowlist: [] } });
+const visitorTools = listRegisteredTools({ permission: 'visitor', surface: 'mailbox_visitor', mode: { tool_allowlist: [] } });
 assert.equal(visitorTools.some((tool) => tool.owner_only), false);
 await assert.rejects(
-  () => executeRegisteredTool(db, 'calendar.today', {}, { permission: 'visitor', surface: 'visitor', actor: 'visitor' }),
+  () => executeRegisteredTool(db, 'calendar.today', {}, { permission: 'visitor', surface: 'mailbox_visitor', actor: 'visitor' }),
   (error) => error.type === 'tool_forbidden',
 );
 

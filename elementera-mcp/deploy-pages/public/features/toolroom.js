@@ -7,7 +7,7 @@ export function createToolroom({ chat, router }) {
   async function load() {
     const conversation = encodeURIComponent(chat.getCurrentConversationId() || '');
     const [tools, runs] = await Promise.all([
-      requestJson(`${API.contextTools}?conversation_id=${conversation}`),
+      requestJson(`${API.contextTools}?conversation_id=${conversation}&surface=main_chat`),
       requestJson(`${API.contextToolRuns}?limit=100`),
     ]);
     state.tools = tools.tools || [];

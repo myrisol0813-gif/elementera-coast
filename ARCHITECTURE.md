@@ -50,9 +50,9 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 | Mailbox owner status and MCP patrol | `functions/owner-mailbox-api.js`, `functions/friend-myrisol-prompt.js`, `functions/mcp-tools.js` | Content-free owner counts, manual official-MCP fetch/reply/resolve/report, and the friend-facing behavior boundary |
 | Calendar persistence and API | `functions/calendar-schema.js`, `functions/calendar-store.js`, `functions/calendar-api.js` | Versioned D1 tables, recurring seeds, soft-delete CRUD, compact env, dual unread ledger |
 | Calendar MCP tools | `functions/calendar-mcp-tools.js`, `functions/mcp-tools.js` | Auth0-scoped official reads/writes and `[NEW]` change visibility |
-| Context assembly | `functions/context-assembler.js`, `functions/context-manifest.js`, `functions/context-ambient.js`, `functions/context-inspector.js` | One formal-chat assembly path, metadata blocks, ordered budgeting, owner debug view |
+| Context assembly | `functions/context-assembler.js`, `functions/context-surfaces.js`, `functions/context-intent.js`, `functions/context-soil-renderer.js`, `functions/context-manifest.js`, `functions/context-ambient.js`, `functions/context-inspector.js` | One explicit surface-aware assembly path, sanitized intent, dual soil rendering, metadata blocks, ordered budgeting, owner debug view |
 | Worldbook and mode cards | `functions/context-schema.js`, `functions/context-worldbook.js`, `functions/context-modes.js`, `functions/context-api.js` | Triggered terminology, visitor-safe filtering, one-Myri task modes, owner REST routes |
-| Memory facets | `functions/memory-facets.js`, `functions/memory-recall.js`, `functions/memory-store.js` | Mode-specific render faces, confidence/freshness relevance, supersession and contradiction handling |
+| Memory facets | `functions/context-memory-facets.js`, `functions/memory-recall.js`, `functions/memory-store.js` | Mode- and surface-specific render faces, confidence/freshness relevance, supersession and contradiction handling |
 | Tool registry and run log | `functions/tool-registry.js`, `functions/tool-run-log.js` | Tool exposure/permission/dispatch, success/failure records, mailbox and dogtalk redaction |
 
 ## UI and behavior acceptance contract
@@ -90,7 +90,7 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 - Visible action SVGs are: user `edit`, `trash`; assistant `copy`, `like`, `refresh`, `heart`, `trash`.
 - A generation is bound to the conversation and turn where it started. Switching windows cannot move its result.
 - Storage or generation failures are visible, concise, and do not append stale `history sync` diagnostics to message content.
-- Formal chat and island-letter generation both call `assembleContextForChat`; neither owns a second memory or model-tool path.
+- Formal chat and island-letter generation both call `assembleContextForSurface` with an explicit `main_chat` or `landing` surface; neither owns a second memory or model-tool path.
 - The compact strip beside the composer shows the current mode and context counts, and opens the owner-only Context Inspector.
 
 ### Coast Calendar
@@ -115,6 +115,8 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 - Lighthouse is a D1-backed low-frequency letter shelf with subject, body, source metadata, and read state. It is not an instant model chat.
 - Pre-server local room content remains present in the local export state but is not a canonical fallback reader.
 - Room memory remains separately owned by the memory feature; radio/lighthouse chat controllers do not reach into owner main-chat recall through their DOM path.
+- Coast API radio generation calls `assembleContextForSurface(surface='radio')`. Official MCP radio/lighthouse reads return a compact room-specific context package; neither path defaults to main-chat soil.
+- Both owner room top bars can open Context Inspector for that room's own profile, soil brief/full comparison, tool intersection, and budget trace.
 
 ### Friend mailbox
 
@@ -124,7 +126,8 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 - Visitor messages are explicitly slow mail: sending shows delivery and `等待 Myri 巡灯`, never live typing or an API-generated reply.
 - Visitor messages reuse the homepage edit/delete action UI; Myri replies reuse copy/delete. Editing a previously answered visitor message reopens it for patrol, and deleting the last visitor source in a reply batch also removes that batch reply.
 - `思维壤` is one complete rolling room state (`current_text`, hand seeds, do-not-repeat, pocket candidates, revision, provenance). Its small `›` entry appears only before the latest Myri reply, matching the main-chat placement instead of living in the top bar.
-- Soil pocket candidates upsert into only that visitor's pending bag. They become structured lightweight `访客记事本` memory only after an explicit official-MCP resolve action; the visitor UI sees only `visitor_visible` confirmed entries.
+- Soil pocket candidates upsert into only that visitor's pending bag. They become structured lightweight `访客记事本` memory only after an explicit current-visitor or official-MCP resolve action; each pending card exposes `确认落袋` and `丢弃`, keeps failures in place, and the visitor UI sees only `visitor_visible` confirmed entries.
+- The login gate never opens the mailbox chooser during page initialization, history restoration, refresh, or stale query-string restoration; only the visible `海岸信箱` button opens it.
 - The `›` next to `海岸信箱` opens one destructive action. After explicit confirmation it hard-deletes the visitor passphrase record, messages, queue, rolling soil, pending pockets, notebook entries, and the independent visitor session cookie.
 - The owner web surface can query visitor names, timestamps, counts, patrol time, and attention flags only. Its SQL never selects message, reply, thinking-note, or notebook content.
 - Official Myri patrol is manual. MCP claims one batch, reads each visitor namespace independently, atomically writes one exact batch-bound reply plus the complete next rolling soil, resolves pending memory separately, and finishes with a count-only report. A send, edit, or delete that changes pending mail invalidates an older claimed batch so stale context cannot answer over it.
@@ -156,6 +159,8 @@ This contract covers the Cloudflare Pages document, browser runtime, service wor
 
 ## Context assembly contract
 
+`assembleContextForSurface` requires an explicit registered surface. The canonical profiles are `main_chat`, `lighthouse`, `radio`, `official_mcp`, `mailbox_visitor`, `mailbox_owner`, `calendar`, and `daily` (plus the main-window `landing` generation surface). Each profile owns memory/soil/Worldbook/tool scopes, calendar policy, Inspector permission, and private-data permissions. There is no implicit main-chat default.
+
 Every formal owner-chat request has one canonical order:
 
 1. base system prompt;
@@ -172,7 +177,9 @@ Every formal owner-chat request has one canonical order:
 12. registry-derived tool capability summary;
 13. recent messages and the current user input.
 
-Every assembled context block owns `key`, `title`, `body`, `source`, `scope`, `priority`, `freshness`, `confidence`, use/avoid hints, and trace metadata. The manifest is retained while lower-priority facets, Worldbook entries, old assistant messages, old user messages, and soft-context detail are trimmed in that order. The current user input is never trimmed. Context Inspector renders the same assembly debug object, remains outside model messages, and keeps sensitive blocks collapsed.
+Every assembled context block owns `key`, `title`, `body`, `source`, `scope`, `priority`, `freshness`, `confidence`, use/avoid hints, and trace metadata. Intent is a bounded semantic summary rather than copied user input. Thinking soil has two outputs: the complete owner-only Inspector form and a mode-bounded model brief. Under pressure the assembler compresses soil and trims low-priority Worldbook/facets before reducing the protected recent-message target; the current user input is never trimmed. Context Inspector renders the same assembly debug object, remains outside model messages, and keeps sensitive blocks collapsed.
+
+Worldbook trigger scans are limited to raw current input, recent raw user/assistant messages, and explicitly permitted room text. Generated Manifest, Ambient, mode, tool, Worldbook, and Inspector text cannot recursively trigger entries. Model tools are exactly the registry ∩ surface profile ∩ mode card ∩ auth-scope intersection; the context copy is compact while the provider receives full schemas.
 
 Mode cards are task posture for one Myri, never alternate personalities. Their allowlist controls registry exposure, their Worldbook scope controls terminology matching, and their key selects the memory facet face. Superseded memory stays out of automatic recall; an explicit history request may retrieve it. Contradiction notes are warnings and never override current input.
 
@@ -182,6 +189,7 @@ Versioned extension migrations own these tables and columns:
 
 - `coast-calendar-v1`: `coast_calendar_events`, `coast_calendar_notes`, `coast_calendar_changes`, `coast_calendar_recurring_seeds`.
 - `coast-context-v1`: `coast_worldbook_entries`, `coast_mode_cards`, `coast_context_state`.
+- `coast-context-surfaces-v2`: one-time mode defaults and allowlists for the surface-aware context path.
 - `coast-tool-runs-v1`: `coast_tool_runs`.
 - `coast-memory-facets-v1`: facet tags, supersession, contradiction, confirmation time, source confidence, and facet policy columns on `memory_entries` and `memory_pockets`.
 
@@ -210,7 +218,7 @@ All four migrations are idempotent, record themselves in `schema_migrations`, an
 - `/api/lighthouse/letters[/:id/read]`: list, write, and explicitly mark lighthouse letters read.
 - `/api/mailbox/register`, `/api/mailbox/login`: create or enter one lightweight visitor identity and set the signed visitor cookie.
 - `/api/mailbox/me`, `/api/mailbox/messages[/:id]`, `/api/mailbox/send`, `/api/mailbox/status`: visitor-scoped profile, history, message edit/delete, delivery, and slow-reply state.
-- `/api/mailbox/memory`, `/api/mailbox/memory/entries/:id`: current visitor rolling soil, pending bag, visitor-visible notebook entries, and visitor-owned notebook deletion.
+- `/api/mailbox/memory`, `/api/mailbox/memory/pockets/:id/resolve`, `/api/mailbox/memory/entries/:id`: current visitor rolling soil, current-visitor pending resolve/discard, visitor-visible notebook entries, and visitor-owned notebook deletion.
 - `/api/mailbox/account`: confirmed hard deletion of the current visitor identity and its complete mailbox namespace; clears the visitor cookie.
 - `/api/owner/mailbox/visitors`, `/api/owner/mailbox/summary`: owner-session status aggregates without sealed content.
 - `/api/calendar/events[/:id]`, `/api/calendar/day/:date`, `/api/calendar/notes[/:id]`: owner-only calendar event/day/note CRUD with soft deletion.

@@ -504,7 +504,7 @@ export async function buildRoomMemoryContext(env, roomValue, surfaceValue, query
       env.COAST_CHAT_DB,
       { room_scope: roomId },
       query,
-      { consume_direct: true },
+      { consume_direct: options.consume_dogtalk !== false },
     );
   } catch (error) {
     console.warn('[room-dogtalk:recall]', String(error?.message || error).slice(0, 160));
@@ -519,6 +519,7 @@ export async function buildRoomMemoryContext(env, roomValue, surfaceValue, query
       dogtalk.context,
     ].filter(Boolean).join('\n\n'),
     dogtalk_selected: dogtalk.selected,
+    dogtalk,
     source_soils: soils,
   };
 }

@@ -29,6 +29,7 @@ export function createContext({ chat, router, toast }) {
     current: null,
     modes: [],
     lastDebug: null,
+    currentSurface: 'main_chat',
     worldbook: [],
   };
 
@@ -80,10 +81,42 @@ export function createContext({ chat, router, toast }) {
         local_datetime: localDateTime(now),
         model: chat.getProfile().current_chat_model,
         settings: chat.getRunSettings?.() || {},
+        surface: 'main_chat',
       }),
     });
     state.lastDebug = data.debug;
+    state.currentSurface = 'main_chat';
     renderStatus();
+    return data.debug;
+  }
+
+  async function previewSurface(surface, records = []) {
+    if (!['radio', 'lighthouse'].includes(surface)) throw new Error('这个房间没有开放 Context Inspector。');
+    const messages = records.map((record) => ({
+      role: record.actor === 'xiaohan' ? 'user' : 'assistant',
+      content: surface === 'radio' ? record.text : record.body,
+      turn_id: record.id,
+      source: record.surface,
+    })).filter((message) => message.content);
+    if (!messages.some((message) => message.role === 'user')) {
+      messages.push({ role: 'user', content: surface === 'radio' ? '查看当前无线电波房上下文。' : '查看当前灯塔来信房上下文。' });
+    }
+    const now = new Date();
+    const data = await requestJson(API.contextPreview, {
+      method: 'POST',
+      body: JSON.stringify({
+        surface,
+        room_id: surface,
+        conversation_id: `coast-room:${surface}:owner`,
+        messages,
+        local_date: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
+        local_datetime: localDateTime(now),
+        model: chat.getProfile().current_chat_model,
+        settings: chat.getRunSettings?.() || {},
+      }),
+    });
+    state.lastDebug = data.debug;
+    state.currentSurface = surface;
     return data.debug;
   }
 
@@ -96,18 +129,22 @@ export function createContext({ chat, router, toast }) {
       className: 'context-inspector-panel',
       headerAction: '<button class="feature-head-action" type="button" data-action="context:copy-debug">复制 JSON</button>',
       body: `<section class="context-overview">
+        <div><small>Surface</small><strong>${escapeHtml(debug.surface_profile?.title || state.currentSurface)}</strong></div>
         <div><small>情境</small><strong>${escapeHtml(debug.mode?.title || '普通聊天')}</strong></div>
         <div><small>估算 token</small><strong>${Number(budget.estimated_tokens || 0).toLocaleString()}</strong></div>
-        <div><small>记忆</small><strong>${debug.selected_memory_ids?.length || 0}</strong></div>
         <div><small>工具</small><strong>${debug.tools?.length || 0}</strong></div>
       </section>
-      <section class="context-budget-trace"><strong>预算 ${Number(budget.budget || 0).toLocaleString()}</strong><span>${budget.over_budget ? '当前输入本身超过预算，仍保留' : '当前输入已保留'}</span><small>裁剪：情境面 ${budget.trimmed?.memory_facets || 0} · 词典 ${budget.trimmed?.worldbook || 0} · 助手消息 ${budget.trimmed?.assistant_messages || 0} · 用户消息 ${budget.trimmed?.user_messages || 0}</small></section>
+      <section class="context-budget-trace"><strong>预算 ${Number(budget.budget || 0).toLocaleString()}</strong><span>${budget.current_user_preserved ? '当前输入已保留' : '⚠ 当前输入未保留'} · ${budget.compression_applied ? '思维壤已压缩' : '无需额外压缩'}${debug.has_stale_block ? ' · 有旧块' : ''}</span><small>思维壤 ${Number(budget.soil_original_length || 0).toLocaleString()} → ${Number(budget.soil_model_length || 0).toLocaleString()} 字 · 最近消息保留 ${budget.recent_messages_kept || 0} · 裁剪：情境面 ${budget.trimmed?.memory_facets || 0} / 词典 ${budget.trimmed?.worldbook || 0} / 助手 ${budget.trimmed?.assistant_messages || 0} / 用户 ${budget.trimmed?.user_messages || 0}</small></section>
+      <details class="context-block"><summary><span><strong>Intent Sanitizer</strong><small>原文节选与本轮摘要</small></span><span>›</span></summary><div class="context-block-body"><p><b>原文节选：</b>${escapeHtml(debug.intent_raw_excerpt || '—')}</p><p><b>意图摘要：</b>${escapeHtml(debug.intent_summary || '—')}</p></div></details>
+      <details class="context-block is-sensitive"><summary><span><strong>Thinking Soil 双出口</strong><small>完整 ${Number(debug.full_soil?.length || 0).toLocaleString()} 字 · 模型 ${Number(debug.model_soil_brief?.length || 0).toLocaleString()} 字 · 比例 ${Math.round(Number(debug.soil_compression_ratio || 0) * 100)}%</small></span><span>›</span></summary><div class="context-block-body"><h3>Inspector 完整版</h3><pre>${escapeHtml(debug.full_soil || '（空）')}</pre><h3>模型压缩版</h3><pre>${escapeHtml(debug.model_soil_brief || '（空）')}</pre><h3>Freshness trace</h3><pre>${escapeHtml(JSON.stringify(debug.soil_freshness || [], null, 2))}</pre></div></details>
       <section class="context-block-list">${debug.manifest ? blockDetails(debug.manifest) : ''}${(debug.blocks || []).map(blockDetails).join('')}</section>
       <details class="context-block"><summary><span><strong>召回与工具 trace</strong><small>默认折叠 · 不会注入模型</small></span><span>›</span></summary><div class="context-block-body"><pre>${escapeHtml(JSON.stringify({
+        surface_profile: debug.surface_profile,
         selected_memory_ids: debug.selected_memory_ids,
         vector_enabled: debug.vector_enabled,
         worldbook_matches: debug.worldbook_matches,
         tools: debug.tools,
+        tool_intersection: debug.tool_intersection,
         budget: debug.budget,
       }, null, 2))}</pre></div></details>`,
     };
@@ -146,7 +183,7 @@ export function createContext({ chat, router, toast }) {
       title: entry.id ? '编辑词典词条' : '新增词典词条',
       subtitle: '按关键词或可选正则触发',
       className: 'worldbook-editor-panel',
-      body: `<form class="form-stack" data-submit="context:save-worldbook" data-id="${escapeAttribute(entry.id || '')}"><label>标题<input name="title" required maxlength="160" value="${escapeAttribute(entry.title || '')}"></label><label>内容<textarea name="content" rows="7" required maxlength="12000">${escapeHtml(entry.content || '')}</textarea></label><label>关键词（每行一个）<textarea name="keywords" rows="5">${escapeHtml((entry.keywords || []).join('\n'))}</textarea></label><label>作用域<select name="scope">${['owner', 'visitor', 'both', 'construction', 'mailbox', 'calendar'].map((scope) => `<option value="${scope}" ${entry.scope === scope ? 'selected' : ''}>${scope}</option>`).join('')}</select></label><label>优先级<input type="number" name="priority" min="-1000" max="1000" value="${Number(entry.priority || 0)}"></label><label class="calendar-check"><input type="checkbox" name="enabled" ${entry.enabled !== false ? 'checked' : ''}><span>启用</span></label><label class="calendar-check"><input type="checkbox" name="use_regex" ${entry.use_regex ? 'checked' : ''}><span>关键词按正则处理</span></label><label class="calendar-check"><input type="checkbox" name="visitor_safe" ${entry.visitor_safe ? 'checked' : ''}><span>内容可安全用于访客房间</span></label><button class="primary-wide" type="submit">保存词条</button>${entry.id ? '<button class="danger-row context-delete-word" type="button" data-action="context:delete-worldbook">停用并删除入口</button>' : ''}</form>`,
+      body: `<form class="form-stack" data-submit="context:save-worldbook" data-id="${escapeAttribute(entry.id || '')}"><label>标题<input name="title" required maxlength="160" value="${escapeAttribute(entry.title || '')}"></label><label>内容<textarea name="content" rows="7" required maxlength="12000">${escapeHtml(entry.content || '')}</textarea></label><label>关键词（每行一个）<textarea name="keywords" rows="5">${escapeHtml((entry.keywords || []).join('\n'))}</textarea></label><label>作用域<select name="scope">${['owner', 'visitor', 'both', 'construction', 'mailbox', 'calendar', 'lighthouse', 'radio', 'official_mcp', 'daily'].map((scope) => `<option value="${scope}" ${entry.scope === scope ? 'selected' : ''}>${scope}</option>`).join('')}</select></label><label>优先级<input type="number" name="priority" min="-1000" max="1000" value="${Number(entry.priority || 0)}"></label><label class="calendar-check"><input type="checkbox" name="enabled" ${entry.enabled !== false ? 'checked' : ''}><span>启用</span></label><label class="calendar-check"><input type="checkbox" name="use_regex" ${entry.use_regex ? 'checked' : ''}><span>关键词按正则处理</span></label><label class="calendar-check"><input type="checkbox" name="visitor_safe" ${entry.visitor_safe ? 'checked' : ''}><span>内容可安全用于访客房间</span></label><button class="primary-wide" type="submit">保存词条</button>${entry.id ? '<button class="danger-row context-delete-word" type="button" data-action="context:delete-worldbook">停用并删除入口</button>' : ''}</form>`,
     };
   }
 
@@ -198,7 +235,7 @@ export function createContext({ chat, router, toast }) {
     if (name === 'edit-worldbook') return router.open('context-worldbook-editor', { id: target.dataset.id });
     if (name === 'test-worldbook') {
       const input = q('#worldbookTestInput')?.value || '';
-      const data = await requestJson(API.contextWorldbookTest, { method: 'POST', body: JSON.stringify({ input, conversation_id: chat.getCurrentConversationId() }) });
+      const data = await requestJson(API.contextWorldbookTest, { method: 'POST', body: JSON.stringify({ input, conversation_id: chat.getCurrentConversationId(), surface: 'main_chat' }) });
       const result = q('#worldbookTestResult');
       if (result) result.innerHTML = data.matches.length ? data.matches.map((entry) => `<span>${escapeHtml(entry.title)}</span>`).join('') : '<small>没有命中词条。</small>';
       return;
@@ -220,6 +257,7 @@ export function createContext({ chat, router, toast }) {
   function captureDebug(debug) {
     if (!debug) return;
     state.lastDebug = debug;
+    state.currentSurface = debug.surface_profile?.surface || 'main_chat';
     renderStatus();
   }
 
@@ -228,9 +266,21 @@ export function createContext({ chat, router, toast }) {
     await loadCurrent(conversationId).catch((error) => console.warn('[context:conversation]', error));
   }
 
+  function useMainSurface() {
+    if (state.currentSurface === 'main_chat') return;
+    state.currentSurface = 'main_chat';
+    state.lastDebug = null;
+    renderStatus();
+  }
+
   async function start() {
     await loadCurrent().catch((error) => console.warn('[context:start]', error));
   }
 
-  return Object.freeze({ start, handleAction, handleSubmit, captureDebug, onConversationChanged, renderStatus });
+  return Object.freeze({
+    start, handleAction, handleSubmit, captureDebug, onConversationChanged, renderStatus,
+    previewSurface,
+    useMainSurface,
+    openInspector: () => router.open('context-inspector'),
+  });
 }

@@ -1,6 +1,9 @@
 import { ensureContextSchema } from './context-schema.js';
 
-const SCOPES = new Set(['owner', 'visitor', 'both', 'construction', 'mailbox', 'calendar']);
+const SCOPES = new Set([
+  'owner', 'visitor', 'both', 'construction', 'mailbox', 'calendar',
+  'lighthouse', 'radio', 'official_mcp', 'daily',
+]);
 const POSITIONS = new Set(['before_memory', 'after_memory']);
 const MAX_CONSTANT_ENTRIES = 4;
 
@@ -143,13 +146,22 @@ export async function deleteWorldbookEntry(db, id) {
   return entryFromRow(await requireRow(db, row.id));
 }
 
-function inScope(entry, { surface = 'main_chat', worldbook_scope: modeScope } = {}) {
-  const visitor = surface === 'visitor' || surface === 'mailbox_visitor';
+function inScope(entry, {
+  surface = 'main_chat',
+  worldbook_scope: modeScope,
+  allowed_scopes: allowedScopes,
+} = {}) {
+  const visitor = surface === 'mailbox_visitor';
   if (visitor) return entry.visitor_safe && ['visitor', 'both'].includes(entry.scope);
+  if (Array.isArray(allowedScopes) && allowedScopes.length) return allowedScopes.includes(entry.scope);
   if (entry.scope === 'visitor') return false;
   if (['owner', 'both'].includes(entry.scope)) return true;
-  if (entry.scope === 'mailbox') return surface === 'mailbox';
+  if (entry.scope === 'mailbox') return surface === 'mailbox_owner';
   if (entry.scope === 'calendar') return surface === 'calendar' || modeScope === 'calendar';
+  if (entry.scope === 'lighthouse') return surface === 'lighthouse';
+  if (entry.scope === 'radio') return surface === 'radio';
+  if (entry.scope === 'official_mcp') return surface === 'official_mcp';
+  if (entry.scope === 'daily') return surface === 'daily';
   if (entry.scope === 'construction') return modeScope === 'construction';
   return entry.scope === modeScope;
 }
@@ -174,19 +186,58 @@ function matches(entry, text) {
 export async function matchWorldbook(db, {
   input = '',
   messages = [],
+  surface_text: surfaceText = [],
   surface = 'main_chat',
   worldbook_scope: modeScope = 'owner',
+  allowed_scopes: allowedScopes,
   limit = 6,
 } = {}) {
   await ensureContextSchema(db);
   const entries = await listWorldbookEntries(db, { include_disabled: false });
   const matched = [];
   for (const entry of entries) {
-    if (!inScope(entry, { surface, worldbook_scope: modeScope })) continue;
-    const recent = (Array.isArray(messages) ? messages : []).slice(-entry.scan_depth);
-    const scanText = [input, ...recent.map((message) => message?.content || '')].filter(Boolean).join('\n');
-    const result = matches(entry, scanText);
-    if (result.matched) matched.push({ ...entry, matched_keywords: result.triggers });
+    if (!inScope(entry, { surface, worldbook_scope: modeScope, allowed_scopes: allowedScopes })) continue;
+    if (entry.constant_active) {
+      matched.push({
+        ...entry,
+        matched_keywords: ['constant_active'],
+        matched_source: 'constant_active',
+        match_reason: 'constant_active',
+      });
+      continue;
+    }
+    const inputResult = matches(entry, String(input || ''));
+    if (inputResult.matched) {
+      matched.push({
+        ...entry,
+        matched_keywords: inputResult.triggers,
+        matched_source: 'user_input',
+        match_reason: 'keyword',
+      });
+      continue;
+    }
+    const recent = (Array.isArray(messages) ? messages : [])
+      .filter((message) => ['user', 'assistant'].includes(message?.role))
+      .slice(-entry.scan_depth);
+    const recentResult = matches(entry, recent.map((message) => message.content || '').join('\n'));
+    if (recentResult.matched) {
+      matched.push({
+        ...entry,
+        matched_keywords: recentResult.triggers,
+        matched_source: 'recent_message',
+        match_reason: 'keyword',
+      });
+      continue;
+    }
+    const explicitResult = matches(entry, (Array.isArray(surfaceText) ? surfaceText : []).join('\n'));
+    if (explicitResult.matched) {
+      matched.push({
+        ...entry,
+        matched_keywords: explicitResult.triggers,
+        matched_source: 'explicit_surface',
+        match_reason: 'keyword',
+      });
+    }
   }
   return matched
     .sort((a, b) => b.priority - a.priority || a.title.localeCompare(b.title, 'zh-CN'))

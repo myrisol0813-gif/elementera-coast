@@ -346,14 +346,19 @@ await assert.rejects(
   (error) => error.type === 'mailbox_pocket_not_found',
   '待确认袋不得跨访客处理',
 );
-const rememberedStar = await resolveMailboxPocket(db, {
-  visitor_id: alice.id,
-  pocket_id: starPocket.id,
-  action: 'remember',
-  visibility: 'visitor_visible',
-  confidence: 0.9,
-  tool_call_id: 'mailbox-memory-a-star',
-});
+const crossPocketResolve = await routeMailboxApi(requestWithToken(
+  `/api/mailbox/memory/pockets/${encodeURIComponent(starPocket.id)}/resolve`,
+  bobToken,
+  { method: 'POST', body: JSON.stringify({ action: 'remember' }) },
+), env);
+assert.ok([404, 409].includes(crossPocketResolve.status), '访客 REST 不得处理其他访客的候选');
+const rememberPocketResponse = await routeMailboxApi(requestWithToken(
+  `/api/mailbox/memory/pockets/${encodeURIComponent(starPocket.id)}/resolve`,
+  aliceToken,
+  { method: 'POST', body: JSON.stringify({ action: 'remember' }) },
+), env);
+assert.equal(rememberPocketResponse.status, 200);
+const rememberedStar = await rememberPocketResponse.json();
 assert.equal(rememberedStar.entry.title, '星星意象');
 assert.equal(rememberedStar.entry.visibility, 'visitor_visible');
 assert.equal((await resolveMailboxPocket(db, {
@@ -361,14 +366,13 @@ assert.equal((await resolveMailboxPocket(db, {
   pocket_id: starPocket.id,
   action: 'remember',
 })).idempotent, true);
-const rememberedName = await resolveMailboxPocket(db, {
-  visitor_id: alice.id,
-  pocket_id: namePocket.id,
-  action: 'remember',
-  visibility: 'myri_only',
-  tool_call_id: 'mailbox-memory-a-name',
-});
-assert.equal(rememberedName.entry.visibility, 'myri_only');
+const discardPocketResponse = await routeMailboxApi(requestWithToken(
+  `/api/mailbox/memory/pockets/${encodeURIComponent(namePocket.id)}/resolve`,
+  aliceToken,
+  { method: 'POST', body: JSON.stringify({ action: 'discard' }) },
+), env);
+assert.equal(discardPocketResponse.status, 200);
+assert.equal((await discardPocketResponse.json()).entry, null);
 const aliceMemory = await visibleVisitorMemory(db, alice.id);
 assert.equal(aliceMemory.pending_pockets.length, 0);
 assert.equal(aliceMemory.entries.length, 1);

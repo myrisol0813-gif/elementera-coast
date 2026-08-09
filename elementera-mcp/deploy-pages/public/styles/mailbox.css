@@ -291,6 +291,35 @@
   margin: 0;
 }
 
+.mailbox-pocket-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.mailbox-pocket-actions button {
+  min-width: 0;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.mailbox-pocket-actions button.primary {
+  border-color: color-mix(in srgb, #f2b84b 44%, var(--line));
+  background: color-mix(in srgb, #f2b84b 18%, var(--surface-raised));
+  font-weight: 650;
+}
+
+.mailbox-pocket-actions button:disabled {
+  cursor: wait;
+  opacity: .58;
+}
+
 @media (max-width: 620px) {
   .mailbox-shell .main-panel {
     border-inline: 0;

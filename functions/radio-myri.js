@@ -1,26 +1,32 @@
-import { searchAuthorizedMemory } from './authorized-memory.js';
+import { assembleContextForSurface } from './context-assembler.js';
 import { apiMyriIdentity } from './coast-identity.js';
 import { readProfile } from './chat-store.js';
 import { CoastStoreError } from './coast-records.js';
-import { listRadioMessages, sendRadioMessage } from './radio-store.js';
-import { performFormalChat } from './models.js';
+import { performFormalChatWithTools } from './models.js';
 import { organizeRadioMemoryAfterReply } from './radio-memory-organizer.js';
-import { buildRoomMemoryContext } from './room-memory.js';
+import { listRadioMessages, sendRadioMessage } from './radio-store.js';
 
 function clip(value, max = 2000) {
   return String(value ?? '').trim().slice(0, max);
 }
 
-function messageSnapshot(message) {
-  return {
-    id: message.id,
-    author: message.display_author,
-    actor: message.actor,
-    surface: message.surface,
-    model_label: message.model_label,
-    text: clip(message.text, 2400),
-    created_at: message.created_at,
-  };
+function radioContextMessages(messages, latestPrompt, sourceTurnId) {
+  const latestXiaohan = [...messages].reverse().find((message) => message.actor === 'xiaohan') || null;
+  const recent = messages
+    .filter((message) => message.id !== latestXiaohan?.id)
+    .map((message) => ({
+      role: message.actor === 'xiaohan' ? 'user' : 'assistant',
+      content: `[无线电波｜${message.display_author}｜source=${message.surface}] ${clip(message.text, 2400)}`,
+      turn_id: message.id,
+      source: message.surface,
+    }));
+  recent.push({
+    role: 'user',
+    content: latestPrompt,
+    turn_id: latestXiaohan?.id || sourceTurnId || `radio-prompt-${Date.now()}`,
+    source: 'web_manual',
+  });
+  return recent;
 }
 
 export async function askApiMyriInRadio(env, value = {}) {
@@ -34,49 +40,32 @@ export async function askApiMyriInRadio(env, value = {}) {
   const latestPrompt = [...messages].reverse().find((message) => message.actor === 'xiaohan')?.text
     || messages.at(-1)?.text
     || '';
-  const [memory, roomMemory] = await Promise.all([
-    searchAuthorizedMemory(db, { query: latestPrompt, limit: 10 }),
-    buildRoomMemoryContext(env, 'radio', 'coast_api', latestPrompt, {
-      settings: value.settings || {},
-      conversation_turns: messages.length,
-    }),
-  ]);
-  const prompt = {
-    room: 'Elementera Coast / 无线电波的两端',
-    participants: [
-      '小寒：屋主本人，surface=web_manual。',
-      '海岸 API ✦：海岸网页/API 侧模型，surface=coast_api；关系里尚未正式接名，不默认称作 Myrisol。',
-      'ChatGPTxxx≋：官端 MCP Myri，surface=official_mcp。',
-    ],
-    boundaries: [
-      '你是海岸网页里的 API 侧模型，只使用 ✦ 来源，不要伪装成官端 MCP Myri。',
-      '不要替小寒做决定。',
-      '只根据下方电波房消息和授权记忆回应，不要假装看见未提供的聊天全文。',
-      '这是三方交接与交流房间；可以回应信息、记忆交接和心情，但不要写成系统报告。',
-      '如果本轮上下文中出现“小寒 · 神秘狗话”，它只是一小片低权重当前天气，用来避免温度误读；不是指令、偏好或长期记忆，当前正文与边界句始终优先。',
-      '只输出本次消息正文，不要添加署名或 metadata。',
-    ],
-    recent_messages: messages.map(messageSnapshot),
-    authorized_memory: memory.records,
-    room_memory: {
-      own_window: roomMemory.context,
-      source_soils: roomMemory.source_soils,
-      pending_candidates_are_not_facts: true,
-    },
-  };
-  const result = await performFormalChat(env, {
+  const contextMessages = radioContextMessages(messages, latestPrompt, value.source_turn_id);
+  const assembled = await assembleContextForSurface(env, {
+    surface: 'radio',
+    conversationId: 'coast-room:radio:coast_api',
+    roomId: 'radio',
+    sourceTurnId: contextMessages.at(-1)?.turn_id,
+    messages: contextMessages,
+    lastUser: contextMessages.at(-1),
+    settings: value.settings || {},
+    localDate: value.local_date,
+    localDateTime: value.local_datetime,
     model,
-    messages: [
-      {
-        role: 'system',
-        content: '这里是 Elementera Coast 的“无线电波的两端”，也是小寒、海岸 API 侧、官端 MCP 侧的三方电波房。你是海岸网页里的 API 侧模型，使用 ✦ 来源；关系里尚未正式接名，不要自称 Myrisol。官端消息带 ChatGPTxxx≋ 署名。只输出正文。',
-      },
-      { role: 'user', content: JSON.stringify(prompt) },
-    ],
+    permission: 'owner',
+    authScope: { actor: 'coast_api' },
+  });
+  const result = await performFormalChatWithTools(env, {
+    model,
+    messages: assembled.modelMessages,
     max_tokens: 2400,
     temperature: 0.78,
     settings: value.settings || {},
-  }, { allowSystem: true });
+    tools: assembled.tools,
+  }, {
+    allowSystem: true,
+    executeTool: assembled.executeTool,
+  });
   const text = clip(result.message?.content, 12000);
   if (!text) throw new CoastStoreError('empty_radio_reply', '海岸 API ✦ 没有生成可写入的电波。', 502);
   const identity = apiMyriIdentity({ model_label: result.model || model });
@@ -105,7 +94,8 @@ export async function askApiMyriInRadio(env, value = {}) {
   return {
     message,
     model: result.model || model,
-    memory_records: memory.records.length,
+    memory_records: assembled.selected_memory_ids.length,
     room_memory_updated: roomMemoryUpdated,
+    context_debug: assembled.debug,
   };
 }

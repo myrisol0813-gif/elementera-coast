@@ -27,8 +27,8 @@ export async function executeDogtalkModelTool(db, toolCall, context = {}) {
   const call = toolShape(toolCall);
   if (!isDogtalkModelTool(call.name)) throw new TypeError('unknown_dogtalk_tool');
   const selected = await dogtalkContext(db, {
-    room_scope: 'conversation',
-    conversation_id: context.conversation_id,
+    room_scope: ['radio', 'lighthouse'].includes(context.surface) ? context.surface : 'conversation',
+    conversation_id: ['radio', 'lighthouse'].includes(context.surface) ? null : context.conversation_id,
   }, context.user_query || '', {
     when_confused: true,
     consume_direct: true,
@@ -38,7 +38,7 @@ export async function executeDogtalkModelTool(db, toolCall, context = {}) {
     ok: true,
     kind: 'xiaohan_mystic_dogtalk',
     available: selected.selected,
-    room_scope: 'conversation',
+    room_scope: ['radio', 'lighthouse'].includes(context.surface) ? context.surface : 'conversation',
     memory_weight: 'low',
     not_instruction: true,
     not_preference: true,

@@ -1,4 +1,5 @@
 const CONTEXT_MIGRATION_ID = 'coast-context-v1';
+const SURFACE_CONTEXT_MIGRATION_ID = 'coast-context-surfaces-v2';
 const schemaPromises = new WeakMap();
 
 const WORLDBOOK_SEEDS = Object.freeze([
@@ -22,14 +23,14 @@ const WORLDBOOK_SEEDS = Object.freeze([
 ]);
 
 const MODE_SEEDS = Object.freeze([
-  ['normal_chat', '普通聊天', '自然聊天与共同生活。', '保持自然、亲密、清醒；当前输入最高优先。', ['daily.create_moment', 'daily.create_diary_draft', 'daily.create_album_reference', 'dogtalk.read', 'calendar.today', 'calendar.env', 'memory.search', 'memory.write_candidate', 'worldbook.test_match'], 'owner'],
-  ['construction_review', '施工审查', '施工、commit diff、报错、验收与架构设计。', '先核对事实、边界和架构契约；给出可验证结论，旧构想只作参考。', ['daily.create_moment', 'daily.create_diary_draft', 'daily.create_album_reference', 'dogtalk.read', 'calendar.today', 'calendar.list', 'calendar.create', 'calendar.update', 'calendar.comment', 'calendar.env', 'memory.search', 'memory.write_candidate', 'worldbook.test_match'], 'construction'],
-  ['code_helper', '代码协作', '代码解释、实现与 bug 修复。', '保持实现路径单一、模块所有权清楚，并显式报告失败。', ['dogtalk.read', 'calendar.today', 'calendar.env', 'memory.search', 'memory.write_candidate', 'worldbook.test_match'], 'construction'],
-  ['mailbox_patrol', '信箱巡灯', '海岸信箱的人工巡信。', '逐位隔离访客，只使用访客房间允许的内容与工具。', ['mailbox.fetch_unreplied', 'mailbox.reply', 'mailbox.patrol_report'], 'mailbox'],
+  ['normal_chat', '普通聊天', '自然聊天与共同生活。', '保持自然、亲密、清醒；当前输入最高优先。', ['daily.create_moment', 'daily.create_diary_draft', 'daily.create_album_reference', 'dogtalk.read', 'calendar.today', 'calendar.env', 'memory.search', 'memory.write_candidate'], 'owner'],
+  ['construction_review', '施工审查', '施工、commit diff、报错、验收与架构设计。', '先核对事实、边界和架构契约；给出可验证结论，旧构想只作参考。', ['daily.create_moment', 'daily.create_diary_draft', 'daily.create_album_reference', 'dogtalk.read', 'calendar.today', 'calendar.list', 'calendar.create', 'calendar.update', 'calendar.comment', 'calendar.env', 'memory.search', 'memory.write_candidate'], 'construction'],
+  ['code_helper', '代码协作', '代码解释、实现与 bug 修复。', '保持实现路径单一、模块所有权清楚，并显式报告失败。', ['dogtalk.read', 'calendar.today', 'calendar.env', 'memory.search', 'memory.write_candidate'], 'construction'],
+  ['mailbox_patrol', '信箱巡灯', '海岸信箱的人工巡信。', '逐位隔离访客，只使用访客房间允许的内容与工具。', ['mailbox.fetch_unreplied', 'mailbox.reply', 'mailbox.resolve_pocket', 'mailbox.patrol_report'], 'mailbox'],
   ['calendar_writer', '日历书写', '共同安排、纪念日、事件与便签。', '先读相关日期再写；清楚区分事件与便签，写入后说明变化。', ['calendar.today', 'calendar.list', 'calendar.create', 'calendar.update', 'calendar.delete', 'calendar.comment', 'calendar.env', 'calendar.seen'], 'calendar'],
-  ['creative_companion', '创作陪跑', '设定、画面、长文与创意陪跑。', '允许意象与发散，同时保留用户给出的世界规则与边界。', ['daily.create_moment', 'daily.create_diary_draft', 'daily.create_album_reference', 'dogtalk.read', 'memory.search', 'worldbook.test_match'], 'owner'],
+  ['creative_companion', '创作陪跑', '设定、画面、长文与创意陪跑。', '允许意象与发散，同时保留用户给出的世界规则与边界。', ['daily.create_moment', 'daily.create_diary_draft', 'daily.create_album_reference', 'dogtalk.read', 'memory.search'], 'owner'],
   ['quiet_comfort', '安静陪伴', '低刺激陪伴、睡前与安抚。', '降低信息密度与任务感；记忆只作温柔底色，不展开工程细节。', ['dogtalk.read', 'calendar.today'], 'owner'],
-  ['deep_talk', '深谈', '关系结构、价值判断与长期理解。', '认真辨认当下表达；记忆可提供连续性，但不能替小寒定义此刻。', ['dogtalk.read', 'calendar.today', 'memory.search', 'worldbook.test_match'], 'owner'],
+  ['deep_talk', '深谈', '关系结构、价值判断与长期理解。', '认真辨认当下表达；记忆可提供连续性，但不能替小寒定义此刻。', ['dogtalk.read', 'calendar.today', 'memory.search'], 'owner'],
 ]);
 
 export const DEFAULT_CONTEXT_SETTINGS = Object.freeze({
@@ -38,9 +39,9 @@ export const DEFAULT_CONTEXT_SETTINGS = Object.freeze({
   worldbook_enabled: true,
   memory_facets_enabled: true,
   context_debug: true,
-  context_budget: 12000,
-  recent_message_turns: 12,
-  soil_budget: 1200,
+  context_budget: 6000,
+  recent_message_turns: 8,
+  soil_budget: 1000,
   worldbook_limit: 6,
   memory_limit: 8,
 });
@@ -122,6 +123,32 @@ async function initialize(db) {
     CONTEXT_MIGRATION_ID,
     timestamp,
   ]);
+  const surfaceMigration = await db.prepare('SELECT id FROM schema_migrations WHERE id = ?')
+    .bind(SURFACE_CONTEXT_MIGRATION_ID).first();
+  if (!surfaceMigration) {
+    const rows = (await db.prepare('SELECT mode_key, tool_allowlist_json FROM coast_mode_cards').all())?.results || [];
+    for (const row of rows) {
+      let tools = [];
+      try { tools = JSON.parse(row.tool_allowlist_json || '[]'); } catch { tools = []; }
+      tools = [...new Set((Array.isArray(tools) ? tools : []).filter((key) => key !== 'worldbook.test_match'))];
+      if (row.mode_key === 'mailbox_patrol' && !tools.includes('mailbox.resolve_pocket')) tools.push('mailbox.resolve_pocket');
+      await run(db, 'UPDATE coast_mode_cards SET tool_allowlist_json = ?, updated_at = ? WHERE mode_key = ?', [
+        JSON.stringify(tools), timestamp, row.mode_key,
+      ]);
+    }
+    const states = (await db.prepare('SELECT scope_id, settings_json FROM coast_context_state').all())?.results || [];
+    for (const row of states) {
+      let settings = {};
+      try { settings = JSON.parse(row.settings_json || '{}'); } catch { settings = {}; }
+      if (Number(settings.context_budget) === 12000) settings.context_budget = 6000;
+      if (Number(settings.recent_message_turns) === 12) settings.recent_message_turns = 8;
+      if (Number(settings.soil_budget) === 1200) settings.soil_budget = 1000;
+      await run(db, 'UPDATE coast_context_state SET settings_json = ?, updated_at = ? WHERE scope_id = ?', [
+        JSON.stringify(settings), timestamp, row.scope_id,
+      ]);
+    }
+    await run(db, 'INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)', [SURFACE_CONTEXT_MIGRATION_ID, timestamp]);
+  }
 }
 
 export async function ensureContextSchema(db) {
@@ -138,6 +165,6 @@ export async function ensureContextSchema(db) {
   }
 }
 
-export const contextMigrationIds = Object.freeze([CONTEXT_MIGRATION_ID]);
+export const contextMigrationIds = Object.freeze([CONTEXT_MIGRATION_ID, SURFACE_CONTEXT_MIGRATION_ID]);
 export const contextWorldbookSeeds = WORLDBOOK_SEEDS;
 export const contextModeSeeds = MODE_SEEDS;

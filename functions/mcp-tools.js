@@ -1,31 +1,14 @@
-import { getRecentDailySummary, searchAuthorizedMemory } from './authorized-memory.js';
 import { CALENDAR_MCP_DEFINITIONS } from './calendar-mcp-tools.js';
+import { assembleContextForSurface } from './context-assembler.js';
 import { executeRegisteredTool } from './tool-registry.js';
 import { officialMcpIdentity } from './coast-identity.js';
-import {
-  commitSummary,
-  listAlbumItems,
-  listDiaries,
-  listMoments,
-} from './daily-store.js';
-import { runDailySummary } from './daily-summary.js';
-import { dogtalkContext } from './dogtalk-store.js';
 import {
   FRIEND_MYRISOL_PROMPT_ID,
   FRIEND_MYRISOL_PROMPT_V1,
 } from './friend-myrisol-prompt.js';
-import { writeLighthouseLetter } from './lighthouse-store.js';
 import { McpAuthError, mcpAuthChallenge, requireMcpAuth } from './mcp-auth.js';
-import { writeOfficialSoil } from './official-soil-store.js';
-import { sendRadioMessage } from './radio-store.js';
-import { listLighthouseRoomMessages, listRadioRoomMessages } from './room-records.js';
-import {
-  listRoomMemory,
-  writeLighthouseRoomSoil,
-  writeRoomMemory,
-} from './room-memory.js';
 
-const VERSION = '1.7.0';
+const VERSION = '1.7.1';
 const PRIVATE_RECORD_SCHEMA = Object.freeze({ type: 'object', additionalProperties: true });
 
 function objectSchema(properties = {}, required = []) {
@@ -820,70 +803,136 @@ function mcpReadableRoomMemory(memory) {
   };
 }
 
-async function executeTool(name, rawArgs, request, env, requestMeta) {
+function registryContext(auth, roomScope, extra = {}) {
+  return {
+    actor: 'official_mcp',
+    permission: 'owner',
+    surface: 'official_mcp',
+    room_scope: roomScope,
+    authScope: auth,
+    ...extra,
+  };
+}
+
+async function roomContextPackage(env, surface, records, auth) {
+  const messages = (Array.isArray(records) ? records : []).map((record) => ({
+    role: record.actor === 'xiaohan' ? 'user' : 'assistant',
+    content: `[${surface === 'radio' ? '无线电波' : '灯塔来信'}｜${record.display_author}｜source=${record.surface}] ${record.text || record.body || ''}`,
+    turn_id: record.id,
+    source: record.surface,
+  }));
+  const lastUser = [...messages].reverse().find((message) => message.role === 'user') || {
+    role: 'user',
+    content: surface === 'radio' ? '读取当前无线电波房。' : '读取当前灯塔来信房。',
+  };
+  if (!messages.length) messages.push(lastUser);
+  const assembled = await assembleContextForSurface(env, {
+    surface,
+    conversationId: `coast-room:${surface}:official_mcp`,
+    roomId: surface,
+    messages,
+    lastUser,
+    permission: 'owner',
+    authScope: { ...auth, actor: 'official_mcp' },
+    preview: true,
+  });
+  return {
+    manifest: assembled.manifest,
+    ambient: assembled.ambient,
+    mode: assembled.mode,
+    blocks: assembled.blocks,
+    worldbook_matches: assembled.worldbook_matches,
+    memory_facets: assembled.memory_facets,
+    tools: assembled.tool_registry,
+    budget: assembled.budget,
+  };
+}
+
+async function visitorContextPackage(env, visitor, auth) {
+  const messages = (visitor.recent_messages || []).map((message) => ({
+    role: message.role === 'visitor' ? 'user' : 'assistant',
+    content: message.content,
+    turn_id: message.id,
+    source: 'mailbox_visitor',
+  }));
+  const lastUser = [...messages].reverse().find((message) => message.role === 'user') || {
+    role: 'user', content: '承接当前访客信箱。',
+  };
+  const assembled = await assembleContextForSurface(env, {
+    surface: 'mailbox_visitor',
+    conversationId: `mailbox:${visitor.visitor_id}`,
+    visitorId: visitor.visitor_id,
+    messages: messages.length ? messages : [lastUser],
+    lastUser,
+    permission: 'visitor',
+    authScope: { ...auth, actor: 'official_mcp' },
+    preview: true,
+  });
+  return {
+    manifest: assembled.manifest,
+    ambient: assembled.ambient,
+    mode: assembled.mode,
+    model_soil_brief: assembled.blocks.find((block) => block.key === 'thinking_soil')?.body || '',
+    worldbook_matches: assembled.worldbook_matches,
+    memory_facets: assembled.memory_facets,
+    budget: assembled.budget,
+  };
+}
+
+async function executeTool(name, rawArgs, request, env, requestMeta, auth) {
   const args = inputObject(rawArgs);
   if (name.startsWith('calendar.')) {
     const result = await executeRegisteredTool(env.COAST_CHAT_DB, name, args, {
-      actor: 'official_mcp',
-      permission: 'owner',
-      surface: 'official_mcp',
-      room_scope: 'calendar',
+      ...registryContext(auth, 'calendar'),
       conversation_id: sourceConversation(args, requestMeta),
     });
     return resultContent(result, '海岸日历工具已经完成，并写入双向变化记录。');
   }
   if (name === 'get_coast_status') {
-    const status = {
-      name: 'Elementera Coast MCP Porch',
-      version: VERSION,
-      authenticated: true,
-      surface: 'official_mcp',
-      now: new Date().toISOString(),
-    };
+    const status = await executeRegisteredTool(env.COAST_CHAT_DB, 'coast.status', {},
+      registryContext(auth, 'official_mcp', { mcp_version: VERSION }));
     return resultContent({ status }, 'Elementera Coast 的官端门廊已连接。');
   }
   if (name === 'list_radio_messages') {
-    const [messages, roomMemory] = await Promise.all([
-      listRadioRoomMessages(env.COAST_CHAT_DB, {
-        limit: integerInput(args.limit, 'limit', 100, 200),
-        before: dateTimeInput(args.before, 'before'),
-      }, { audience: 'model' }),
-      listRoomMemory(env.COAST_CHAT_DB, 'radio'),
-    ]);
+    const room = await executeRegisteredTool(env.COAST_CHAT_DB, 'radio.list', {
+      limit: integerInput(args.limit, 'limit', 100, 200),
+      before: dateTimeInput(args.before, 'before'),
+    }, registryContext(auth, 'radio'));
+    const context = await roomContextPackage(env, 'radio', room.messages, auth);
     return resultContent(
-      { messages, room_memory: mcpReadableRoomMemory(roomMemory) },
-      `读取了 ${messages.length} 条海岸电波及房间分区记忆；待确认袋只返回数量，不作为事实内容。`,
+      { messages: room.messages, room_memory: mcpReadableRoomMemory(room.room_memory), context },
+      `读取了 ${room.messages.length} 条海岸电波及无线电波专属上下文；待确认袋只返回数量，不作为事实内容。`,
     );
   }
   if (name === 'list_lighthouse_letters') {
-    const [letters, roomMemory] = await Promise.all([
-      listLighthouseRoomMessages(env.COAST_CHAT_DB, {
-        limit: integerInput(args.limit, 'limit', 50, 100),
-        unread_only: booleanInput(args.unread_only, 'unread_only'),
-      }, { audience: 'model' }),
-      listRoomMemory(env.COAST_CHAT_DB, 'lighthouse'),
-    ]);
+    const room = await executeRegisteredTool(env.COAST_CHAT_DB, 'lighthouse.list', {
+      limit: integerInput(args.limit, 'limit', 50, 100),
+      unread_only: booleanInput(args.unread_only, 'unread_only'),
+    }, registryContext(auth, 'lighthouse'));
+    const context = await roomContextPackage(env, 'lighthouse', room.letters, auth);
     return resultContent(
-      { letters, room_memory: mcpReadableRoomMemory(roomMemory) },
-      `读取了 ${letters.length} 封小寒与官端 ChatGPT≋ 之间的灯塔来信；海岸 API ✦ 不属于这个房间。`,
+      { letters: room.letters, room_memory: mcpReadableRoomMemory(room.room_memory), context },
+      `读取了 ${room.letters.length} 封小寒与官端 ChatGPT≋ 之间的灯塔来信及灯塔专属上下文；海岸 API ✦ 不属于这个房间。`,
     );
   }
   if (name === 'mcp_mailbox_fetch_unreplied') {
     const patrol = await executeRegisteredTool(env.COAST_CHAT_DB, 'mailbox.fetch_unreplied', {
       message_limit: boundedIntegerInput(args.message_limit, 'message_limit', 60, 10, 100),
-    }, {
-      actor: 'official_mcp', permission: 'owner', surface: 'official_mcp', room_scope: 'mailbox',
-    });
+    }, registryContext(auth, 'mailbox'));
+    const visitors = await Promise.all(patrol.visitors.map(async (visitor) => ({
+      ...visitor,
+      context_package: await visitorContextPackage(env, visitor, auth),
+    })));
     return resultContent({
       ...patrol,
+      visitors,
       behavior_prompt_id: FRIEND_MYRISOL_PROMPT_ID,
       behavior_prompt: FRIEND_MYRISOL_PROMPT_V1,
     }, `本次巡灯取到 ${patrol.visitor_count} 位访客、${patrol.message_count} 封待回信；请逐位隔离处理，并严格遵守 friend_myrisol_prompt_v1。`);
   }
   if (name === 'mcp_mailbox_reply') {
-    const written = await executeRegisteredTool(env.COAST_CHAT_DB, 'mailbox.reply', args, {
-      actor: 'official_mcp', permission: 'owner', surface: 'official_mcp', room_scope: 'mailbox',
-    });
+    const written = await executeRegisteredTool(env.COAST_CHAT_DB, 'mailbox.reply', args,
+      registryContext(auth, 'mailbox'));
     return resultContent({
       ...written,
       reply: {
@@ -897,9 +946,8 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
       : '这封回信已经写入当前访客自己的密封房间。');
   }
   if (name === 'mcp_mailbox_resolve_pocket') {
-    const resolved = await executeRegisteredTool(env.COAST_CHAT_DB, 'mailbox.resolve_pocket', args, {
-      actor: 'official_mcp', permission: 'owner', surface: 'official_mcp', room_scope: 'mailbox',
-    });
+    const resolved = await executeRegisteredTool(env.COAST_CHAT_DB, 'mailbox.resolve_pocket', args,
+      registryContext(auth, 'mailbox'));
     return resultContent(
       resolved,
       resolved.idempotent
@@ -910,9 +958,8 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     );
   }
   if (name === 'mcp_mailbox_patrol_report') {
-    const report = await executeRegisteredTool(env.COAST_CHAT_DB, 'mailbox.patrol_report', args, {
-      actor: 'official_mcp', permission: 'owner', surface: 'official_mcp', room_scope: 'mailbox',
-    });
+    const report = await executeRegisteredTool(env.COAST_CHAT_DB, 'mailbox.patrol_report', args,
+      registryContext(auth, 'mailbox'));
     return resultContent(report, report.summary);
   }
   if (name === 'read_mystic_dogtalk') {
@@ -927,18 +974,11 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     if (roomScope === 'conversation' && !conversationId) {
       invalidInput('读取主聊天的神秘狗话时必须提供 Coast conversation_id。');
     }
-    const selected = await dogtalkContext(
-      env.COAST_CHAT_DB,
-      {
-        room_scope: roomScope,
-        conversation_id: conversationId,
-      },
-      textInput(args.user_query, 'user_query', 240) || '',
-      {
-        when_confused: true,
-        consume_direct: true,
-      },
-    );
+    const selected = await executeRegisteredTool(env.COAST_CHAT_DB, 'dogtalk.read', {
+      room_scope: roomScope,
+      conversation_id: conversationId,
+      user_query: textInput(args.user_query, 'user_query', 240) || '',
+    }, registryContext(auth, roomScope, { external_tool: true }));
     const dogtalk = selected.dogtalk;
     const fallback = dogtalk.id && dogtalk.body
       ? '小寒把这条神秘狗话留在抽屉里；当前没有授权低频读取。'
@@ -956,40 +996,41 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     );
   }
   if (name === 'search_authorized_memory') {
-    const result = await searchAuthorizedMemory(env.COAST_CHAT_DB, {
+    const result = await executeRegisteredTool(env.COAST_CHAT_DB, 'memory.authorized_search', {
       query: textInput(args.query, 'query', 240) || '',
       limit: integerInput(args.limit, 'limit', 30, 80),
-    });
+    }, registryContext(auth, 'official_mcp'));
     return resultContent(result, `找到了 ${result.records.length} 条授权整理物；未读取原始聊天。`);
   }
   if (name === 'get_recent_daily_summary') {
-    const summary = await getRecentDailySummary(env.COAST_CHAT_DB);
+    const summary = await executeRegisteredTool(env.COAST_CHAT_DB, 'daily.summary.recent', {},
+      registryContext(auth, 'daily'));
     return resultContent({ summary }, summary ? '最近一份海岸总结已经取回。' : '海岸还没有已提交的一日总结。');
   }
   if (name === 'list_daily_moments') {
-    const moments = await listMoments(env.COAST_CHAT_DB, {
+    const moments = await executeRegisteredTool(env.COAST_CHAT_DB, 'daily.moments.list', {
       date: textInput(args.date, 'date', 10),
       status: enumInput(args.status, 'status', ['draft', 'candidate', 'published'], ''),
       limit: integerInput(args.limit, 'limit', 200, 300),
-    });
+    }, registryContext(auth, 'daily'));
     return resultContent({ moments }, `读取了 ${moments.length} 条海岸碳硅圈记录。`);
   }
   if (name === 'list_daily_diaries') {
-    const diaries = await listDiaries(env.COAST_CHAT_DB, {
+    const diaries = await executeRegisteredTool(env.COAST_CHAT_DB, 'daily.diaries.list', {
       date: textInput(args.date, 'date', 10),
       author: enumInput(args.author, 'author', ['xiaohan', 'api', 'mcp'], ''),
-    });
+    }, registryContext(auth, 'daily'));
     return resultContent({ diaries }, `读取了 ${diaries.length} 张海岸日记。`);
   }
   if (name === 'list_daily_albums') {
-    const albums = await listAlbumItems(env.COAST_CHAT_DB, {
+    const albums = await executeRegisteredTool(env.COAST_CHAT_DB, 'daily.albums.list', {
       date: textInput(args.date, 'date', 10),
       category: enumInput(args.category, 'category', ['xiaohan', 'myri', 'together'], ''),
-    });
+    }, registryContext(auth, 'daily'));
     return resultContent({ albums }, `读取了 ${albums.length} 条海岸相册引用。`);
   }
   if (name === 'run_daily_summary_candidate') {
-    const candidate = await runDailySummary(env, {
+    const candidate = await executeRegisteredTool(env.COAST_CHAT_DB, 'daily.summary.run', {
       range_mode: enumInput(
         args.range_mode,
         'range_mode',
@@ -1004,7 +1045,7 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
         840,
       ),
       model: textInput(args.model, 'model', 180),
-    });
+    }, registryContext(auth, 'daily', { env }));
     return resultContent(candidate, '一日总结候选已生成；还没有提交任何总结、日记、碳硅圈或相册记录。');
   }
   const identityArgs = modelIdentityInput(args);
@@ -1014,35 +1055,38 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     source_conversation_id: sourceConversation(identityArgs, requestMeta),
   };
   if (name === 'write_official_soil') {
-    const soil = await writeOfficialSoil(env.COAST_CHAT_DB, {
+    const soil = await executeRegisteredTool(env.COAST_CHAT_DB, 'official_soil.write', {
       ...provenance,
       content: textInput(args.content, 'content', 12000, { required: true }),
-    });
+    }, registryContext(auth, 'lighthouse'));
     return resultContent({ soil }, `灯塔巡迹已由 ${soil.display_author} 留下。`);
   }
   if (name === 'send_radio_message') {
     const memoryValue = roomMemoryInput(args.room_memory);
-    const message = await sendRadioMessage(env.COAST_CHAT_DB, {
-      ...provenance,
-      text: textInput(args.text, 'text', 12000, { required: true }),
-    });
-    const roomMemory = await writeRoomMemory(env.COAST_CHAT_DB, 'radio', provenance.identity, {
-      ...memoryValue,
-      source_conversation_id: provenance.source_conversation_id,
-      source_turn_id: provenance.source_turn_id || message.id,
-      tool_call_id: provenance.tool_call_id,
-    });
+    const written = await executeRegisteredTool(env.COAST_CHAT_DB, 'radio.send', {
+      message: {
+        ...provenance,
+        text: textInput(args.text, 'text', 12000, { required: true }),
+      },
+      identity: provenance.identity,
+      room_memory: {
+        ...memoryValue,
+        source_conversation_id: provenance.source_conversation_id,
+        source_turn_id: provenance.source_turn_id,
+        tool_call_id: provenance.tool_call_id,
+      },
+    }, registryContext(auth, 'radio'));
     return resultContent(
-      { message, room_memory: roomMemory },
-      `${message.display_author} 的电波已经送达海岸，官端房间思维壤也已分区更新。`,
+      written,
+      `${written.message.display_author} 的电波已经送达海岸，官端房间思维壤也已分区更新。`,
     );
   }
   if (name === 'write_lighthouse_letter') {
-    const letter = await writeLighthouseLetter(env.COAST_CHAT_DB, {
+    const letter = await executeRegisteredTool(env.COAST_CHAT_DB, 'lighthouse.write_letter', {
       ...provenance,
       subject: textInput(args.subject, 'subject', 180) || '',
       body: textInput(args.body, 'body', 40000, { required: true }),
-    });
+    }, registryContext(auth, 'lighthouse'));
     return resultContent(
       {
         letter,
@@ -1059,16 +1103,15 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
       12000,
       { required: true },
     );
-    const roomMemory = await writeLighthouseRoomSoil(
-      env.COAST_CHAT_DB,
-      provenance.identity,
-      {
+    const roomMemory = await executeRegisteredTool(env.COAST_CHAT_DB, 'lighthouse.write_soil', {
+      identity: provenance.identity,
+      value: {
         current_text: currentText,
         source_conversation_id: provenance.source_conversation_id,
         source_turn_id: provenance.source_turn_id,
         tool_call_id: provenance.tool_call_id,
       },
-    );
+    }, registryContext(auth, 'lighthouse'));
     return resultContent(
       {
         room_memory_updated: true,
@@ -1085,13 +1128,12 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
       text: textInput(args.text, 'text', 12000) || '',
       image_refs: stringArrayInput(args.image_refs, 'image_refs'),
       reason: textInput(args.reason, 'reason', 1000) || '',
-    }, {
-      actor: 'official_mcp', permission: 'owner', surface: 'official_mcp', room_scope: 'daily',
+    }, registryContext(auth, 'daily', {
       conversation_id: provenance.source_conversation_id,
       source_turn_id: provenance.source_turn_id,
       tool_call_id: provenance.tool_call_id,
       identity: provenance.identity,
-    });
+    }));
     return resultContent({ draft }, `${draft.display_author} 的碳硅圈候选已送到小寒确认页，没有直接发布。`);
   }
   if (name === 'create_diary_draft') {
@@ -1103,13 +1145,12 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
       image_refs: stringArrayInput(args.image_refs, 'image_refs'),
       tags: stringArrayInput(args.tags, 'tags', 20, 80),
       related_message_ids: stringArrayInput(args.related_message_ids, 'related_message_ids', 40, 180),
-    }, {
-      actor: 'official_mcp', permission: 'owner', surface: 'official_mcp', room_scope: 'daily',
+    }, registryContext(auth, 'daily', {
       conversation_id: provenance.source_conversation_id,
       source_turn_id: provenance.source_turn_id,
       tool_call_id: provenance.tool_call_id,
       identity: provenance.identity,
-    });
+    }));
     return resultContent({ draft }, `${draft.display_author} 的日记草稿已送到小寒确认页，没有直接发布。`);
   }
   if (name === 'save_mcp_album_item') {
@@ -1118,13 +1159,12 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
       image_ref: textInput(args.image_ref, 'image_ref', 2048, { required: true }),
       category: enumInput(args.category, 'category', ['xiaohan', 'myri', 'together'], 'together'),
       caption: textInput(args.caption, 'caption', 1000) || '',
-    }, {
-      actor: 'official_mcp', permission: 'owner', surface: 'official_mcp', room_scope: 'daily',
+    }, registryContext(auth, 'daily', {
       conversation_id: provenance.source_conversation_id,
       source_turn_id: provenance.source_turn_id,
       tool_call_id: provenance.tool_call_id,
       identity: provenance.identity,
-    });
+    }));
     return resultContent({ album }, `${album.display_author} 的稳定图片引用已登记。`);
   }
   if (name === 'commit_daily_summary_after_confirmation') {
@@ -1149,18 +1189,21 @@ async function executeTool(name, rawArgs, request, env, requestMeta) {
     if (!draftId.startsWith('summary_')) {
       invalidInput('必须提交先前生成且带编号的总结候选。');
     }
-    const committed = await commitSummary(env.COAST_CHAT_DB, {
-      ...draft,
-      model_id: textInput(args.summary_model, 'summary_model', 180) || draft.model_id,
-    }, {
-      author: 'mcp',
-      conversation_id: provenance.source_conversation_id,
-      source_turn_id: provenance.source_turn_id,
-      identity: provenance.identity,
-      confirmed_by_xiaohan: true,
-      confirmation_source: confirmationSource,
-      confirmation_note: confirmationNote,
-    });
+    const committed = await executeRegisteredTool(env.COAST_CHAT_DB, 'daily.summary.commit', {
+      draft: {
+        ...draft,
+        model_id: textInput(args.summary_model, 'summary_model', 180) || draft.model_id,
+      },
+      provenance: {
+        author: 'mcp',
+        conversation_id: provenance.source_conversation_id,
+        source_turn_id: provenance.source_turn_id,
+        identity: provenance.identity,
+        confirmed_by_xiaohan: true,
+        confirmation_source: confirmationSource,
+        confirmation_note: confirmationNote,
+      },
+    }, registryContext(auth, 'daily', { confirmed_by_xiaohan: true }));
     return resultContent(committed, '已按小寒的明确确认提交一日总结和所选候选。');
   }
   return errorResult({ type: 'unknown_tool', message: '未知海岸工具。' });
@@ -1175,8 +1218,8 @@ export async function callCoastMcpTool(name, args, request, env, requestMeta = {
   if (!definition) return errorResult({ type: 'unknown_tool', message: '未知海岸工具。' });
   const scopes = definition.securitySchemes[0].scopes;
   try {
-    await requireMcpAuth(request, env, scopes);
-    return await executeTool(definition.name, args, request, env, requestMeta);
+    const auth = await requireMcpAuth(request, env, scopes);
+    return await executeTool(definition.name, args, request, env, requestMeta, auth);
   } catch (error) {
     return authErrorResult(request, error, scopes, definition.name);
   }

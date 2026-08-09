@@ -1,4 +1,5 @@
-import { assembleContextForChat } from './context-assembler.js';
+import { assembleContextForSurface } from './context-assembler.js';
+import { ContextSurfaceError } from './context-surfaces.js';
 import {
   ContextModeError,
   createModeCard,
@@ -111,7 +112,9 @@ export async function routeContextApi(request, env, session = null) {
     if (url.pathname === `${ROOT}/tools`) {
       if (request.method !== 'GET') return methodNotAllowed('GET');
       const state = await getContextState(db, { conversation_id: url.searchParams.get('conversation_id') || undefined });
-      return json({ ok: true, tools: listRegisteredTools({ permission: 'owner', surface: 'main_chat', mode: state.mode }) });
+      const surface = url.searchParams.get('surface');
+      if (!surface) throw new ContextSurfaceError('context_surface_required', '工具目录必须显式声明 surface。');
+      return json({ ok: true, tools: listRegisteredTools({ permission: 'owner', surface, mode: state.mode }) });
     }
     if (url.pathname === `${ROOT}/tool-runs`) {
       if (request.method !== 'GET') return methodNotAllowed('GET');
@@ -127,8 +130,10 @@ export async function routeContextApi(request, env, session = null) {
       const messages = Array.isArray(value.messages) ? value.messages : [];
       const lastUser = [...messages].reverse().find((message) => message?.role === 'user');
       if (!lastUser) throw new ContextModeError('preview_user_required', '预览至少需要一条用户输入。');
-      const assembled = await assembleContextForChat(env, {
+      const assembled = await assembleContextForSurface(env, {
         conversationId: value.conversation_id,
+        roomId: value.room_id,
+        visitorId: value.visitor_id,
         sourceTurnId: value.source_turn_id,
         messages,
         lastUser,
@@ -136,7 +141,7 @@ export async function routeContextApi(request, env, session = null) {
         localDate: value.local_date,
         localDateTime: value.local_datetime,
         modeKey: value.mode_key,
-        surface: value.surface || 'main_chat',
+        surface: value.surface,
         recentEntryIds: value.recent_entry_ids,
         model: value.model,
         permission: 'owner',
@@ -146,7 +151,7 @@ export async function routeContextApi(request, env, session = null) {
     }
     return apiError('not_found', 'Not found.', 404);
   } catch (error) {
-    if (error instanceof ContextModeError || error instanceof WorldbookError || error instanceof OwnerAccessError) {
+    if (error instanceof ContextModeError || error instanceof ContextSurfaceError || error instanceof WorldbookError || error instanceof OwnerAccessError) {
       return apiError(error.type, error.message, error.status);
     }
     const reference = crypto.randomUUID().slice(0, 8);

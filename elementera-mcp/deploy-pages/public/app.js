@@ -50,6 +50,7 @@ chat.setRunSettingsProvider(tools.getSettings);
 chat.setMemoryController(memory);
 chat.setRoomController(rooms);
 chat.setContextController(context);
+rooms.setContextController(context);
 
 const controllers = Object.freeze({
   chat,

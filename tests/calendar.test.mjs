@@ -86,6 +86,15 @@ const empty = await calendarEnvironment(db, { date: '2026-01-02', include_new: f
 assert.equal(empty.empty, true);
 assert.equal(empty.text, '', 'empty calendar env does not inject a shell');
 
+const anniversaryOnly = await calendarEnvironment(db, { date: '2026-08-09', include_new: false });
+assert.equal(anniversaryOnly.event_count, 0);
+assert.equal(anniversaryOnly.note_count, 0);
+assert.equal(anniversaryOnly.anniversary_count, 1);
+assert.equal(anniversaryOnly.calendar_empty, false);
+assert.equal(anniversaryOnly.calendar_empty_reason, 'upcoming_anniversary');
+assert.match(anniversaryOnly.text, /今日：无事件，无便签。/);
+assert.match(anniversaryOnly.text, /近期纪念日：8\/13 Myri 生日还有 4 天。/);
+
 const created = await executeCalendarMcpTool(db, 'calendar.create', {
   title: '海岸 MCP 施工', starts_at: '2026-10-03T20:00:00+08:00', event_type: 'construction',
 });

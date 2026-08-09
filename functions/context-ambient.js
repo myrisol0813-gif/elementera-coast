@@ -1,5 +1,6 @@
 import { calendarEnvironment } from './calendar-store.js';
 import { contextBlock } from './context-manifest.js';
+import { getSurfaceProfile } from './context-surfaces.js';
 
 function localTime(value, localDate) {
   const supplied = String(value || '').trim().slice(0, 32);
@@ -8,22 +9,26 @@ function localTime(value, localDate) {
   return `${date} ${new Date().toISOString().slice(11, 16)} UTC`;
 }
 
-function roomName(surface) {
-  return {
-    main_chat: '主聊天',
-    landing: '登岛信',
-    calendar: '海岸日历',
-    mailbox: '海岸信箱巡灯',
-    official_mcp: '官端 MCP',
-    visitor: '访客信箱',
-    mailbox_visitor: '访客信箱',
-  }[surface] || String(surface || '主聊天');
+function toolGroups(tools) {
+  const groups = new Set();
+  for (const tool of tools) {
+    const key = String(tool.tool_key || tool);
+    if (key.startsWith('calendar.')) groups.add('日历');
+    else if (key.startsWith('memory.')) groups.add('记忆');
+    else if (key.startsWith('daily.')) groups.add('日报');
+    else if (key.startsWith('dogtalk.')) groups.add('神秘狗话');
+    else if (key.startsWith('mailbox.')) groups.add('信箱');
+    else if (key.startsWith('radio.')) groups.add('无线电波');
+    else if (key.startsWith('lighthouse.')) groups.add('灯塔来信');
+  }
+  return [...groups];
 }
 
 export async function buildAmbientContext(env, {
   localDate,
   localDateTime,
-  surface = 'main_chat',
+  surface,
+  profile: profileValue,
   conversationId,
   model,
   mode,
@@ -31,8 +36,14 @@ export async function buildAmbientContext(env, {
   tools = [],
   permission = 'owner',
 } = {}) {
+  const profile = profileValue || getSurfaceProfile(surface);
   const flags = settings.ambient || {};
-  const calendarMode = settings.calendar_injection || 'only_when_events';
+  const requestedCalendarMode = settings.calendar_injection || 'only_when_events';
+  const calendarMode = profile.calendarPolicy === 'always'
+    ? 'only_when_events'
+    : profile.calendarPolicy === 'settings'
+      ? requestedCalendarMode
+      : profile.calendarPolicy;
   let calendar = null;
   if (flags.calendar !== false && !['off', 'manual'].includes(calendarMode) && permission === 'owner') {
     calendar = await calendarEnvironment(env.COAST_CHAT_DB, {
@@ -44,13 +55,16 @@ export async function buildAmbientContext(env, {
   const lines = ['【海岸环境】'];
   if (flags.time !== false) lines.push(`本地时间：${localTime(localDateTime, localDate)}`);
   if (flags.room !== false) {
-    lines.push(`当前房间：${roomName(surface)}`);
+    lines.push(`当前房间：${profile.title}`);
     if (conversationId) lines.push(`conversation_id：${String(conversationId).slice(0, 200)}`);
   }
   lines.push(`当前情境：${mode?.title || '普通聊天'}`);
   if (flags.model !== false && model) lines.push(`当前模型：${String(model).slice(0, 180)}`);
-  if (calendar && !calendar.empty) lines.push(`今日日历：${calendar.events.length} 条事件，${calendar.notes.length} 张便签`, calendar.text);
-  if (flags.tools !== false && tools.length) lines.push(`可用工具：${tools.map((tool) => tool.tool_key || tool).join(', ')}`);
+  if (calendar && !calendar.empty) lines.push(calendar.text);
+  if (flags.tools !== false && tools.length) {
+    const groups = toolGroups(tools);
+    lines.push(`可用工具：${tools.length} 项${groups.length ? `（${groups.join('、')}）` : ''}`);
+  }
   lines.push(`权限：${permission === 'visitor' ? 'visitor' : 'owner'}${surface === 'official_mcp' ? ' / official_mcp' : ''}`);
   if (lines.length === 1) return { block: null, calendar };
   return {
@@ -65,7 +79,16 @@ export async function buildAmbientContext(env, {
       confidence: 'system_confirmed',
       use_hint: '理解当前时间、房间、日历、模型和可用工具。',
       avoid_hint: '环境包不是长期记忆，不要把它写成用户偏好。',
-      trace: { calendar_empty: calendar?.empty ?? null, calendar_change_ids: calendar?.change_ids || [] },
+      trace: {
+        surface,
+        event_count: calendar?.event_count ?? null,
+        note_count: calendar?.note_count ?? null,
+        anniversary_count: calendar?.anniversary_count ?? null,
+        calendar_empty: calendar?.calendar_empty ?? calendar?.empty ?? null,
+        calendar_empty_reason: calendar?.calendar_empty_reason || null,
+        upcoming_anniversaries: calendar?.upcoming_anniversaries || [],
+        calendar_change_ids: calendar?.change_ids || [],
+      },
     }),
     calendar,
   };

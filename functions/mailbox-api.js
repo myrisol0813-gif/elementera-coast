@@ -16,6 +16,7 @@ import {
   registerMailboxVisitor,
   removeMailboxAccount,
   removeMailboxMessage,
+  resolveMailboxPocket,
   sendMailboxMessage,
   visibleVisitorMemory,
 } from './mailbox-service.js';
@@ -139,6 +140,20 @@ export async function routeMailboxApi(request, env) {
       return json({
         ok: true,
         memory: await visibleVisitorMemory(env.COAST_CHAT_DB, visitorId),
+      });
+    }
+    const memoryPocketMatch = url.pathname.match(/^\/api\/mailbox\/memory\/pockets\/([^/]+)\/resolve$/);
+    if (memoryPocketMatch) {
+      if (request.method !== 'POST') return methodNotAllowed('POST');
+      const value = await readJson(request);
+      return json({
+        ok: true,
+        ...await resolveMailboxPocket(env.COAST_CHAT_DB, {
+          visitor_id: visitorId,
+          pocket_id: decodeURIComponent(memoryPocketMatch[1]),
+          action: value.action,
+          visibility: 'visitor_visible',
+        }),
       });
     }
     const memoryEntryMatch = url.pathname.match(/^\/api\/mailbox\/memory\/entries\/([^/]+)$/);

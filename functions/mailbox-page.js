@@ -13,13 +13,13 @@ const PAGE = `<!doctype html>
   <link rel="stylesheet" href="/public/styles/shell.css?v=coast-app-20">
   <link rel="stylesheet" href="/public/styles/chat.css?v=coast-app-24">
   <link rel="stylesheet" href="/public/styles/features.css?v=coast-app-22">
-  <link rel="stylesheet" href="/public/styles/mailbox.css?v=coast-mailbox-03">
+  <link rel="stylesheet" href="/public/styles/mailbox.css?v=coast-mailbox-04">
 </head>
 <body class="mailbox-body">
   <div id="mailboxApp" class="app-shell mailbox-shell">
     <main class="main-panel">
       <header class="topbar mailbox-topbar">
-        <a class="icon-button mailbox-back" href="/login?mailbox=1" aria-label="返回海岸入口" data-icon="back"></a>
+        <a class="icon-button mailbox-back" href="/login" aria-label="返回海岸入口" data-icon="back"></a>
         <div class="room-heading">
           <div class="mailbox-title-row">
             <strong>海岸信箱</strong>
@@ -75,7 +75,7 @@ const PAGE = `<!doctype html>
 
     <div id="mailboxToast" class="toast" role="status" aria-live="polite" hidden></div>
   </div>
-  <script type="module" src="/public/mailbox.js?v=coast-mailbox-03"></script>
+  <script type="module" src="/public/mailbox.js?v=coast-mailbox-04"></script>
 </body>
 </html>`;
 
@@ -95,12 +95,12 @@ export async function handleMailboxPage(request, env) {
   }
   if (!env?.COAST_CHAT_DB?.prepare) return text('Mailbox storage is not configured.\n', 503);
   const session = await verifyMailboxSession(request, env);
-  if (!session) return redirect('/login?mailbox=1');
+  if (!session) return redirect('/login');
   try {
     await currentMailboxVisitor(env.COAST_CHAT_DB, session.visitor_id);
     return html(request);
   } catch {
-    return redirect('/login?mailbox=1', {
+    return redirect('/login', {
       'Set-Cookie': clearMailboxSessionCookie(),
     });
   }

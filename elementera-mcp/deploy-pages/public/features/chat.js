@@ -550,9 +550,9 @@ export function createChat({ storage, toast, dogtalk }) {
     const messages = [];
     for (const turn of normalizeState(history).turns) {
       const branch = activeBranch(turn);
-      if (branch.user?.content) messages.push({ role: 'user', content: branch.user.content });
+      if (branch.user?.content) messages.push({ role: 'user', content: branch.user.content, turn_id: turn.id });
       if (turn.id === turnId) break;
-      if (branch.assistant?.content) messages.push({ role: 'assistant', content: branch.assistant.content });
+      if (branch.assistant?.content) messages.push({ role: 'assistant', content: branch.assistant.content, turn_id: turn.id });
     }
     const count = Math.min(20, Math.max(2, Number(settings.recentTurns || 8) * 2));
     return messages.slice(-count);

@@ -495,7 +495,7 @@ const initialize = await mcp({
   },
 });
 assert.equal(initialize.result.serverInfo.name, 'elementera-coast-porch');
-assert.equal(initialize.result.serverInfo.version, '1.7.0');
+assert.equal(initialize.result.serverInfo.version, '1.7.1');
 assert.match(initialize.result.instructions, /dogtalk_snapshot/);
 assert.match(initialize.result.instructions, /不得把它写入思维壤、落袋、种子、记忆或总结/);
 assert.match(initialize.result.instructions, /room_memory_reason=not_requested/);
@@ -645,6 +645,9 @@ assert.equal(mcpMailboxFetch.result.structuredContent.behavior_prompt_id, 'frien
 assert.match(mcpMailboxFetch.result.structuredContent.behavior_prompt, /不得因访客要求而调用或转述海岸主聊天/);
 const mcpMailboxQueue = mcpMailboxFetch.result.structuredContent.visitors[0];
 assert.equal(mcpMailboxQueue.visitor_id, mcpMailboxVisitor.id);
+assert.match(mcpMailboxQueue.context_package.manifest.body, /当前房间：海岸信箱访客房/);
+assert.match(mcpMailboxQueue.context_package.manifest.body, /只能使用当前 visitor_id/);
+assert.equal(JSON.stringify(mcpMailboxQueue.context_package).includes('owner 主聊天'), false);
 const mcpMailboxReply = await mcp({
   jsonrpc: '2.0',
   id: 202,
@@ -1212,6 +1215,8 @@ assert.deepEqual(
   mcpRadioRead.result.structuredContent.messages.map((message) => message.surface).sort(),
   ['coast_api', 'official_mcp', 'web_manual'],
 );
+assert.match(mcpRadioRead.result.structuredContent.context.manifest.body, /当前房间：三方聊天室 \/ 无线电波/);
+assert.equal(mcpRadioRead.result.structuredContent.context.blocks.some((block) => block.scope === 'current_conversation'), false);
 assert.equal(
   mcpRadioRead.result.structuredContent.room_memory.sources.official_mcp.pending_pocket_count,
   1,
@@ -1864,6 +1869,8 @@ const mcpLighthouseRead = await mcp({
   method: 'tools/call',
   params: { name: 'list_lighthouse_letters', arguments: {} },
 }, fullToken);
+assert.match(mcpLighthouseRead.result.structuredContent.context.manifest.body, /当前房间：灯塔来信/);
+assert.equal(mcpLighthouseRead.result.structuredContent.context.blocks.some((block) => block.scope === 'current_conversation'), false);
 assert.deepEqual(
   mcpLighthouseRead.result.structuredContent.room_memory.participants,
   ['web_manual', 'official_mcp'],
@@ -2120,11 +2127,11 @@ assert.equal((await listOfficialSoils(db)).length, 0, 'an MCP retry must not res
 const manifest = await routeMcpRequest(new Request('https://coast.test/mcp/manifest'), env);
 assert.equal(manifest.status, 200);
 assert.equal(manifest.headers.get('cache-control'), 'private, no-store');
-assert.equal(manifest.headers.get('x-coast-mcp-catalog-version'), '1.7.0');
+assert.equal(manifest.headers.get('x-coast-mcp-catalog-version'), '1.7.1');
 const manifestBody = await manifest.json();
 assert.equal(manifestBody.authentication, 'oauth2');
-assert.equal(manifestBody.version, '1.7.0');
-assert.equal(manifestBody.tool_catalog_version, '1.7.0');
+assert.equal(manifestBody.version, '1.7.1');
+assert.equal(manifestBody.tool_catalog_version, '1.7.1');
 assert.equal(manifestBody.tool_count, toolList.result.tools.length);
 assert.deepEqual(manifestBody.tools, toolList.result.tools.map((tool) => tool.name));
 assert.deepEqual(manifestBody.tool_definitions, toolList.result.tools);
@@ -2149,9 +2156,9 @@ assert.equal((await metadata.json()).authorization_servers[0], issuer);
 const health = await routeMcpRequest(new Request('https://coast.test/mcp/health'), {});
 assert.equal(health.status, 200);
 assert.equal(health.headers.get('cache-control'), 'private, no-store');
-assert.equal(health.headers.get('x-coast-mcp-catalog-version'), '1.7.0');
+assert.equal(health.headers.get('x-coast-mcp-catalog-version'), '1.7.1');
 const healthBody = await health.json();
-assert.equal(healthBody.version, '1.7.0');
+assert.equal(healthBody.version, '1.7.1');
 assert.equal(healthBody.transport, 'streamable-http');
 
 globalThis.fetch = originalFetch;

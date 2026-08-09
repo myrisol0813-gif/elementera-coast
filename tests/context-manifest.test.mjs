@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { createConversation } from '../functions/chat-store.js';
 import { buildAmbientContext } from '../functions/context-ambient.js';
-import { assembleContextForChat, budgetContextMessages } from '../functions/context-assembler.js';
+import { assembleContextForSurface, budgetContextMessages } from '../functions/context-assembler.js';
 import { buildContextDebug } from '../functions/context-inspector.js';
 import { buildContextManifest, contextBlock } from '../functions/context-manifest.js';
 import { getContextState, setCurrentMode, updateModeCard } from '../functions/context-modes.js';
-import { buildMemoryFacets } from '../functions/memory-facets.js';
+import { buildMemoryFacets } from '../functions/context-memory-facets.js';
 import { buildMemoryContext } from '../functions/memory-recall.js';
 import { createEntry, listRecallPool } from '../functions/memory-store.js';
 import { D1Database } from './d1-helper.mjs';
@@ -27,6 +27,9 @@ const db = new D1Database();
 const conversation = await createConversation(db, 'Context Test');
 const initial = await getContextState(db, { conversation_id: conversation.id });
 assert.equal(initial.mode.mode_key, 'normal_chat');
+assert.equal(initial.settings.context_budget, 6000);
+assert.equal(initial.settings.recent_message_turns, 8);
+assert.equal(initial.settings.soil_budget, 1000);
 const switched = await setCurrentMode(db, 'construction_review', { conversation_id: conversation.id });
 assert.equal(switched.mode.mode_key, 'construction_review');
 
@@ -38,7 +41,7 @@ const ambient = await buildAmbientContext({ COAST_CHAT_DB: db }, {
 });
 assert.doesNotMatch(ambient.block.body, /本地时间/);
 assert.doesNotMatch(ambient.block.body, /当前房间/);
-assert.match(ambient.block.body, /memory.search/);
+assert.match(ambient.block.body, /1 项（记忆）/);
 const todayOnly = await buildAmbientContext({ COAST_CHAT_DB: db }, {
   localDate: '2026-08-09', localDateTime: '2026-08-09 15:36', surface: 'main_chat',
   conversationId: conversation.id, mode: switched.mode,
@@ -76,7 +79,7 @@ await createEntry(db, {
   entry_type: 'memory', scope: 'global', title: '冲突潮汐', life_core: '这是旧版的潮汐判断。',
   contradiction_note: '小寒后来已经更正过',
 });
-const contradictionWithoutFacets = await assembleContextForChat({ COAST_CHAT_DB: db }, {
+const contradictionWithoutFacets = await assembleContextForSurface({ COAST_CHAT_DB: db }, {
   conversationId: conversation.id,
   messages: [{ role: 'user', content: '冲突潮汐' }],
   lastUser: { role: 'user', content: '冲突潮汐' },
@@ -85,9 +88,9 @@ const contradictionWithoutFacets = await assembleContextForChat({ COAST_CHAT_DB:
 });
 assert.equal(contradictionWithoutFacets.blocks.some((block) => block.key === 'memory_facets'), false);
 assert.match(contradictionWithoutFacets.manifest.body, /冲突提示：1 条记忆/);
-assert.match(contradictionWithoutFacets.messages[0].content, /可能冲突.*不可压过当前输入/s);
+assert.match(contradictionWithoutFacets.modelMessages[0].content, /可能冲突.*不可压过当前输入/s);
 
-const tightBudget = await assembleContextForChat({ COAST_CHAT_DB: db }, {
+const tightBudget = await assembleContextForSurface({ COAST_CHAT_DB: db }, {
   conversationId: conversation.id,
   messages: [
     { role: 'assistant', content: '旧回复'.repeat(1200) },
@@ -97,8 +100,8 @@ const tightBudget = await assembleContextForChat({ COAST_CHAT_DB: db }, {
   settings: { contextBudget: 1000 },
   localDate: '2026-08-09', modeKey: 'construction_review', surface: 'main_chat', preview: true,
 });
-assert.match(tightBudget.messages[0].content, /【上下文目录】/);
-assert.equal(tightBudget.messages.at(-1).content, '当前输入必须留下');
+assert.match(tightBudget.modelMessages[0].content, /【上下文目录】/);
+assert.equal(tightBudget.modelMessages.at(-1).content, '当前输入必须留下');
 assert.equal(tightBudget.trace.current_user_preserved, true);
 assert.equal(tightBudget.trace.over_budget, false);
 
@@ -114,7 +117,7 @@ await updateModeCard(db, 'construction_review', {
   default_context_settings: { calendar_injection: 'off' },
 });
 
-const assembled = await assembleContextForChat({ COAST_CHAT_DB: db }, {
+const assembled = await assembleContextForSurface({ COAST_CHAT_DB: db }, {
   conversationId: conversation.id,
   messages: [{ role: 'user', content: '请检查 Context Manifest 和记忆球。' }],
   lastUser: { role: 'user', content: '请检查 Context Manifest 和记忆球。' },
@@ -122,14 +125,14 @@ const assembled = await assembleContextForChat({ COAST_CHAT_DB: db }, {
   localDate: '2026-08-09', localDateTime: '2026-08-09 15:36',
   modeKey: 'construction_review', surface: 'main_chat', model: 'openai/gpt-5', preview: true,
 });
-assert.equal(assembled.messages[0].role, 'system');
-assert.match(assembled.messages[0].content, /【上下文目录】/);
-assert.match(assembled.messages[0].content, /【海岸环境】/);
-assert.equal(assembled.messages.at(-1).content, '请检查 Context Manifest 和记忆球。');
+assert.equal(assembled.modelMessages[0].role, 'system');
+assert.match(assembled.modelMessages[0].content, /【上下文目录】/);
+assert.match(assembled.modelMessages[0].content, /【海岸环境】/);
+assert.equal(assembled.modelMessages.at(-1).content, '请检查 Context Manifest 和记忆球。');
 assert.equal(assembled.settings.calendar_injection, 'off', 'mode defaults participate in context assembly');
 assert.equal(assembled.tool_registry.length, assembled.tools.length, 'manifest tools exactly match provider-exposed tools');
 assert.deepEqual(assembled.tool_registry.map((tool) => tool.model_name), assembled.tools.map((tool) => tool.function.name));
-assert.equal(assembled.messages.some((message) => message.content.includes('generated_at')), false, 'inspector debug is not injected into model messages');
+assert.equal(assembled.modelMessages.some((message) => message.content.includes('generated_at')), false, 'inspector debug is not injected into model messages');
 const debug = buildContextDebug({ manifest: assembled.manifest, blocks: assembled.blocks, trace: assembled.trace });
 assert.ok(debug.generated_at);
 

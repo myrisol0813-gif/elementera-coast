@@ -20,7 +20,7 @@ async function waitFor(predicate, label, timeout = 1000) {
   throw new Error(`Timed out waiting for ${label}`);
 }
 
-const entryWindow = new Window({ url: 'https://coast.test/login' });
+const entryWindow = new Window({ url: 'https://coast.test/login?mailbox=1' });
 installWindow(entryWindow);
 entryWindow.document.body.innerHTML = `
   <button id="mailboxEntryButton" type="button">海岸信箱</button>
@@ -46,6 +46,7 @@ globalThis.fetch = async () => new Response(JSON.stringify({ ok: true }), {
   headers: { 'Content-Type': 'application/json' },
 });
 await import(`../elementera-mcp/deploy-pages/public/mailbox-entry.js?dom=${Date.now()}`);
+assert.equal(entryWindow.document.querySelector('#mailboxEntryModal').open, false, 'root login never auto-opens mailbox, even with a stale mailbox query');
 entryWindow.document.querySelector('#mailboxEntryButton').click();
 assert.equal(entryWindow.document.querySelector('#mailboxEntryModal').open, true);
 assert.equal(entryWindow.document.querySelector('#mailboxEntryChoices').hidden, false);
@@ -147,6 +148,20 @@ globalThis.fetch = async (input, options = {}) => {
   } else if (path === '/api/mailbox/memory/entries/memory-1' && method === 'DELETE') {
     memory.entries = [];
     value = { ok: true };
+  } else if (path.match(/^\/api\/mailbox\/memory\/pockets\/[^/]+\/resolve$/) && method === 'POST') {
+    const id = decodeURIComponent(path.split('/').at(-2));
+    const pocket = memory.pending_pockets.find((item) => item.id === id);
+    const action = JSON.parse(options.body).action;
+    memory.pending_pockets = memory.pending_pockets.filter((item) => item.id !== id);
+    if (action === 'remember' && pocket) {
+      memory.entries.push({
+        ...pocket,
+        id: `memory-from-${id}`,
+        created_at: '2026-08-01T12:10:00.000Z',
+        updated_at: '2026-08-01T12:10:00.000Z',
+      });
+    }
+    value = { ok: true, entry: action === 'remember' ? memory.entries.at(-1) : null };
   } else if (path === '/api/mailbox/account' && method === 'DELETE') {
     value = { ok: true, visitor_id: 'visitor-a', deleted: true };
   } else {
@@ -189,6 +204,29 @@ await waitFor(() => mailboxWindow.document.querySelector('#mailboxPanelTitle').t
 await waitFor(() => mailboxWindow.document.querySelector('#mailboxPanelBody').textContent.includes('星星意象'), 'notebook panel content');
 assert.match(mailboxWindow.document.querySelector('#mailboxPanelBody').textContent, /星星意象/);
 assert.match(mailboxWindow.document.querySelector('#mailboxPanelBody').textContent, /待确认袋 · 1/);
+
+mailboxWindow.document.querySelector('#mailboxPanelBody [data-panel="pockets"]').click();
+await waitFor(() => mailboxWindow.document.querySelector('#mailboxPanelTitle').textContent === '待确认袋', 'pending pocket panel');
+await waitFor(() => mailboxWindow.document.querySelector('[data-pocket-id="pocket-1"]'), 'pending pocket controls');
+assert.ok(mailboxWindow.document.querySelector('[data-pocket-id="pocket-1"] [data-pocket-action="remember"]'));
+assert.ok(mailboxWindow.document.querySelector('[data-pocket-id="pocket-1"] [data-pocket-action="discard"]'));
+mailboxWindow.document.querySelector('[data-pocket-id="pocket-1"] [data-pocket-action="remember"]').click();
+await waitFor(() => mailboxWindow.document.querySelector('#mailboxPanelBody').textContent.includes('待确认袋是空的'), 'remembered pending pocket');
+assert.equal(memory.pending_pockets.length, 0);
+assert.ok(memory.entries.some((entry) => entry.title === '蓝色颜料'));
+assert.ok(requestedPaths.some(([path, method]) => path === '/api/mailbox/memory/pockets/pocket-1/resolve' && method === 'POST'));
+
+memory.pending_pockets.push({
+  id: 'pocket-2', title: '绿色颜料', life_core: '这一枚要丢弃。', content: '不会进入记事本。', status: 'pending',
+});
+mailboxWindow.document.querySelector('[data-panel="notebook"]').click();
+await waitFor(() => mailboxWindow.document.querySelector('#mailboxPanelBody').textContent.includes('待确认袋 · 1'), 'second pending pocket count');
+mailboxWindow.document.querySelector('#mailboxPanelBody [data-panel="pockets"]').click();
+await waitFor(() => mailboxWindow.document.querySelector('[data-pocket-id="pocket-2"]'), 'discard pocket controls');
+mailboxWindow.document.querySelector('[data-pocket-id="pocket-2"] [data-pocket-action="discard"]').click();
+await waitFor(() => mailboxWindow.document.querySelector('#mailboxPanelBody').textContent.includes('待确认袋是空的'), 'discarded pending pocket');
+assert.equal(memory.pending_pockets.length, 0);
+assert.equal(memory.entries.some((entry) => entry.title === '绿色颜料'), false);
 
 mailboxWindow.prompt = () => '编辑后的第一封信';
 mailboxWindow.document.querySelector('.message.user [data-mailbox-action="edit"]').click();

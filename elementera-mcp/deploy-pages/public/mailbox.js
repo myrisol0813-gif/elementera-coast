@@ -31,6 +31,7 @@ const state = {
   status: null,
   memory: emptyMemory(),
   loading: false,
+  activePanel: null,
 };
 
 let toastTimer = 0;
@@ -157,7 +158,7 @@ function showLoadingStatus(message) {
 
 function handleSessionError(error) {
   if (error instanceof ApiError && error.status === 401) {
-    window.location.replace('/login?mailbox=1');
+    window.location.replace('/login');
     return true;
   }
   return false;
@@ -272,7 +273,7 @@ function thoughtSoilBody() {
 }
 
 function pendingPocketCard(pocket) {
-  return `<article class="feature-card feature-prose mailbox-memory-card">
+  return `<article class="feature-card feature-prose mailbox-memory-card" data-pocket-id="${escapeAttribute(pocket.id)}">
     <div class="memory-entry-meta"><span>待确认</span>${pocket.generated_by_model ? `<span>${escapeHtml(pocket.generated_by_model)}</span>` : ''}</div>
     <h2>${escapeHtml(pocket.title || '待确认内容')}</h2>
     <p><strong>生命核：</strong>${escapeHtml(pocket.life_core || '')}</p>
@@ -280,6 +281,10 @@ function pendingPocketCard(pocket) {
     ${pocket.usage_hint ? `<p><strong>使用：</strong>${escapeHtml(pocket.usage_hint)}</p>` : ''}
     ${pocket.avoid_hint ? `<p><strong>避免：</strong>${escapeHtml(pocket.avoid_hint)}</p>` : ''}
     <p class="feature-note">它还没有进入访客记事本，也不会当作长期记忆使用。</p>
+    <div class="mailbox-pocket-actions">
+      <button class="primary" type="button" data-mailbox-action="resolve-pocket" data-pocket-action="remember">确认落袋</button>
+      <button type="button" data-mailbox-action="resolve-pocket" data-pocket-action="discard">丢弃</button>
+    </div>
   </article>`;
 }
 
@@ -318,6 +323,16 @@ function pocketsBody() {
     : '<p class="feature-empty">待确认袋是空的。</p>';
 }
 
+function renderPanelBody(kind) {
+  const body = q('#mailboxPanelBody');
+  if (!body) return;
+  body.innerHTML = kind === 'soil'
+    ? thoughtSoilBody()
+    : kind === 'notebook'
+      ? notebookBody()
+      : pocketsBody();
+}
+
 async function openPanel(kind) {
   const panel = q('#mailboxPanel');
   const title = q('#mailboxPanelTitle');
@@ -330,21 +345,40 @@ async function openPanel(kind) {
     pockets: ['待确认袋', '确认前不会进入访客记事本'],
   }[kind];
   if (!panelMeta) return;
+  state.activePanel = kind;
   title.textContent = panelMeta[0];
   subtitle.textContent = panelMeta[1];
   body.innerHTML = '<p class="feature-empty">正在查看小纸条…</p>';
   if (!panel.open) panel.showModal();
   try {
     await fetchMemory();
-    body.innerHTML = kind === 'soil'
-      ? thoughtSoilBody()
-      : kind === 'notebook'
-        ? notebookBody()
-        : pocketsBody();
+    renderPanelBody(kind);
   } catch (error) {
     if (!handleSessionError(error)) {
       body.innerHTML = `<p class="feature-empty">${escapeHtml(error.message || '这些小纸条暂时没有同步。')}</p>`;
     }
+  }
+}
+
+async function resolvePendingPocket(pocketId, action, button) {
+  if (!pocketId || !['remember', 'discard'].includes(action)) return;
+  const card = button?.closest('[data-pocket-id]');
+  const buttons = card ? [...card.querySelectorAll('button')] : [];
+  buttons.forEach((node) => { node.disabled = true; });
+  try {
+    await requestJson(`${API.mailboxMemory}/pockets/${encodeURIComponent(pocketId)}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    });
+    await fetchMemory();
+    renderPanelBody(state.activePanel || 'pockets');
+    renderMessages();
+    toast(action === 'remember'
+      ? '已经收进访客记事本。'
+      : '这枚记忆候选已经放回潮水里。');
+  } catch (error) {
+    buttons.forEach((node) => { node.disabled = false; });
+    if (!handleSessionError(error)) toast(error.message || '这枚候选暂时没有处理，请再试一次。', 3200);
   }
 }
 
@@ -448,7 +482,7 @@ async function deleteAccount() {
   if (!confirmed) return;
   try {
     await requestJson(API.mailboxAccount, { method: 'DELETE' });
-    window.location.replace('/login?mailbox=1&deleted=1');
+    window.location.replace('/login?deleted=1');
   } catch (error) {
     if (!handleSessionError(error)) toast(error.message || '整个访客房间暂时没有删除。', 3200);
   }
@@ -500,6 +534,10 @@ document.addEventListener('click', (event) => {
   if (action === 'copy') copyMessage(message?.dataset.messageId);
   if (action === 'delete') deleteMessage(message?.dataset.messageId);
   if (action === 'delete-memory') deleteMemoryEntry(actionButtonNode.dataset.memoryId);
+  if (action === 'resolve-pocket') {
+    const pocket = actionButtonNode.closest('[data-pocket-id]');
+    resolvePendingPocket(pocket?.dataset.pocketId, actionButtonNode.dataset.pocketAction, actionButtonNode);
+  }
   if (action === 'delete-account') deleteAccount();
 });
 

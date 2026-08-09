@@ -13,7 +13,7 @@ const index = await read(join(pages, 'index.html'));
 const redirects = await read(join(pages, '_redirects'));
 const headers = await read(join(pages, '_headers'));
 assert.equal((index.match(/<script\b/g) || []).length, 1, 'only one script entry is allowed');
-assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-25"><\/script>/);
+assert.match(index, /<script type="module" src="\/public\/app\.js\?v=coast-app-26"><\/script>/);
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
 
@@ -90,7 +90,7 @@ assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(join(pages, 'service-worker.js'));
-assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-25';$/m);
+assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-26';$/m);
 assert.ok(worker.includes("url.pathname.startsWith('/api/')"));
 assert.ok(worker.includes("url.pathname.startsWith('/mcp')"));
 assert.ok(worker.includes("url.pathname.startsWith('/.well-known/')"));
@@ -264,6 +264,9 @@ const calendarApiSource = await read(join(repo, 'functions/calendar-api.js'));
 const contextAssemblerSource = await read(join(repo, 'functions/context-assembler.js'));
 const contextManifestSource = await read(join(repo, 'functions/context-manifest.js'));
 const contextSchemaSource = await read(join(repo, 'functions/context-schema.js'));
+const contextSurfacesSource = await read(join(repo, 'functions/context-surfaces.js'));
+const contextIntentSource = await read(join(repo, 'functions/context-intent.js'));
+const contextSoilRendererSource = await read(join(repo, 'functions/context-soil-renderer.js'));
 const toolRegistrySource = await read(join(repo, 'functions/tool-registry.js'));
 const toolRunSource = await read(join(repo, 'functions/tool-run-log.js'));
 const toolsSource = await read(join(moduleRoot, 'features/tools.js'));
@@ -285,10 +288,11 @@ const mcpOwnerSource = (await Promise.all([
 const coastApiSource = await read(join(repo, 'functions/coast-api.js'));
 const mcpToolsSource = await read(join(repo, 'functions/mcp-tools.js'));
 const roomRecordsSource = await read(join(repo, 'functions/room-records.js'));
-for (const ownerSource of [coastApiSource, mcpToolsSource]) {
-  assert.ok(ownerSource.includes('listRadioRoomMessages'));
-  assert.ok(ownerSource.includes('listLighthouseRoomMessages'));
-}
+assert.ok(coastApiSource.includes('listRadioRoomMessages'));
+assert.ok(coastApiSource.includes('listLighthouseRoomMessages'));
+assert.ok(toolRegistrySource.includes('listRadioRoomMessages'));
+assert.ok(toolRegistrySource.includes('listLighthouseRoomMessages'));
+assert.equal(mcpToolsSource.includes('listRadioRoomMessages'), false, 'official MCP reads execute through Tool Registry');
 assert.ok(roomRecordsSource.includes('attachDogtalkSnapshots'));
 assert.equal(coastApiSource.includes('listMysticDogtalkSnapshots'), false);
 const packageSource = JSON.parse(await read(join(repo, 'package.json')));
@@ -307,7 +311,7 @@ assert.ok(middleware.indexOf("isMailboxApiPath(url.pathname)") < middleware.inde
 assert.ok(middleware.includes("url.pathname === '/mailbox'"));
 assert.ok(middleware.includes("'/public/media/mailbox-snake.png'"));
 assert.ok(middleware.includes("'/public/media/myri-default-avatar.jpg'"));
-assert.ok(mailboxPageSource.includes('/public/mailbox.js?v=coast-mailbox-03'));
+assert.ok(mailboxPageSource.includes('/public/mailbox.js?v=coast-mailbox-04'));
 assert.ok(mailboxPageSource.includes('/public/media/mailbox-snake.png'));
 assert.ok(mailboxPageSource.includes("img-src 'self' data:"));
 assert.ok((await read(join(pages, 'public/styles/chat.css'))).includes("background-image: url('/public/media/myri-default-avatar.jpg')"));
@@ -343,6 +347,10 @@ assert.ok(mailboxFrontendSource.includes('thought-soil-entry'));
 assert.ok(mailboxFrontendSource.includes("actionButton('edit', '编辑')"));
 assert.ok(mailboxFrontendSource.includes("actionButton('delete', '删除')"));
 assert.ok(mailboxFrontendSource.includes('删除整个海岸信箱对话？'));
+assert.ok(mailboxFrontendSource.includes('确认落袋'));
+assert.ok(mailboxFrontendSource.includes('data-pocket-action="discard"'));
+assert.ok(mailboxApiSource.includes('/memory\\/pockets\\/([^/]+)\\/resolve'));
+assert.equal((await read(join(moduleRoot, 'mailbox-entry.js'))).includes('URLSearchParams'), false, 'login cannot auto-open the mailbox modal');
 for (const copy of [
   '这里还没有来信。你可以把第一封信投进海岸。',
   '已送达灯塔，等待 Myri 巡灯。',
@@ -370,7 +378,9 @@ assert.ok(dailyToolsSource.includes("name: 'create_moment'"));
 assert.ok(dailyToolsSource.includes("name: 'create_diary_draft'"));
 assert.ok(dailyToolsSource.includes("name: 'save_album_reference'"));
 assert.equal(dailyToolsSource.includes("name: 'create_diary'"), false, 'ordinary chat must use the draft-only diary tool');
-assert.ok(chatRouter.includes('assembleContextForChat'));
+assert.ok(chatRouter.includes('assembleContextForSurface'));
+assert.ok(chatRouter.includes("surface: 'main_chat'"));
+assert.equal(chatRouter.includes('assembleContextForChat'), false);
 assert.equal(chatRouter.includes('DAILY_MODEL_TOOLS'), false, 'chat-router delegates model tools to the registry');
 assert.equal(chatRouter.includes('executeDailyModelTool'), false, 'chat-router cannot execute Daily tools directly');
 assert.equal(chatRouter.includes('DOGTALK_MODEL_TOOL'), false, 'chat-router delegates dogtalk tool exposure');
@@ -388,18 +398,29 @@ for (const table of ['coast_worldbook_entries', 'coast_mode_cards', 'coast_conte
   assert.ok(contextSchemaSource.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `missing context table: ${table}`);
 }
 assert.ok(contextAssemblerSource.includes('buildContextManifest'));
-assert.ok(contextAssemblerSource.includes('modelToolsForContext'));
+assert.ok(contextAssemblerSource.includes('resolveToolSelection'));
+assert.ok(contextAssemblerSource.includes('renderSoilForModel'));
+assert.ok(contextAssemblerSource.includes('buildIntentSummary'));
+assert.ok(contextAssemblerSource.includes('getSurfaceProfile'));
+assert.equal(contextAssemblerSource.includes('assembleContextForChat'), false);
+for (const surface of ['main_chat', 'lighthouse', 'radio', 'official_mcp', 'mailbox_visitor', 'mailbox_owner', 'calendar', 'daily']) {
+  assert.ok(contextSurfacesSource.includes(`${surface}: {`), `missing canonical surface profile: ${surface}`);
+}
+assert.ok(contextIntentSource.includes('buildIntentSummary'));
+assert.ok(contextSoilRendererSource.includes('renderSoilForInspector'));
+assert.ok(contextSoilRendererSource.includes('renderSoilForModel'));
 for (const ordered of [
+  'surfaceBlock(profile)',
   "ambient.block",
   "modeContextBlock(mode)",
   "memoryBlock('thinking_soil'",
-  'worldbookBlock(worldbookBefore)',
-  "facetsBlock(facets)",
+  'worldbookBlock(worldbookBefore,',
+  "facetsBlock(facets,",
   "memoryBlock('memory_recall'",
   "key: 'worldbook_after_memory'",
   "memoryBlock('cross_surface'",
   "memoryBlock('dogtalk'",
-  'toolsBlock(registeredTools)',
+  'toolsBlock(registeredTools,',
 ]) assert.ok(contextAssemblerSource.includes(ordered), `context assembler is missing ordered block: ${ordered}`);
 assert.ok(contextManifestSource.includes('当前用户输入'));
 assert.ok(toolRegistrySource.includes("tool_key: 'daily.create_moment'"));

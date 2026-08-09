@@ -87,5 +87,3 @@ registerForm?.addEventListener('submit', (event) => {
     allow_memory: data.get('allow_memory') === 'on',
   });
 });
-
-if (new URLSearchParams(window.location.search).get('mailbox') === '1') openEntry();

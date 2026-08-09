@@ -320,9 +320,11 @@ globalThis.fetch = async (input, options = {}) => {
       key, title, body: bodyText, source: 'dom_test', scope: 'current_runtime', priority: key === 'context_manifest' ? 'critical' : 'high',
       freshness: 'live', confidence: 'system_confirmed', use_hint: '用于 DOM 验收。', avoid_hint: '不要压过当前输入。', trace: {}, sensitive,
     });
-    const manifest = block('context_manifest', 'Context Manifest', '【上下文目录】\n当前房间：主聊天');
+    const surfaceTitle = { main_chat: '主聊天', radio: '三方聊天室 / 无线电波', lighthouse: '灯塔来信' }[body.surface] || '主聊天';
+    const manifest = block('context_manifest', 'Context Manifest', `【上下文目录】\n当前房间：${surfaceTitle}`);
     return response({ ok: true, debug: {
       manifest, ambient: null, mode: contextModes[0],
+      surface_profile: { surface: body.surface || 'main_chat', title: surfaceTitle, owner_only: true, inspector_allowed: true },
       blocks: [block('ambient_context', 'Coast Ambient Context', '【海岸环境】')],
       worldbook_matches: [], memory_facets: [], tools: [{ tool_key: 'calendar.today' }],
       budget: { budget: 12000, estimated_tokens: 180, trimmed: {}, current_user_preserved: true },
@@ -1493,7 +1495,8 @@ document.querySelector('[data-action="daily:summary"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'summary', 'summary route');
 assert.equal(document.querySelectorAll('[name="summaryRangeMode"]').length, 2);
 assert.ok(document.querySelector('.summary-history'));
-assert.ok(document.querySelector('.summary-range-picker').textContent.includes('7月27日'));
+const expectedSummaryStart = new Date('2026-07-27T08:00:00.000Z');
+assert.ok(document.querySelector('.summary-range-picker').textContent.includes(`${expectedSummaryStart.getMonth() + 1}月${expectedSummaryStart.getDate()}日`));
 document.querySelector('[name="summaryRangeMode"][value="today"]').click();
 document.querySelector('[data-action="daily:run-summary"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'summary-confirm', 'summary confirmation');
@@ -1621,6 +1624,11 @@ assert.ok(document.querySelector('#roomComposer').classList.contains('composer--
 assert.equal(document.querySelector('#mainDogtalkComposer').parentElement.id, 'composer');
 assert.equal(document.querySelector('#roomDogtalkComposer').parentElement.id, 'roomComposer');
 assert.ok(document.querySelector('#roomMessages').textContent.includes('官端从灯塔向电波房打了个招呼。'));
+document.querySelector('[data-action="rooms:context-inspector"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'context-inspector', 'radio context inspector');
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('三方聊天室 / 无线电波'));
+document.querySelector('[data-action="router:back"]').click();
+await waitFor(() => document.querySelector('#overlayRoot').hidden, 'return from radio context inspector');
 const initialRadioOfficialTip = document.querySelector('#roomMessages .room-soil-tip [data-source-surface="official_mcp"]');
 assert.ok(initialRadioOfficialTip?.textContent.includes('电波房思维壤 · ChatGPT-5.6 Thinking sol≋ · 0 粒手持种'));
 assert.equal(initialRadioOfficialTip.dataset.action, 'memory:soil-open');

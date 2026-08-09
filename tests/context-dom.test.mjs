@@ -20,6 +20,7 @@ assert.equal(html.includes('data-action="context:inspector"'), false, 'inspector
 const app = await readFile(resolve(pages, 'public/app.js'), 'utf8');
 const calendar = await readFile(resolve(pages, 'public/features/calendar.js'), 'utf8');
 const context = await readFile(resolve(pages, 'public/features/context.js'), 'utf8');
+const rooms = await readFile(resolve(pages, 'public/features/rooms.js'), 'utf8');
 assert.match(app, /createCalendar/);
 assert.match(app, /createContext/);
 assert.equal((calendar.match(/router\.register\('calendar-month'/g) || []).length, 1);
@@ -27,5 +28,10 @@ assert.equal((context.match(/router\.register\('context-inspector'/g) || []).len
 assert.match(context, /sensitive/);
 assert.match(context, /copy-debug/);
 assert.match(context, /debug\.manifest \? blockDetails\(debug\.manifest\)/, 'inspector renders the manifest itself');
+for (const detail of ['Thinking Soil 双出口', 'Intent Sanitizer', 'tool_intersection', 'soil_compression_ratio', 'surface_profile']) {
+  assert.ok(context.includes(detail), `inspector is missing ${detail}`);
+}
+assert.ok(rooms.includes('rooms:context-inspector'));
+assert.ok(rooms.includes('previewSurface(kind, state[kind].items)'));
 
 console.log('context-dom: ok');

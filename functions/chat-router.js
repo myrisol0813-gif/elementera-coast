@@ -3,7 +3,7 @@ import {
   DogtalkStoreError,
 } from './dogtalk-store.js';
 import {
-  assembleContextForChat,
+  assembleContextForSurface,
   budgetContextMessages,
   estimateContextTokens as estimateTokens,
 } from './context-assembler.js';
@@ -175,11 +175,11 @@ function streamFormalChat(request, env, input, assembled, dogtalkSubmission = nu
         }
         for await (const item of performFormalChatStream(env, {
           model: input.model,
-          messages: assembled.messages,
+          messages: assembled.modelMessages,
           settings: input.settings,
           tools: assembled.tools,
         }, {
-          allowSystem: assembled.messages[0]?.role === 'system',
+          allowSystem: assembled.modelMessages[0]?.role === 'system',
           signal: request.signal,
           executeTool: assembled.executeTool,
         })) {
@@ -235,7 +235,7 @@ async function formalChat(request, env) {
     });
   }
 
-  const assembled = await assembleContextForChat(env, {
+  const assembled = await assembleContextForSurface(env, {
     conversationId,
     sourceTurnId,
     messages,
@@ -257,11 +257,11 @@ async function formalChat(request, env) {
   }
   const result = await performFormalChatWithTools(env, {
     model: value.model,
-    messages: assembled.messages,
+    messages: assembled.modelMessages,
     settings: requestSettings,
     tools: assembled.tools,
   }, {
-    allowSystem: assembled.messages[0]?.role === 'system',
+    allowSystem: assembled.modelMessages[0]?.role === 'system',
     executeTool: assembled.executeTool,
   });
   return json({
@@ -318,8 +318,8 @@ function activeStateMessages(state) {
       Math.max(0, assistants.length - 1),
     );
     const assistant = assistants[assistantIndex];
-    if (user?.content) messages.push({ role: 'user', content: user.content });
-    if (assistant?.content) messages.push({ role: 'assistant', content: assistant.content });
+    if (user?.content) messages.push({ role: 'user', content: user.content, turn_id: turn.id });
+    if (assistant?.content) messages.push({ role: 'assistant', content: assistant.content, turn_id: turn.id });
   }
   return messages;
 }
@@ -353,7 +353,7 @@ async function landingLetter(request, env) {
   const state = await readConversationState(env.COAST_CHAT_DB, targetConversationId);
   const messages = [...activeStateMessages(state), { role: 'user', content: letterText }];
   const lastUser = messages.at(-1);
-  const assembled = await assembleContextForChat(env, {
+  const assembled = await assembleContextForSurface(env, {
     conversationId: targetConversationId,
     messages,
     lastUser,
@@ -368,10 +368,10 @@ async function landingLetter(request, env) {
   });
   const generated = await performFormalChatWithTools(env, {
     model: modelId,
-    messages: assembled.messages,
+    messages: assembled.modelMessages,
     settings: requestSettings,
     tools: assembled.tools,
-  }, { allowSystem: assembled.messages[0]?.role === 'system', executeTool: assembled.executeTool });
+  }, { allowSystem: assembled.modelMessages[0]?.role === 'system', executeTool: assembled.executeTool });
   const assistantText = generated?.message?.content || '';
   if (!assistantText.trim()) throw new ChatStoreError('empty_model_reply', '模型读完了信，但没有返回文字。', 502);
 

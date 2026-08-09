@@ -5,6 +5,7 @@ const POOL_KEYS = Object.freeze([
   'global_seeds',
   'global_memories',
   'global_pockets',
+  'visitor_memories',
 ]);
 
 const MODE_HINTS = Object.freeze({
@@ -12,6 +13,7 @@ const MODE_HINTS = Object.freeze({
   construction_review: '作为架构、字段与召回路径的参考',
   code_helper: '只用于理解现有约束与实现意图',
   mailbox_patrol: '仅可使用当前访客作用域内允许的内容',
+  mailbox_visitor: '只在回应当前访客时轻量承接，不扩展为 owner 记忆',
   calendar_writer: '用于理解日期、安排与纪念意义，不替代日历事实',
   creative_companion: '可作为设定、画面或意象的连续底色',
   quiet_comfort: '只作温柔底色，不展开工程细节',
@@ -50,19 +52,34 @@ function policyFor(entry, mode) {
   };
 }
 
-export function buildMemoryFacets(result, mode = 'normal_chat', manifest = null) {
+function scopeFor(entry, pool, override) {
+  if (override) return override;
+  if (pool === 'visitor_memories') return 'visitor';
+  if (entry.scope) return entry.scope === 'conversation' ? 'current_conversation' : entry.scope;
+  return pool.startsWith('global') ? 'global' : 'current_conversation';
+}
+
+export function buildMemoryFacets(result, mode = 'normal_chat', manifest = null, {
+  allowedScopes = null,
+  scopeOverride = '',
+  surface = 'main_chat',
+  limit = 12,
+} = {}) {
+  const allowed = Array.isArray(allowedScopes) ? new Set(allowedScopes) : null;
   const seen = new Set();
   const facets = [];
   for (const pool of POOL_KEYS) {
     for (const entry of Array.isArray(result?.[pool]) ? result[pool] : []) {
       if (!entry?.id || seen.has(entry.id) || entry.superseded === true) continue;
+      const scope = scopeFor(entry, pool, scopeOverride);
+      if (allowed && !allowed.has(scope)) continue;
       seen.add(entry.id);
       const policy = policyFor(entry, mode);
       facets.push({
         entry_id: entry.id,
         mode,
-        source: entry.source_type || (pool.includes('pocket') ? 'confirmed_pocket' : 'memory_library'),
-        scope: entry.scope || (pool.startsWith('global') ? 'global' : 'current_conversation'),
+        source: entry.source_type || entry.generation_source || (pool.includes('pocket') ? 'confirmed_pocket' : 'memory_library'),
+        scope,
         priority: priority(entry),
         freshness: freshness(entry),
         confidence: entry.source_confidence || (entry.user_confirmed ? 'user_confirmed' : 'model_inferred'),
@@ -70,11 +87,16 @@ export function buildMemoryFacets(result, mode = 'normal_chat', manifest = null)
         avoid_hint: policy.avoid_hint,
         rendered_text: policy.rendered_text,
         contradiction: Boolean(entry.contradiction_note),
-        trace: { pool, memory_tags: entry.memory_tags || [], manifest_key: manifest?.key || null },
+        trace: {
+          pool,
+          surface,
+          memory_tags: entry.memory_tags || [],
+          manifest_key: manifest?.key || null,
+        },
       });
     }
   }
-  return facets;
+  return facets.slice(0, Math.max(0, Number(limit) || 0));
 }
 
 export function formatMemoryFacetContext(facets = []) {
@@ -85,7 +107,7 @@ export function formatMemoryFacetContext(facets = []) {
       `- ${facet.rendered_text}`,
       `  使用：${facet.use_hint}`,
       facet.avoid_hint ? `  避免：${facet.avoid_hint}` : '',
-      `  来源：${facet.source}｜置信度：${facet.confidence}｜新旧：${facet.freshness}`,
+      `  来源：${facet.source}｜作用域：${facet.scope}｜置信度：${facet.confidence}｜新旧：${facet.freshness}`,
     ].filter(Boolean).join('\n')),
     '这些是情境化参考面；当前用户输入始终优先。',
   ].join('\n');

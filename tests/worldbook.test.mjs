@@ -15,7 +15,7 @@ await createWorldbookEntry(db, {
   title: 'Owner 私密施工', content: '不可给访客。', keywords: ['秘密施工'],
   scope: 'owner', visitor_safe: false, priority: 300,
 });
-const visitor = await matchWorldbook(db, { input: '安全灯和秘密施工', surface: 'visitor', worldbook_scope: 'visitor' });
+const visitor = await matchWorldbook(db, { input: '安全灯和秘密施工', surface: 'mailbox_visitor', worldbook_scope: 'visitor' });
 assert.ok(visitor.some((entry) => entry.title === '访客安全灯'));
 assert.equal(visitor.some((entry) => entry.title === 'Owner 私密施工'), false);
 assert.equal(visitor.every((entry) => entry.visitor_safe), true);
