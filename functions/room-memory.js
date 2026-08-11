@@ -369,69 +369,6 @@ export async function writeLighthouseRoomSoil(db, identityValue, value = {}) {
   }
 }
 
-function clipped(value, max) {
-  return String(value || '').trim().slice(0, max);
-}
-
-function seedLine(entry) {
-  return `- ${clipped(entry.title, 100)}｜${clipped(entry.life_core, 480)}${entry.usage_hint ? `｜使用：${clipped(entry.usage_hint, 240)}` : ''}${entry.avoid_hint ? `｜避免：${clipped(entry.avoid_hint, 240)}` : ''}`;
-}
-
-function memoryLine(entry) {
-  return `- ${clipped(entry.title, 100)}｜${clipped(entry.life_core, 520)}${entry.avoid_hint ? `｜避免：${clipped(entry.avoid_hint, 240)}` : ''}`;
-}
-
-function pocketLine(entry) {
-  return `- ${clipped(entry.title, 100)}｜${clipped(entry.life_core, 520)}${entry.content ? `｜内容：${clipped(entry.content, 520)}` : ''}`;
-}
-
-function soilBlock(roomId, soils, settings = {}) {
-  const budget = Math.max(200, Math.min(2400, Number(settings.soilBudget) || 1200));
-  const lines = [
-    `【${ROOM_META[roomId].soil_label}｜同一房间、按整理来源留痕，不是规则】`,
-  ];
-  for (const source of memorySurfaces(roomId)) {
-    const soil = soils[source] || {};
-    lines.push(`${soil.display_author || sourceLabel(source)}：`);
-    lines.push(`当前：${clipped(soil.current_text, budget) || '未整理'}`);
-    if (soil.hand_seeds?.length) {
-      lines.push(
-        '手持种：',
-        ...soil.hand_seeds.slice(0, 7)
-          .map((seed) => `- ${clipped(seed.name, 80)}｜${clipped(seed.life_core, 320)}`),
-      );
-    }
-    if (soil.do_not_repeat) lines.push(`勿复读：${clipped(soil.do_not_repeat, 600)}`);
-  }
-  lines.push('约束：当前正文、明确指令与边界句优先；不同来源不得互相冒充。');
-  return lines.join('\n');
-}
-
-function optionalRoomContext(roomId, memory) {
-  const localLabel = ROOM_META[roomId].local_label;
-  const lines = ['【可选房间上下文｜不要求逐条复述】'];
-  if (memory.conversation_seeds.length) {
-    lines.push(`${localLabel}种子：`, ...memory.conversation_seeds.map(seedLine));
-  }
-  if (memory.conversation_memories.length) {
-    lines.push(`${localLabel}记忆：`, ...memory.conversation_memories.map(memoryLine));
-  }
-  if (memory.conversation_pockets.length) {
-    lines.push(`${localLabel}已确认落袋：`, ...memory.conversation_pockets.map(pocketLine));
-  }
-  const global = [
-    ...memory.global_seeds.map(seedLine),
-    ...memory.global_memories.map(memoryLine),
-    ...memory.global_pockets.map(pocketLine),
-  ];
-  if (global.length) lines.push('总库低频召回：', ...global);
-  if (lines.length === 1) return '';
-  lines.push(
-    '约束：本房间内容只在本房间提高召回概率；总库仅低频使用。不要默认读取其他房间。',
-  );
-  return lines.join('\n');
-}
-
 function uniqueEntries(groups, key) {
   const seen = new Set();
   return groups.flatMap((group) => group[key] || []).filter((entry) => {
@@ -457,7 +394,6 @@ export async function buildRoomMemoryContext(env, roomValue, surfaceValue, query
     query,
     {
       ...options,
-      mode: options.mode || 'chat',
       include_global: true,
     },
   );
@@ -470,7 +406,6 @@ export async function buildRoomMemoryContext(env, roomValue, surfaceValue, query
       query,
       {
         ...options,
-        mode: options.mode || 'chat',
         include_global: false,
       },
     ));
@@ -491,12 +426,8 @@ export async function buildRoomMemoryContext(env, roomValue, surfaceValue, query
     global_seeds: sharedMemory.global_seeds || [],
     global_memories: sharedMemory.global_memories || [],
     global_pockets: sharedMemory.global_pockets || [],
-    trace: {
-      selected: [...new Set(memories.flatMap((item) => item.trace?.selected || []))],
-      room_scope: roomId,
-      source_surface: source,
-      room_library_conversation_id: libraryConversationId,
-    },
+    selected_ids: [...new Set(memories.flatMap((item) => item.selected_ids || []))],
+    vector_enabled: memories.some((item) => item.vector_enabled),
   };
   let dogtalk = { context: '', selected: false };
   try {
@@ -513,11 +444,6 @@ export async function buildRoomMemoryContext(env, roomValue, surfaceValue, query
     room_scope: roomId,
     room_key: ROOM_META[roomId].room_key,
     memory,
-    context: [
-      soilBlock(roomId, soils, options.settings || {}),
-      optionalRoomContext(roomId, memory),
-      dogtalk.context,
-    ].filter(Boolean).join('\n\n'),
     dogtalk_selected: dogtalk.selected,
     dogtalk,
     source_soils: soils,

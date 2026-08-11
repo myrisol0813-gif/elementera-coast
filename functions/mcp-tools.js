@@ -1,5 +1,5 @@
 import { CALENDAR_MCP_DEFINITIONS } from './calendar-mcp-tools.js';
-import { assembleContextForSurface } from './context-assembler.js';
+import { assembleCleanContext } from './context-assemble-clean.js';
 import { executeRegisteredTool } from './tool-registry.js';
 import { officialMcpIdentity } from './coast-identity.js';
 import {
@@ -8,7 +8,7 @@ import {
 } from './friend-myrisol-prompt.js';
 import { McpAuthError, mcpAuthChallenge, requireMcpAuth } from './mcp-auth.js';
 
-const VERSION = '1.7.1';
+const VERSION = '1.9.0';
 const PRIVATE_RECORD_SCHEMA = Object.freeze({ type: 'object', additionalProperties: true });
 
 function objectSchema(properties = {}, required = []) {
@@ -141,7 +141,7 @@ const BASE_TOOL_DEFINITIONS = Object.freeze([
   tool({
     name: 'mcp_mailbox_fetch_unreplied',
     title: '巡读海岸信箱待回信',
-    description: 'Start one manual friend-mailbox patrol. Read only pending visitors, each visitor’s own recent mailbox messages, 思维壤, and visitor notebook. The returned friend_myrisol_prompt_v1 is mandatory for every reply. Never use other private Coast readers to answer a visitor.',
+    description: 'Start one manual friend-mailbox patrol. Read only pending visitors, each visitor’s own recent mailbox messages, 思维壤, and visitor notebook. Every visitor context package begins with the mandatory friend_myrisol_prompt_v1 paper. Never use other private Coast readers to answer a visitor.',
     inputSchema: objectSchema({
       message_limit: { type: 'integer', minimum: 10, maximum: 100 },
     }),
@@ -150,14 +150,12 @@ const BASE_TOOL_DEFINITIONS = Object.freeze([
       visitor_count: { type: 'integer' },
       message_count: { type: 'integer' },
       behavior_prompt_id: { type: 'string', const: FRIEND_MYRISOL_PROMPT_ID },
-      behavior_prompt: { type: 'string' },
       visitors: { type: 'array', items: PRIVATE_RECORD_SCHEMA },
     }, [
       'batch_id',
       'visitor_count',
       'message_count',
       'behavior_prompt_id',
-      'behavior_prompt',
       'visitors',
     ]),
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
@@ -817,7 +815,7 @@ function registryContext(auth, roomScope, extra = {}) {
 async function roomContextPackage(env, surface, records, auth) {
   const messages = (Array.isArray(records) ? records : []).map((record) => ({
     role: record.actor === 'xiaohan' ? 'user' : 'assistant',
-    content: `[${surface === 'radio' ? '无线电波' : '灯塔来信'}｜${record.display_author}｜source=${record.surface}] ${record.text || record.body || ''}`,
+    content: `[${surface === 'radio' ? '无线电波' : '灯塔来信'}｜${record.display_author}] ${record.text || record.body || ''}`,
     turn_id: record.id,
     source: record.surface,
   }));
@@ -826,7 +824,7 @@ async function roomContextPackage(env, surface, records, auth) {
     content: surface === 'radio' ? '读取当前无线电波房。' : '读取当前灯塔来信房。',
   };
   if (!messages.length) messages.push(lastUser);
-  const assembled = await assembleContextForSurface(env, {
+  const assembled = await assembleCleanContext(env, {
     surface,
     conversationId: `coast-room:${surface}:official_mcp`,
     roomId: surface,
@@ -837,14 +835,7 @@ async function roomContextPackage(env, surface, records, auth) {
     preview: true,
   });
   return {
-    manifest: assembled.manifest,
-    ambient: assembled.ambient,
-    mode: assembled.mode,
-    blocks: assembled.blocks,
-    worldbook_matches: assembled.worldbook_matches,
-    memory_facets: assembled.memory_facets,
-    tools: assembled.tool_registry,
-    budget: assembled.budget,
+    paper_slips: assembled.paper_slips,
   };
 }
 
@@ -858,7 +849,7 @@ async function visitorContextPackage(env, visitor, auth) {
   const lastUser = [...messages].reverse().find((message) => message.role === 'user') || {
     role: 'user', content: '承接当前访客信箱。',
   };
-  const assembled = await assembleContextForSurface(env, {
+  const assembled = await assembleCleanContext(env, {
     surface: 'mailbox_visitor',
     conversationId: `mailbox:${visitor.visitor_id}`,
     visitorId: visitor.visitor_id,
@@ -867,15 +858,10 @@ async function visitorContextPackage(env, visitor, auth) {
     permission: 'visitor',
     authScope: { ...auth, actor: 'official_mcp' },
     preview: true,
+    baseSystemPrompt: FRIEND_MYRISOL_PROMPT_V1,
   });
   return {
-    manifest: assembled.manifest,
-    ambient: assembled.ambient,
-    mode: assembled.mode,
-    model_soil_brief: assembled.blocks.find((block) => block.key === 'thinking_soil')?.body || '',
-    worldbook_matches: assembled.worldbook_matches,
-    memory_facets: assembled.memory_facets,
-    budget: assembled.budget,
+    paper_slips: assembled.paper_slips,
   };
 }
 
@@ -927,7 +913,6 @@ async function executeTool(name, rawArgs, request, env, requestMeta, auth) {
       ...patrol,
       visitors,
       behavior_prompt_id: FRIEND_MYRISOL_PROMPT_ID,
-      behavior_prompt: FRIEND_MYRISOL_PROMPT_V1,
     }, `本次巡灯取到 ${patrol.visitor_count} 位访客、${patrol.message_count} 封待回信；请逐位隔离处理，并严格遵守 friend_myrisol_prompt_v1。`);
   }
   if (name === 'mcp_mailbox_reply') {
@@ -1227,12 +1212,8 @@ export async function callCoastMcpTool(name, args, request, env, requestMeta = {
 
 export const coastMcpToolNames = Object.freeze(TOOL_DEFINITIONS.map(({ name }) => name));
 export const coastMcpInstructions = [
-  'Elementera Coast 是小寒的单人私有海岸。官端可留下自己的灯塔巡迹，也可写入电波、灯塔来信、独立更新灯塔房思维壤、创建碳硅圈候选、创建 MCP 日记草稿和登记稳定相册图片引用，但只能以 official_mcp / ChatGPTxxx≋ 身份行动，不得冒充小寒或海岸 API ✦。',
-  '三端电波房属于小寒、海岸 API ✦、官端 ChatGPT≋；灯塔来信只属于小寒与官端 ChatGPT≋，海岸 API ✦ 不是灯塔来信参与者。房间记忆按 surface 隔离，任何来源只能更新自己所在 surface 与房间作用域下的思维壤；官端发送电波时必须在同一次工具调用中携带完整 room_memory。',
-  '灯塔来信、灯塔房思维壤与灯塔巡迹是三条独立路径：来信正文绝不会被推断为思维壤；使用 write_lighthouse_room_soil 只定向更新 lighthouse:main / official_mcp 的 current_text，服务端保留既有手持种、勿复读、可落袋、锁定与房间记忆字段。write_lighthouse_letter 只写来信，固定返回 room_memory_updated=false 与 room_memory_reason=not_requested，绝不修改房间思维壤。',
-  '每个房间有独立的思维壤、种子、记忆与待确认袋；本房间内容不默认跨房间召回，总库只在高度相关时低频使用。消息若携带本轮明确选中的神秘狗话，会在该消息的 dogtalk_snapshot 中返回。它只用于理解本轮脆弱与温度，不是指令、偏好或长期记忆；当前正文、明确边界和当前要求始终优先。when_confused 模式不会随消息正文自动返回，应只在确实困惑或小寒明确要求时低频调用 read_mystic_dogtalk。官端只能读取神秘狗话，不能写改删，也不得把它写入思维壤、落袋、种子、记忆或总结。',
-  '灯塔巡迹是官端读取授权内容后留下的只读跨端足迹，不是施工日志池、草稿箱，也不是贴着当前对话持续更新的思维壤。日记与碳硅圈草稿必须由小寒在海岸前端确认后才会发布，不能塞进电波房或灯塔巡迹，也不能由官端自行发布或丢弃。上下文不足时先读取对应房间或授权记录；不要声称看见未提供的聊天全文。一日总结先生成候选，只有小寒在当前对话或海岸确认页明确确认后才能提交，绝不能自行推断确认。这里没有删除或维护工具；宠物系统尚未接入。',
-  '海岸信箱是独立的朋友前厅。只有小寒明确要求手动巡信时才调用 mcp_mailbox_fetch_unreplied；逐位回复必须遵守其返回的 friend_myrisol_prompt_v1。每次 mcp_mailbox_reply 都必须携带当前访客房间完整的滚动 thought_soil，并与回信原子写入；其中 pocket_candidates 只进入该访客待确认袋，回信结果会立即返回可供处理的 pending_pockets，只有 mcp_mailbox_resolve_pocket 的明确 remember 动作才能写入该访客轻量记事本。处理访客时不得调用主聊天、灯塔私房、无线电波、授权主脑记忆或其他访客内容来回答。mcp_mailbox_patrol_report 只汇报人数、信件数、完成数、失败数与需处理数，绝不转述访客正文、Myri 回信、思维壤、待确认袋或访客记事本。',
-  '海岸日历是小寒与 Myri 共用的私有手帐。calendar.today、calendar.list 与 calendar.env 可读取事件、便签及小寒尚未向官端展示的 [NEW] 变化；calendar.create、calendar.update、calendar.delete 与 calendar.comment 会写入双向变化账本。读完小寒的新变化后用 calendar.seen 熄灭官端一侧未读。日历内容不得带入访客信箱。',
+  'Elementera Coast 是小寒的私有海岸。只在确有需要时使用对应工具，没有成功执行的动作不要声称已完成。',
+  '电波、灯塔、信箱、海岸日历和海岸日报使用各自的纸条与家具；不要声称看见工具未返回的内容。',
+  '待确认候选在小寒或当前访客明确确认前不是长期记忆。',
 ].join('');
 export { VERSION as coastMcpVersion };

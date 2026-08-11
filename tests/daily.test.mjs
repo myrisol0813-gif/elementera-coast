@@ -604,7 +604,8 @@ globalThis.fetch = async (url, options = {}) => {
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
   const providerPayload = JSON.parse(options.body);
-  if (providerPayload.messages?.[0]?.content?.includes('碳硅圈动态写评论')) {
+  if (providerPayload.messages?.[0]?.content?.includes('碳硅圈动态')
+    && providerPayload.messages?.[0]?.content?.includes('短评论')) {
     commentProviderPayload = providerPayload;
     return new Response(JSON.stringify({
       model: 'openai/gpt-4.1-nano',
@@ -649,8 +650,9 @@ assert.equal(summaryData.source_counts.memories, 2);
 assert.equal(summaryData.source_counts.stones, 1);
 assert.equal(Object.hasOwn(summaryData.source_counts, 'chat_messages'), false);
 assert.equal(summaryProviderPayload.response_format.type, 'json_object');
-const summaryInput = JSON.parse(summaryProviderPayload.messages.at(-1).content);
-assert.equal(Object.hasOwn(summaryInput, 'chat_messages'), false);
+assert.equal(summaryProviderPayload.messages.at(-1).content.includes('chat_messages'), false);
+assert.equal(summaryProviderPayload.messages.at(-1).content.includes('conversation_id'), false);
+assert.equal(summaryProviderPayload.messages.at(-1).content.includes('scope'), false);
 assert.ok(summaryProviderPayload.messages.at(-1).content.includes('已经整理过的潮线方向。'));
 assert.ok(summaryProviderPayload.messages.at(-1).content.includes('仍在待确认袋里的微光。'));
 assert.ok(summaryProviderPayload.messages.at(-1).content.includes('它已经成为石头。'));

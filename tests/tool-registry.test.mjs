@@ -1,21 +1,54 @@
 import assert from 'node:assert/strict';
 import { createConversation } from '../functions/chat-store.js';
-import { getModeCard } from '../functions/context-modes.js';
-import { executeRegisteredTool, listRegisteredTools, resolveToolSelection } from '../functions/tool-registry.js';
+import { createEntry } from '../functions/memory-store.js';
+import { executeModelTool, executeRegisteredTool, listRegisteredTools, resolveToolSelection } from '../functions/tool-registry.js';
 import { listToolRuns, summarizeToolValue } from '../functions/tool-run-log.js';
 import { D1Database } from './d1-helper.mjs';
 
 const db = new D1Database();
 const conversation = await createConversation(db, 'Registry 神秘狗话');
-const mode = await getModeCard(db, 'calendar_writer');
-const tools = listRegisteredTools({ permission: 'owner', surface: 'main_chat', mode });
+const tools = listRegisteredTools({ permission: 'owner', surface: 'main_chat' });
 assert.ok(tools.some((tool) => tool.tool_key === 'calendar.create'));
-assert.equal(tools.some((tool) => tool.tool_key === 'memory.search'), false);
-const modelTools = resolveToolSelection({ permission: 'owner', surface: 'main_chat', mode }).modelTools;
+assert.ok(tools.some((tool) => tool.tool_key === 'memory.search'));
+assert.equal(tools.find((tool) => tool.tool_key === 'calendar.today').display_name, '翻看台历');
+assert.equal(tools.find((tool) => tool.tool_key === 'memory.write_candidate').display_name, '放入待确认袋');
+const selection = resolveToolSelection({ permission: 'owner', surface: 'main_chat' });
+const modelTools = selection.modelTools;
 assert.ok(modelTools.some((tool) => tool.function.name === 'calendar_create'));
+assert.ok(modelTools.some((tool) => tool.function.name === 'memory_search'));
 assert.equal(modelTools.some((tool) => tool.function.name === 'calendar_delete'), false, 'destructive model tool waits for explicit confirmation');
+assert.deepEqual(selection.tools.map((tool) => tool.model_name), modelTools.map((tool) => tool.function.name));
 
-const visitorTools = listRegisteredTools({ permission: 'visitor', surface: 'mailbox_visitor', mode: { tool_allowlist: [] } });
+await createEntry(db, {
+  conversation_id: conversation.id,
+  scope: 'conversation',
+  entry_type: 'memory',
+  title: '干净工具结果',
+  life_core: '模型只应看见这张简洁记忆纸条。',
+  content: '数据库里的完整记忆正文不应带着字段名重新进入模型。',
+});
+const modelMemoryResult = await executeModelTool(db, {
+  id: 'memory-call-1',
+  function: {
+    name: 'memory_search',
+    arguments: JSON.stringify({ query: '干净工具结果', scope: 'conversation', limit: 5 }),
+  },
+}, {
+  env: { COAST_CHAT_DB: db },
+  permission: 'owner',
+  surface: 'main_chat',
+  room_scope: 'conversation',
+  actor: 'myri',
+  conversation_id: conversation.id,
+});
+assert.deepEqual(Object.keys(modelMemoryResult).sort(), ['count', 'memories', 'vector_enabled']);
+assert.match(modelMemoryResult.memories[0], /干净工具结果｜模型只应看见这张简洁记忆纸条/);
+assert.doesNotMatch(JSON.stringify(modelMemoryResult), /conversation_id|scope|source|priority|freshness|confidence|usage_hint|avoid_hint/);
+const memorySearchRun = (await listToolRuns(db)).find((run) => run.tool_key === 'memory.search');
+assert.match(JSON.stringify(memorySearchRun.input_summary), /content_redacted/);
+assert.doesNotMatch(JSON.stringify(memorySearchRun), /模型只应看见这张简洁记忆纸条|数据库里的完整记忆正文/);
+
+const visitorTools = listRegisteredTools({ permission: 'visitor', surface: 'mailbox_visitor', visitorId: 'visitor-a' });
 assert.equal(visitorTools.some((tool) => tool.owner_only), false);
 await assert.rejects(
   () => executeRegisteredTool(db, 'calendar.today', {}, { permission: 'visitor', surface: 'mailbox_visitor', actor: 'visitor' }),

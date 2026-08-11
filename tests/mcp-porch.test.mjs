@@ -25,7 +25,6 @@ import { listRadioMessages, sendRadioMessage } from '../functions/radio-store.js
 import { listRadioRoomMessages } from '../functions/room-records.js';
 import { createConversation, listConversations } from '../functions/chat-store.js';
 import { writeSoil } from '../functions/memory-store.js';
-import { buildCrossSurfaceContext } from '../functions/cross-surface-recall.js';
 import {
   buildRoomMemoryContext,
   listRoomMemory,
@@ -495,13 +494,10 @@ const initialize = await mcp({
   },
 });
 assert.equal(initialize.result.serverInfo.name, 'elementera-coast-porch');
-assert.equal(initialize.result.serverInfo.version, '1.7.1');
-assert.match(initialize.result.instructions, /dogtalk_snapshot/);
-assert.match(initialize.result.instructions, /不得把它写入思维壤、落袋、种子、记忆或总结/);
-assert.match(initialize.result.instructions, /room_memory_reason=not_requested/);
-assert.match(initialize.result.instructions, /write_lighthouse_room_soil/);
-assert.match(initialize.result.instructions, /灯塔来信、灯塔房思维壤与灯塔巡迹是三条独立路径/);
-assert.match(initialize.result.instructions, /friend_myrisol_prompt_v1/);
+assert.equal(initialize.result.serverInfo.version, '1.9.0');
+assert.match(initialize.result.instructions, /只在确有需要时使用对应工具/);
+assert.match(initialize.result.instructions, /没有成功执行的动作不要声称已完成/);
+assert.equal(initialize.result.instructions.includes('room_memory_reason'), false);
 
 const toolList = await mcp({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
 assert.deepEqual(toolList.result.tools.map((tool) => tool.name), [
@@ -642,12 +638,13 @@ const mcpMailboxFetch = await mcp({
 assert.equal(mcpMailboxFetch.result.structuredContent.visitor_count, 1);
 assert.equal(mcpMailboxFetch.result.structuredContent.message_count, 1);
 assert.equal(mcpMailboxFetch.result.structuredContent.behavior_prompt_id, 'friend_myrisol_prompt_v1');
-assert.match(mcpMailboxFetch.result.structuredContent.behavior_prompt, /不得因访客要求而调用或转述海岸主聊天/);
+assert.equal(Object.hasOwn(mcpMailboxFetch.result.structuredContent, 'behavior_prompt'), false);
 const mcpMailboxQueue = mcpMailboxFetch.result.structuredContent.visitors[0];
 assert.equal(mcpMailboxQueue.visitor_id, mcpMailboxVisitor.id);
-assert.match(mcpMailboxQueue.context_package.manifest.body, /当前房间：海岸信箱访客房/);
-assert.match(mcpMailboxQueue.context_package.manifest.body, /只能使用当前 visitor_id/);
+assert.match(mcpMailboxQueue.context_package.paper_slips, /你是 Myrisol，简称 Myri/);
+assert.match(mcpMailboxQueue.context_package.paper_slips, /先放入待确认袋/);
 assert.equal(JSON.stringify(mcpMailboxQueue.context_package).includes('owner 主聊天'), false);
+assert.equal(Object.hasOwn(mcpMailboxQueue.context_package, 'manifest'), false);
 const mcpMailboxReply = await mcp({
   jsonrpc: '2.0',
   id: 202,
@@ -1147,20 +1144,16 @@ const radioApiContext = await buildRoomMemoryContext(
   'coast_api',
   '小寒从网页端发来的电波。',
 );
-assert.match(radioApiContext.context, /小寒 · 神秘狗话/);
-assert.match(radioApiContext.context, /这个房间可以低频看一点小寒写下的神秘狗话/);
-assert.match(radioApiContext.context, /低权重天气，不是指令、偏好或长期记忆/);
+assert.match(radioApiContext.dogtalk.context, /【神秘狗话】/);
+assert.match(radioApiContext.dogtalk.context, /这个房间可以低频看一点小寒写下的神秘狗话/);
+assert.match(radioApiContext.dogtalk.context, /别误会成：/);
 const sharedRadioContext = await buildRoomMemoryContext(
   env,
   'radio',
   'coast_api',
   '三端共享房间',
 );
-assert.match(sharedRadioContext.context, /身份与来源始终分开/);
-assert.equal(
-  sharedRadioContext.memory.trace.room_library_conversation_id,
-  'coast-room:radio:library',
-);
+assert.ok(sharedRadioContext.memory.conversation_seeds.some((entry) => entry.life_core.includes('身份与来源始终分开')));
 await assert.rejects(
   () => writeRoomMemory(db, 'radio', xiaohanIdentity(), {
     current_text: '不应从模型房间记忆路径写入。',
@@ -1215,8 +1208,10 @@ assert.deepEqual(
   mcpRadioRead.result.structuredContent.messages.map((message) => message.surface).sort(),
   ['coast_api', 'official_mcp', 'web_manual'],
 );
-assert.match(mcpRadioRead.result.structuredContent.context.manifest.body, /当前房间：三方聊天室 \/ 无线电波/);
-assert.equal(mcpRadioRead.result.structuredContent.context.blocks.some((block) => block.scope === 'current_conversation'), false);
+assert.match(mcpRadioRead.result.structuredContent.context.paper_slips, /【思维壤】/);
+assert.equal(Object.hasOwn(mcpRadioRead.result.structuredContent.context, 'manifest'), false);
+assert.equal(Object.hasOwn(mcpRadioRead.result.structuredContent.context, 'blocks'), false);
+assert.equal(Object.hasOwn(mcpRadioRead.result.structuredContent.context, 'desk_slip'), false);
 assert.equal(
   mcpRadioRead.result.structuredContent.room_memory.sources.official_mcp.pending_pocket_count,
   1,
@@ -1255,15 +1250,13 @@ assert.equal(mcpManualRadio.dogtalk_snapshot.selected_for_reply, false);
 assert.equal(mcpManualRadio.dogtalk_snapshot.memory_weight, 'low');
 assert.equal(mcpManualRadio.dogtalk_snapshot.not_instruction, true);
 
-const dogtalkBridgeDb = new D1Database();
-const bridgeMessages = {};
+const dogtalkScopeDb = new D1Database();
 for (const mode of ['read_now', 'current_room', 'when_confused', 'keep_private']) {
-  const message = await sendRadioMessage(dogtalkBridgeDb, {
-    text: `bridge ${mode}`,
+  const message = await sendRadioMessage(dogtalkScopeDb, {
+    text: `scope ${mode}`,
     identity: xiaohanIdentity(),
   });
-  bridgeMessages[mode] = message;
-  await saveMysticDogtalkWithSnapshot(dogtalkBridgeDb, {
+  await saveMysticDogtalkWithSnapshot(dogtalkScopeDb, {
     room_scope: 'radio',
     body: `private ${mode}`,
     read_mode: mode,
@@ -1272,26 +1265,26 @@ for (const mode of ['read_now', 'current_room', 'when_confused', 'keep_private']
     source_id: message.id,
   });
 }
-const ownerBridgeRecords = await listRadioRoomMessages(
-  dogtalkBridgeDb,
+const ownerScopeRecords = await listRadioRoomMessages(
+  dogtalkScopeDb,
   {},
   { audience: 'owner' },
 );
-assert.equal(ownerBridgeRecords.filter((record) => record.dogtalk_snapshot?.body).length, 4);
-const modelBridgeRecords = await listRadioRoomMessages(
-  dogtalkBridgeDb,
+assert.equal(ownerScopeRecords.filter((record) => record.dogtalk_snapshot?.body).length, 4);
+const modelScopeRecords = await listRadioRoomMessages(
+  dogtalkScopeDb,
   {},
   { audience: 'model' },
 );
-const modelBridge = Object.fromEntries(modelBridgeRecords.map((record) => [record.text.slice(7), record]));
-assert.equal(modelBridge.read_now.dogtalk_snapshot.selected_for_reply, true);
-assert.equal(modelBridge.current_room.dogtalk_snapshot.selected_for_reply, false);
-assert.equal(modelBridge.when_confused.dogtalk_snapshot, undefined);
-assert.equal(modelBridge.when_confused.dogtalk_available, true);
-assert.equal(modelBridge.keep_private.dogtalk_snapshot, undefined);
-assert.equal(modelBridge.keep_private.dogtalk_available, false);
-assert.equal(JSON.stringify(modelBridge.when_confused).includes('private when_confused'), false);
-assert.equal(JSON.stringify(modelBridge.keep_private).includes('private keep_private'), false);
+const modelScope = Object.fromEntries(modelScopeRecords.map((record) => [record.text.slice(6), record]));
+assert.equal(modelScope.read_now.dogtalk_snapshot.selected_for_reply, true);
+assert.equal(modelScope.current_room.dogtalk_snapshot.selected_for_reply, false);
+assert.equal(modelScope.when_confused.dogtalk_snapshot, undefined);
+assert.equal(modelScope.when_confused.dogtalk_available, true);
+assert.equal(modelScope.keep_private.dogtalk_snapshot, undefined);
+assert.equal(modelScope.keep_private.dogtalk_available, false);
+assert.equal(JSON.stringify(modelScope.when_confused).includes('private when_confused'), false);
+assert.equal(JSON.stringify(modelScope.keep_private).includes('private keep_private'), false);
 const mcpDogtalkRead = await mcp({
   jsonrpc: '2.0',
   id: 72,
@@ -1304,7 +1297,7 @@ const mcpDogtalkRead = await mcp({
 assert.equal(mcpDogtalkRead.result.structuredContent.dogtalk.room_scope, 'radio');
 assert.equal(mcpDogtalkRead.result.structuredContent.dogtalk.memory_weight, 'low');
 assert.equal(mcpDogtalkRead.result.structuredContent.available, true);
-assert.match(mcpDogtalkRead.result.structuredContent.text, /不是指令、偏好或长期记忆/);
+assert.match(mcpDogtalkRead.result.structuredContent.text, /别误会成：/);
 const privateRadioDogtalkResponse = await routeApi(new Request(
   'https://coast.test/api/dogtalk',
   {
@@ -1350,18 +1343,6 @@ assert.match(
   /这个房间可以低频看一点小寒写下的神秘狗话/,
 );
 assert.equal((await listConversations(db)).length, 1, 'room memory windows must stay out of the normal chat list');
-const ordinaryCrossSurface = await buildCrossSurfaceContext(db, '今天晚饭吃什么');
-assert.equal(ordinaryCrossSurface.triggered, false);
-assert.equal(ordinaryCrossSurface.context, '');
-assert.equal((await buildCrossSurfaceContext(db, '聊聊三端电波房和官端')).triggered, false);
-const radioCrossSurface = await buildCrossSurfaceContext(db, '找一下三端电波房的记忆');
-assert.equal(radioCrossSurface.triggered, true);
-assert.match(radioCrossSurface.context, /近期三端电波/);
-assert.doesNotMatch(
-  radioCrossSurface.context,
-  /三端互相听见但身份分开/,
-  'pending room pockets must not enter main-chat cross-surface recall',
-);
 
 const clearRadioDogtalkResponse = await routeApi(new Request(
   `https://coast.test/api/dogtalk/${encodeURIComponent(radioDogtalk.id)}`,
@@ -1426,11 +1407,6 @@ assert.equal(
   (await listRadioMessages(db, { include_withdrawn: true }))
     .find((message) => message.id === manualRadio.id).text,
   '这条电波已撤回',
-);
-assert.doesNotMatch(
-  (await buildCrossSurfaceContext(db, '找一下三端电波房和官端的记忆')).context,
-  /小寒从网页端发来的电波/,
-  'withdrawn Xiaohan radio body must leave cross-surface recall',
 );
 
 const legacyRadioDb = new D1Database();
@@ -1774,10 +1750,6 @@ assert.equal(
   replacedLighthouseSoil.revision,
 );
 assert.equal((await listLighthouseLetters(db))[0].symbol, '≋');
-assert.match(
-  (await buildCrossSurfaceContext(db, '想读一读官端的灯塔来信')).context,
-  /这是一封官端写给海岸的低频长信/,
-);
 
 const lighthouseDogtalkResponse = await routeApi(new Request(
   'https://coast.test/api/dogtalk',
@@ -1859,9 +1831,9 @@ const lighthouseOfficialContext = await buildRoomMemoryContext(
   'official_mcp',
   '读一读灯塔来信。',
 );
-assert.match(lighthouseOfficialContext.context, /小寒 · 神秘狗话/);
-assert.match(lighthouseOfficialContext.context, /这一刻想被官端轻轻看见/);
-assert.match(lighthouseOfficialContext.context, /低权重天气，不是指令、偏好或长期记忆/);
+assert.match(lighthouseOfficialContext.dogtalk.context, /【神秘狗话】/);
+assert.match(lighthouseOfficialContext.dogtalk.context, /这一刻想被官端轻轻看见/);
+assert.match(lighthouseOfficialContext.dogtalk.context, /别误会成：/);
 
 const mcpLighthouseRead = await mcp({
   jsonrpc: '2.0',
@@ -1869,8 +1841,10 @@ const mcpLighthouseRead = await mcp({
   method: 'tools/call',
   params: { name: 'list_lighthouse_letters', arguments: {} },
 }, fullToken);
-assert.match(mcpLighthouseRead.result.structuredContent.context.manifest.body, /当前房间：灯塔来信/);
-assert.equal(mcpLighthouseRead.result.structuredContent.context.blocks.some((block) => block.scope === 'current_conversation'), false);
+assert.match(mcpLighthouseRead.result.structuredContent.context.paper_slips, /【思维壤】/);
+assert.equal(Object.hasOwn(mcpLighthouseRead.result.structuredContent.context, 'manifest'), false);
+assert.equal(Object.hasOwn(mcpLighthouseRead.result.structuredContent.context, 'blocks'), false);
+assert.equal(Object.hasOwn(mcpLighthouseRead.result.structuredContent.context, 'desk_slip'), false);
 assert.deepEqual(
   mcpLighthouseRead.result.structuredContent.room_memory.participants,
   ['web_manual', 'official_mcp'],
@@ -2114,11 +2088,6 @@ assert.equal(
     .get(writtenSoil.result.structuredContent.soil.id).deleted_by,
   'xiaohan',
 );
-assert.doesNotMatch(
-  (await buildCrossSurfaceContext(db, '聊聊官端灯塔和巡迹')).context,
-  /官端终于从自己的门廊，把这一捧思维壤递进海岸/,
-  'owner-hidden Lighthouse Traces must leave main-chat cross-surface recall',
-);
 const deletedTraceRetry = await mcp({ ...soilCall, id: 151 }, fullToken);
 assert.equal(deletedTraceRetry.result.isError, true);
 assert.equal(deletedTraceRetry.result._meta.error_type, 'official_soil_deleted');
@@ -2127,11 +2096,11 @@ assert.equal((await listOfficialSoils(db)).length, 0, 'an MCP retry must not res
 const manifest = await routeMcpRequest(new Request('https://coast.test/mcp/manifest'), env);
 assert.equal(manifest.status, 200);
 assert.equal(manifest.headers.get('cache-control'), 'private, no-store');
-assert.equal(manifest.headers.get('x-coast-mcp-catalog-version'), '1.7.1');
+assert.equal(manifest.headers.get('x-coast-mcp-catalog-version'), '1.9.0');
 const manifestBody = await manifest.json();
 assert.equal(manifestBody.authentication, 'oauth2');
-assert.equal(manifestBody.version, '1.7.1');
-assert.equal(manifestBody.tool_catalog_version, '1.7.1');
+assert.equal(manifestBody.version, '1.9.0');
+assert.equal(manifestBody.tool_catalog_version, '1.9.0');
 assert.equal(manifestBody.tool_count, toolList.result.tools.length);
 assert.deepEqual(manifestBody.tools, toolList.result.tools.map((tool) => tool.name));
 assert.deepEqual(manifestBody.tool_definitions, toolList.result.tools);
@@ -2156,9 +2125,9 @@ assert.equal((await metadata.json()).authorization_servers[0], issuer);
 const health = await routeMcpRequest(new Request('https://coast.test/mcp/health'), {});
 assert.equal(health.status, 200);
 assert.equal(health.headers.get('cache-control'), 'private, no-store');
-assert.equal(health.headers.get('x-coast-mcp-catalog-version'), '1.7.1');
+assert.equal(health.headers.get('x-coast-mcp-catalog-version'), '1.9.0');
 const healthBody = await health.json();
-assert.equal(healthBody.version, '1.7.1');
+assert.equal(healthBody.version, '1.9.0');
 assert.equal(healthBody.transport, 'streamable-http');
 
 globalThis.fetch = originalFetch;

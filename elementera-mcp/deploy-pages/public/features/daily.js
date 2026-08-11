@@ -68,7 +68,7 @@ function legacyId(prefix, value) {
   return `${prefix}-legacy-${String(value || Date.now())}`.replace(/[^\w:.-]/g, '_').slice(0, 160);
 }
 
-export function createDaily({ storage, router, toast, chat }) {
+export function createDaily({ storage, router, toast, chat, calendar }) {
   const client = createDailyClient();
   const saved = storage.read().daily || {};
   const cache = saved.cache || {};
@@ -228,12 +228,13 @@ export function createDaily({ storage, router, toast, chat }) {
   function dailyHomeView() {
     if (!state.loaded) return loadStateView('海岸日报', '正在连接服务器');
     const entries = [
+      ['calendar', '海岸日历', '今日一瞥、事件与便签', 'daily'],
       ['summary', '一日总结', state.summaries.length ? '从上次记录继续' : '选择一段时间收拢', 'edit'],
       ['moments', '碳硅圈', '海岸内部朋友圈', 'heart'],
       ['diary', '日记', '留下今天的纸页', 'edit'],
       ['album', '相册', '海岸图片引用墙', 'image'],
-      ['widgets', '小组件', '暂未接入', 'plus'],
-      ['pets', '宠物系统', '暂未接入', 'heart'],
+      ['pets', '宠物区', '暂未接入状态源', 'heart'],
+      ['widgets', '未来小组件', '还会慢慢长出来', 'plus'],
     ];
     return {
       title: '海岸日报',
@@ -802,6 +803,7 @@ export function createDaily({ storage, router, toast, chat }) {
       return router.refresh();
     }
     if (name === 'summary') return router.open('summary');
+    if (name === 'calendar') return calendar.handleAction('open', target);
     if (name === 'moments') return router.open('moments');
     if (name === 'diary') return router.open('diary');
     if (name === 'album') return router.open('album');

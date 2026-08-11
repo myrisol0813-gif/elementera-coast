@@ -1,4 +1,4 @@
-import { assembleContextForSurface } from './context-assembler.js';
+import { assembleCleanContext } from './context-assemble-clean.js';
 import { apiMyriIdentity } from './coast-identity.js';
 import { readProfile } from './chat-store.js';
 import { CoastStoreError } from './coast-records.js';
@@ -16,7 +16,7 @@ function radioContextMessages(messages, latestPrompt, sourceTurnId) {
     .filter((message) => message.id !== latestXiaohan?.id)
     .map((message) => ({
       role: message.actor === 'xiaohan' ? 'user' : 'assistant',
-      content: `[无线电波｜${message.display_author}｜source=${message.surface}] ${clip(message.text, 2400)}`,
+      content: `[无线电波｜${message.display_author}] ${clip(message.text, 2400)}`,
       turn_id: message.id,
       source: message.surface,
     }));
@@ -41,7 +41,7 @@ export async function askApiMyriInRadio(env, value = {}) {
     || messages.at(-1)?.text
     || '';
   const contextMessages = radioContextMessages(messages, latestPrompt, value.source_turn_id);
-  const assembled = await assembleContextForSurface(env, {
+  const assembled = await assembleCleanContext(env, {
     surface: 'radio',
     conversationId: 'coast-room:radio:coast_api',
     roomId: 'radio',
@@ -96,6 +96,6 @@ export async function askApiMyriInRadio(env, value = {}) {
     model: result.model || model,
     memory_records: assembled.selected_memory_ids.length,
     room_memory_updated: roomMemoryUpdated,
-    context_debug: assembled.debug,
+    desk_slip: assembled.deskSlip(),
   };
 }

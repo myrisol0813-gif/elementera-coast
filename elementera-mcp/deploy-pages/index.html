@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="/public/styles/chat.css?v=coast-app-24">
   <link rel="stylesheet" href="/public/styles/features.css?v=coast-app-22">
   <link rel="stylesheet" href="/public/styles/calendar.css?v=coast-app-26">
-  <link rel="stylesheet" href="/public/styles/context.css?v=coast-app-26">
+  <link rel="stylesheet" href="/public/styles/desk.css?v=coast-app-27">
 </head>
 <body>
   <div id="app" class="app-shell">
@@ -45,7 +45,7 @@
           <button class="history-item" type="button" data-action="rooms:open" data-kind="lighthouse"><span data-icon="letter"></span>灯塔来信</button>
           <button class="history-item" type="button" data-action="memory:open"><span data-icon="memory"></span>轨迹 / 记忆</button>
           <button class="history-item" type="button" data-action="daily:home"><span data-icon="daily"></span>海岸日报</button>
-          <button class="history-item calendar-sidebar-entry" type="button" data-action="calendar:open"><span data-icon="calendar"></span><span>海岸日历</span><b id="calendarUnread" class="sidebar-count" hidden></b></button>
+          <button class="history-item calendar-sidebar-entry" type="button" data-action="daily:calendar"><span data-icon="calendar"></span><span>今日一瞥</span><b id="calendarUnread" class="sidebar-count" hidden></b></button>
         </section>
 
         <section id="chatConversationSection" class="sidebar-section" data-owner="chat-conversations">
@@ -91,7 +91,7 @@
         </section>
 
         <div id="chatStatus" class="chat-status" role="status" aria-live="polite" hidden></div>
-        <div id="contextStatus" class="context-status-strip" hidden></div>
+        <div id="deskStatus" class="desk-status-strip" hidden></div>
         <form id="composer" class="composer composer--chat" autocomplete="off">
           <div id="mainDogtalkComposer" class="dogtalk-composer-slot"></div>
           <button id="imageButton" class="composer-side" type="button" data-action="chat:image" data-icon="plus" aria-label="上传图片"></button>
@@ -125,6 +125,6 @@
     <div id="toastRoot" class="toast" role="status" aria-live="polite" hidden></div>
   </div>
 
-  <script type="module" src="/public/app.js?v=coast-app-26"></script>
+  <script type="module" src="/public/app.js?v=coast-app-27"></script>
 </body>
 </html>

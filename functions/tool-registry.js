@@ -15,7 +15,6 @@ import { DOGTALK_MODEL_TOOL, executeDogtalkModelTool } from './dogtalk-model-too
 import { dogtalkContext, saveMysticDogtalkWithSnapshot } from './dogtalk-store.js';
 import { createPocket } from './memory-store.js';
 import { searchMemory } from './memory-recall.js';
-import { matchWorldbook } from './context-worldbook.js';
 import { writeLighthouseLetter } from './lighthouse-store.js';
 import { writeOfficialSoil } from './official-soil-store.js';
 import { sendRadioMessage } from './radio-store.js';
@@ -28,7 +27,7 @@ import {
   resolveMailboxPocket,
 } from './mailbox-service.js';
 import { finishToolRun, startToolRun } from './tool-run-log.js';
-import { getSurfaceProfile, surfaceAllowsTool } from './context-surfaces.js';
+import { roomAccess, roomAllowsTool } from './surface-access-rules.js';
 
 export class ToolRegistryError extends Error {
   constructor(type, message, status = 400) {
@@ -62,6 +61,17 @@ const CALENDAR_MODEL_NAMES = Object.freeze({
   'calendar.comment': 'calendar_comment',
   'calendar.env': 'calendar_env',
   'calendar.seen': 'calendar_seen',
+});
+
+const CALENDAR_FURNITURE = Object.freeze({
+  'calendar.today': '翻看台历',
+  'calendar.list': '翻看台历',
+  'calendar.create': '整理台历',
+  'calendar.update': '整理台历',
+  'calendar.delete': '整理台历',
+  'calendar.comment': '在台历边写便签',
+  'calendar.env': '翻看台历',
+  'calendar.seen': '翻看台历',
 });
 
 function calendarModelTool(toolKey) {
@@ -127,7 +137,7 @@ const REGISTRY = Object.freeze([
     }),
   }),
   entry({
-    tool_key: 'radio.list', display_name: '读取无线电波', description: '读取电波房消息与独立房间记忆。',
+    tool_key: 'radio.list', display_name: '调开电波收音机', description: '读取电波房消息与独立房间记忆。',
     auth_scopes: ['read:coast'], summary_policy: 'content_redacted', handler: async (db, input) => {
       const [messages, room_memory] = await Promise.all([
         listRadioRoomMessages(db, input, { audience: 'model' }),
@@ -137,7 +147,7 @@ const REGISTRY = Object.freeze([
     },
   }),
   entry({
-    tool_key: 'lighthouse.list', display_name: '读取灯塔来信', description: '读取灯塔信件与独立房间记忆。',
+    tool_key: 'lighthouse.list', display_name: '查看灯塔信架', description: '读取灯塔信件与独立房间记忆。',
     auth_scopes: ['read:coast'], summary_policy: 'content_redacted', handler: async (db, input) => {
       const [letters, room_memory] = await Promise.all([
         listLighthouseRoomMessages(db, input, { audience: 'model' }),
@@ -149,10 +159,10 @@ const REGISTRY = Object.freeze([
   entry({ tool_key: 'daily.create_moment', display_name: '写碳硅圈候选', description: '创建待确认动态。', model_exposed: true, model_tool: DAILY_BY_NAME.get('create_moment'), auth_scopes: ['write:soil'], handler: dailyHandler('moment') }),
   entry({ tool_key: 'daily.create_diary_draft', display_name: '写日记草稿', description: '创建待确认日记。', model_exposed: true, model_tool: DAILY_BY_NAME.get('create_diary_draft'), auth_scopes: ['write:soil'], handler: dailyHandler('diary') }),
   entry({ tool_key: 'daily.create_album_reference', display_name: '登记相册引用', description: '登记稳定图片引用。', model_exposed: true, model_tool: DAILY_BY_NAME.get('save_album_reference'), auth_scopes: ['write:soil'], handler: dailyHandler('album') }),
-  entry({ tool_key: 'dogtalk.read', display_name: '读神秘狗话', description: '低频读取当前房间神秘狗话。', model_exposed: true, model_tool: DOGTALK_MODEL_TOOL, auth_scopes: ['read:coast'], handler: dogtalkHandler }),
+  entry({ tool_key: 'dogtalk.read', display_name: '打开狗话小盒', description: '低频读取当前房间神秘狗话。', model_exposed: true, model_tool: DOGTALK_MODEL_TOOL, auth_scopes: ['read:coast'], handler: dogtalkHandler }),
   entry({
     tool_key: 'dogtalk.save',
-    display_name: '保存神秘狗话',
+    display_name: '收好一张狗话纸条',
     description: '前端用户写入；不向模型暴露。',
     summary_policy: 'content_redacted',
     handler: (db, input, context) => saveMysticDogtalkWithSnapshot(db, {
@@ -166,7 +176,7 @@ const REGISTRY = Object.freeze([
   }),
   ...Object.keys(CALENDAR_MODEL_NAMES).map((toolKey) => entry({
     tool_key: toolKey,
-    display_name: CALENDAR_BY_KEY.get(toolKey).title,
+    display_name: CALENDAR_FURNITURE[toolKey],
     description: CALENDAR_BY_KEY.get(toolKey).description,
     model_exposed: toolKey !== 'calendar.seen',
     requires_confirmation: toolKey === 'calendar.delete',
@@ -178,31 +188,39 @@ const REGISTRY = Object.freeze([
       return result.result;
     },
   })),
-  entry({ tool_key: 'memory.search', display_name: '检索已确认记忆', description: '按当前作用域检索记忆。', model_exposed: true, auth_scopes: ['read:coast'], model_tool: modelTool('memory_search', '仅在当前问题确实需要已确认记忆时检索，不读取原始聊天。', {
+  entry({ tool_key: 'memory.search', display_name: '翻找轨迹抽屉', description: '按当前作用域检索记忆。', model_exposed: true, auth_scopes: ['read:coast'], model_tool: modelTool('memory_search', '仅在当前问题确实需要已确认记忆时检索，不读取原始聊天。', {
     properties: { query: { type: 'string' }, scope: { type: 'string', enum: ['conversation', 'global'] }, limit: { type: 'integer', minimum: 1, maximum: 20 } },
     required: ['query', 'scope'],
   }), handler: (db, input, context) => searchMemory(context.env, 'owner', { ...input, conversation_id: context.conversation_id }) }),
-  entry({ tool_key: 'memory.write_candidate', display_name: '写入待确认袋', description: '只创建待确认记忆候选。', model_exposed: true, auth_scopes: ['write:soil'], model_tool: modelTool('memory_write_candidate', '把值得保留但尚未经小寒确认的内容放入当前窗口待确认袋；不能直接成为记忆。', {
-    properties: { title: { type: 'string' }, life_core: { type: 'string' }, content: { type: 'string' }, usage_hint: { type: 'string' }, avoid_hint: { type: 'string' } },
+  entry({ tool_key: 'memory.write_candidate', display_name: '放入待确认袋', description: '只创建待确认记忆候选。', model_exposed: true, auth_scopes: ['write:soil'], model_tool: modelTool('memory_write_candidate', '把值得保留但尚未经小寒确认的内容放入当前窗口待确认袋；若是对旧记忆的新理解，可附原记忆 id 与建议动作。', {
+    properties: {
+      title: { type: 'string' }, life_core: { type: 'string' }, content: { type: 'string' },
+      usage_hint: { type: 'string' }, avoid_hint: { type: 'string' },
+      original_entry_id: { type: 'string' },
+      suggested_action: { type: 'string', enum: ['supplement', 'replace', 'new_version', 'downgrade'] },
+    },
     required: ['title', 'life_core', 'content'],
   }), handler: (db, input, context) => createPocket(db, {
     ...input,
     conversation_id: context.conversation_id,
-    source_type: 'turn',
-    source_ref: { turn_id: context.source_turn_id, role: 'turn' },
+    source_type: input.original_entry_id ? 'memory_revision' : 'turn',
+    source_ref: input.original_entry_id ? {
+      original_entry_id: input.original_entry_id,
+      source_window: context.conversation_id,
+      source_turn_id: context.source_turn_id,
+      date: new Date().toISOString(),
+      suggested_action: input.suggested_action || 'new_version',
+    } : { turn_id: context.source_turn_id, role: 'turn' },
     source_text: input.content || input.life_core,
-    source_confidence: 'model_inferred',
+    supersedes_entry_id: input.original_entry_id || null,
   }) }),
   entry({
     tool_key: 'memory.authorized_search', display_name: '搜索授权海岸记忆', description: '官端按明确主题搜索授权整理物。',
     auth_scopes: ['read:coast'], summary_policy: 'content_redacted',
     handler: (db, input) => searchAuthorizedMemory(db, input),
   }),
-  entry({ tool_key: 'worldbook.test_match', display_name: '测试词典命中', description: '测试文本会命中哪些海岸词典词条。', model_exposed: true, auth_scopes: ['read:coast'], model_tool: modelTool('worldbook_test_match', '测试当前短语会命中哪些海岸词典词条。', {
-    properties: { input: { type: 'string' } }, required: ['input'],
-  }), handler: (db, input, context) => matchWorldbook(db, { input: input.input, surface: context.surface, worldbook_scope: context.worldbook_scope }) }),
-  entry({ tool_key: 'mailbox.fetch_unreplied', display_name: '巡读待回信', description: '官端人工巡信。', model_exposed: false, auth_scopes: ['read:coast'], handler: (db, input) => fetchUnrepliedMailbox(db, input) }),
-  entry({ tool_key: 'mailbox.reply', display_name: '回复访客', description: '回复单一隔离访客。', model_exposed: false, auth_scopes: ['write:lighthouse'], summary_policy: 'mailbox_content_redacted', handler: (db, input) => replyToMailboxVisitor(db, input) }),
+  entry({ tool_key: 'mailbox.fetch_unreplied', display_name: '去信箱巡灯', description: '官端人工巡信。', model_exposed: false, auth_scopes: ['read:coast'], handler: (db, input) => fetchUnrepliedMailbox(db, input) }),
+  entry({ tool_key: 'mailbox.reply', display_name: '把回信放回信箱', description: '回复单一隔离访客。', model_exposed: false, auth_scopes: ['write:lighthouse'], summary_policy: 'mailbox_content_redacted', handler: (db, input) => replyToMailboxVisitor(db, input) }),
   entry({ tool_key: 'mailbox.resolve_pocket', display_name: '处理访客记事候选', description: '只处理当前访客的一条待确认候选。', model_exposed: false, auth_scopes: ['write:lighthouse'], summary_policy: 'mailbox_content_redacted', handler: (db, input) => resolveMailboxPocket(db, input) }),
   entry({ tool_key: 'mailbox.patrol_report', display_name: '巡信报告', description: '只返回巡信计数。', model_exposed: false, auth_scopes: ['read:coast'], handler: (db, input) => mailboxPatrolReport(db, input) }),
   entry({
@@ -210,7 +228,7 @@ const REGISTRY = Object.freeze([
     auth_scopes: ['write:soil'], summary_policy: 'content_redacted', handler: (db, input) => writeOfficialSoil(db, input),
   }),
   entry({
-    tool_key: 'radio.send', display_name: '发送官端无线电波', description: '写入官端电波并更新该来源房间思维壤。',
+    tool_key: 'radio.send', display_name: '发出无线电波', description: '写入官端电波并更新该来源房间思维壤。',
     auth_scopes: ['write:radio'], summary_policy: 'content_redacted', handler: async (db, input) => {
       const message = await sendRadioMessage(db, input.message);
       const room_memory = await writeRoomMemory(db, 'radio', input.identity, {
@@ -221,7 +239,7 @@ const REGISTRY = Object.freeze([
     },
   }),
   entry({
-    tool_key: 'lighthouse.write_letter', display_name: '写入官端灯塔来信', description: '只写灯塔来信，不修改思维壤。',
+    tool_key: 'lighthouse.write_letter', display_name: '把信放进灯塔信架', description: '只写灯塔来信，不修改思维壤。',
     auth_scopes: ['write:lighthouse'], summary_policy: 'content_redacted', handler: (db, input) => writeLighthouseLetter(db, input),
   }),
   entry({
@@ -262,13 +280,12 @@ function authScopeSet(value) {
   return null;
 }
 
-function allowed(definition, { permission = 'owner', surface, mode, authScope } = {}) {
-  const profile = getSurfaceProfile(surface);
+function allowed(definition, { permission = 'owner', surface, authScope, visitorId } = {}) {
+  const access = roomAccess(surface, { permission, visitorId: visitorId || (surface === 'mailbox_visitor' ? 'bound' : '') });
   const visitor = permission === 'visitor' || surface === 'mailbox_visitor';
   if (visitor && !definition.visitor_allowed) return false;
   if (!visitor && definition.owner_only === false && definition.scope === 'visitor') return false;
-  if (!surfaceAllowsTool(profile, definition.tool_key)) return false;
-  if (mode?.tool_allowlist?.length && !mode.tool_allowlist.includes(definition.tool_key)) return false;
+  if (!roomAllowsTool(access, definition.tool_key)) return false;
   const scopes = authScopeSet(authScope);
   if (scopes && definition.auth_scopes?.some((scope) => !scopes.has(scope))) return false;
   return true;
@@ -292,15 +309,15 @@ export function listRegisteredTools(context = {}) {
 }
 
 export function resolveToolSelection(context = {}) {
-  const profile = getSurfaceProfile(context.surface);
-  const registry = REGISTRY.filter((definition) => definition.model_exposed && definition.model_tool && !definition.requires_confirmation);
-  const surface = registry.filter((definition) => surfaceAllowsTool(profile, definition.tool_key));
-  const mode = surface.filter((definition) => !context.mode?.tool_allowlist?.length
-    || context.mode.tool_allowlist.includes(definition.tool_key));
-  const auth = mode.filter((definition) => allowed(definition, { ...context, mode: null }));
-  const order = new Map((context.mode?.tool_allowlist || []).map((key, index) => [key, index]));
-  auth.sort((left, right) => (order.get(left.tool_key) ?? 999) - (order.get(right.tool_key) ?? 999));
-  const selected = auth.slice(0, 8);
+  const access = roomAccess(context.surface, {
+    permission: context.permission || 'owner',
+    visitorId: context.visitorId || (context.surface === 'mailbox_visitor' ? 'bound' : ''),
+  });
+  const selected = REGISTRY
+    .filter((definition) => definition.model_exposed && definition.model_tool && !definition.requires_confirmation)
+    .filter((definition) => roomAllowsTool(access, definition.tool_key))
+    .filter((definition) => allowed(definition, context))
+    .slice(0, 16);
   return {
     tools: selected.map((definition) => ({
       tool_key: definition.tool_key,
@@ -317,13 +334,6 @@ export function resolveToolSelection(context = {}) {
       model_name: definition.model_tool.function.name,
     })),
     modelTools: selected.map((definition) => definition.model_tool),
-    trace: {
-      registry: registry.map((definition) => definition.tool_key),
-      surface_profile: surface.map((definition) => definition.tool_key),
-      mode_card: mode.map((definition) => definition.tool_key),
-      auth: auth.map((definition) => definition.tool_key),
-      selected: selected.map((definition) => definition.tool_key),
-    },
   };
 }
 
@@ -333,7 +343,7 @@ export async function executeRegisteredTool(db, toolKey, input, context = {}) {
     throw new ToolRegistryError('unknown_tool', '这个海岸工具不存在或不可执行。', 404);
   }
   if (!allowed(definition, context)) {
-    throw new ToolRegistryError('tool_forbidden', '当前房间或情境无权使用这个工具。', 403);
+    throw new ToolRegistryError('tool_forbidden', '当前房间或权限无法使用这件家具。', 403);
   }
   if (definition.requires_confirmation && context.confirmed_by_xiaohan !== true && context.surface !== 'official_mcp') {
     throw new ToolRegistryError('tool_confirmation_required', '这个操作需要小寒明确确认。', 409);
@@ -346,6 +356,7 @@ export async function executeRegisteredTool(db, toolKey, input, context = {}) {
   }
   try {
     const output = await definition.handler(db, input, context);
+    if (typeof context.on_tool_used === 'function') context.on_tool_used(definition.display_name);
     if (runId) {
       try {
         await finishToolRun(db, runId, { status: 'success', output });
@@ -366,6 +377,32 @@ export async function executeRegisteredTool(db, toolKey, input, context = {}) {
   }
 }
 
+function cleanModelToolResult(toolKey, output) {
+  if (toolKey === 'memory.search') {
+    const memories = (Array.isArray(output?.entries) ? output.entries : [])
+      .map((item) => {
+        const title = String(item?.title || '').trim().slice(0, 100);
+        const body = String(item?.life_core || item?.content || '').trim().slice(0, 520);
+        return [title, body].filter(Boolean).join('｜');
+      })
+      .filter(Boolean);
+    return {
+      memories,
+      count: memories.length,
+      vector_enabled: output?.vector_enabled === true,
+    };
+  }
+  if (toolKey === 'memory.write_candidate') {
+    return {
+      created: true,
+      candidate_id: String(output?.id || ''),
+      title: String(output?.title || '').slice(0, 120),
+      status: 'pending',
+    };
+  }
+  return output;
+}
+
 export async function executeModelTool(db, toolCall, context = {}) {
   const name = String(toolCall?.function?.name || toolCall?.name || '');
   const definition = BY_MODEL_NAME.get(name);
@@ -376,7 +413,13 @@ export async function executeModelTool(db, toolCall, context = {}) {
     type: 'function',
     function: { name, arguments: JSON.stringify(input) },
   };
-  return executeRegisteredTool(db, definition.tool_key, definition.tool_key.startsWith('daily.') || definition.tool_key === 'dogtalk.read' ? call : input, context);
+  const output = await executeRegisteredTool(
+    db,
+    definition.tool_key,
+    definition.tool_key.startsWith('daily.') || definition.tool_key === 'dogtalk.read' ? call : input,
+    context,
+  );
+  return cleanModelToolResult(definition.tool_key, output);
 }
 
 export const registeredToolKeys = Object.freeze(REGISTRY.map((item) => item.tool_key));

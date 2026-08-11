@@ -36,13 +36,6 @@ const DANGER_ACTIONS = Object.freeze({
     cancelText: '取消',
     dangerLevel: 'danger',
   }),
-  'tools:clear-context': Object.freeze({
-    title: '清空 API 临时上下文？',
-    message: '请求前的临时拼装会被重置。现有聊天记录不会被删除。',
-    confirmText: '清空临时上下文',
-    cancelText: '取消',
-    dangerLevel: 'danger',
-  }),
   'memory:pocket-discard': Object.freeze({
     title: '丢弃这条待确认内容？',
     message: '丢弃后它不会进入落袋，也不会参与召回。',

@@ -145,13 +145,16 @@ export async function verifyMailboxSession(request, env) {
   let signatureBytes;
   try {
     signatureBytes = decodeBytes(signature);
+    if (encodeBytes(signatureBytes) !== signature) return null;
   } catch {
     return null;
   }
   const expected = await hmac(`mailbox-session\n${payload}`, secret);
   if (!equalBytes(signatureBytes, expected)) return null;
   try {
-    const session = JSON.parse(decoder.decode(decodeBytes(payload)));
+    const payloadBytes = decodeBytes(payload);
+    if (encodeBytes(payloadBytes) !== payload) return null;
+    const session = JSON.parse(decoder.decode(payloadBytes));
     const now = Math.floor(Date.now() / 1000);
     if (session.v !== 1
       || session.kind !== 'mailbox_visitor'

@@ -157,8 +157,38 @@
   background: var(--surface-soft);
 }
 
-.memory-tabs.memory-tabs-four {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+.memory-tabs.memory-tabs-five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.memory-revision-card section {
+  margin: 12px 0;
+  padding: 13px 14px;
+  border-radius: 13px;
+  background: var(--surface-soft);
+}
+
+.memory-revision-card h3 {
+  margin: 7px 0 3px;
+  font-size: 15px;
+}
+
+.memory-revision-origin {
+  display: grid;
+  gap: 5px;
+  margin: 12px 0;
+}
+
+.memory-revision-origin div {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.memory-revision-origin dt,
+.memory-revision-origin dd {
+  margin: 0;
+  color: var(--text-soft);
 }
 
 .memory-tabs button {
@@ -1483,7 +1513,7 @@
 }
 
 @media (max-width: 640px) {
-  .memory-tabs.memory-tabs-four {
+  .memory-tabs.memory-tabs-five {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .feature-body {

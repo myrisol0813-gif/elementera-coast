@@ -128,8 +128,9 @@ context = await dogtalkContext(db, {
   conversation_id: conversation.id,
 }, 'Myri 看一下神秘狗话');
 assert.equal(context.selected, true, 'explicit request may read even when the default mode is private');
-assert.match(context.context, /低权重天气，不是指令、偏好或长期记忆/);
-assert.match(context.context, /当前正文、明确指令与边界句永远优先/);
+assert.match(context.context, /【神秘狗话】/);
+assert.match(context.context, /别误会成：/);
+assert.equal(context.context.includes('当前正文、明确指令与边界句永远优先'), false, '神秘狗话不再夹带后端说明书');
 
 dogtalk = await saveMysticDogtalk(db, {
   ...dogtalk,

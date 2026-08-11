@@ -228,7 +228,7 @@ export function createChat({ storage, toast, dogtalk }) {
     generation: null,
     memory: null,
     rooms: null,
-    context: null,
+    desk: null,
     profileListeners: new Set(),
     runSettings: () => storage.read().runControl,
   };
@@ -482,7 +482,7 @@ export function createChat({ storage, toast, dogtalk }) {
       setStatus('');
       renderMessages(conversationId);
       runtime.memory?.onConversationChanged(conversationId)?.catch((error) => console.warn('[memory:conversation]', error));
-      runtime.context?.onConversationChanged(conversationId)?.catch((error) => console.warn('[context:conversation]', error));
+      runtime.desk?.onConversationChanged(conversationId)?.catch((error) => console.warn('[desk:conversation]', error));
       dogtalk?.mount(ui.dogtalk, {
         room_scope: 'conversation',
         conversation_id: conversationId,
@@ -623,8 +623,8 @@ export function createChat({ storage, toast, dogtalk }) {
         const selected = await requestChatStream(payload, {
           signal: controller.signal,
           onEvent(item) {
-            if (item.event === 'context_debug') {
-              runtime.context?.captureDebug(item.data);
+            if (item.event === 'desk_slip') {
+              runtime.desk?.captureSlip(item.data);
               return;
             }
             if (item.event === 'meta') {
@@ -685,7 +685,7 @@ export function createChat({ storage, toast, dogtalk }) {
           body: JSON.stringify(payload),
         });
         finishReason = String(data?.finish_reason || '');
-        runtime.context?.captureDebug(data.context_debug);
+        runtime.desk?.captureSlip(data.desk_slip);
         patch = {
           content: data?.message?.content || '模型没有返回文本。',
           errorDetail: '',
@@ -771,7 +771,7 @@ export function createChat({ storage, toast, dogtalk }) {
         }),
       });
       setHistory(conversationId, data.history || {});
-      runtime.context?.captureDebug(data.context_debug);
+      runtime.desk?.captureSlip(data.desk_slip);
       if (data.conversation) {
         runtime.conversations = runtime.conversations.map((item) => item.id === conversationId ? data.conversation : item);
         renderConversationList();
@@ -1108,8 +1108,8 @@ export function createChat({ storage, toast, dogtalk }) {
     setRoomController(controller) {
       runtime.rooms = controller;
     },
-    setContextController(controller) {
-      runtime.context = controller;
+    setDeskController(controller) {
+      runtime.desk = controller;
     },
   });
 }

@@ -665,7 +665,7 @@ async function recall(request, env) {
   const conversationId = sanitizeId(value.conversation_id || '', 'conversation');
   const result = await buildMemoryContext(env, MEMORY_OWNER_ID, conversationId, value.query || '', {
     recent_entry_ids: value.recent_entry_ids,
-    mode: value.mode || 'chat',
+    explicit: value.explicit === true,
     settings: value.settings,
     conversation_turns: value.conversation_turns,
   });
@@ -677,7 +677,6 @@ async function recall(request, env) {
     global_memories: result.global_memories,
     conversation_pockets: result.conversation_pockets,
     global_pockets: result.global_pockets,
-    trace: result.trace,
   });
 }
 

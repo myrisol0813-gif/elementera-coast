@@ -6,7 +6,7 @@ import { isMemoryApiPath, routeMemoryApi } from './memory-router.js';
 import { handleModels, handleSandbox } from './models.js';
 import { isOwnerMailboxApiPath, routeOwnerMailboxApi } from './owner-mailbox-api.js';
 import { isCalendarApiPath, routeCalendarApi } from './calendar-api.js';
-import { isContextApiPath, routeContextApi } from './context-api.js';
+import { isWorkbenchApiPath, routeWorkbenchApi } from './workbench-api.js';
 
 export async function routeApi(request, env, session) {
   const url = new URL(request.url);
@@ -25,7 +25,7 @@ export async function routeApi(request, env, session) {
   if (isCoastRoomApiPath(url.pathname)) return routeCoastRoomApi(request, env, session);
   if (isOwnerMailboxApiPath(url.pathname)) return routeOwnerMailboxApi(request, env, session);
   if (isCalendarApiPath(url.pathname)) return routeCalendarApi(request, env, session);
-  if (isContextApiPath(url.pathname)) return routeContextApi(request, env, session);
+  if (isWorkbenchApiPath(url.pathname)) return routeWorkbenchApi(request, env, session);
   if (url.pathname === '/api/models') return handleModels(request, env);
   if (url.pathname === '/api/chat-sandbox') return handleSandbox(request, env);
   return apiError('not_found', 'Not found.', 404);

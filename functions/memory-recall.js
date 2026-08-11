@@ -1,5 +1,5 @@
 import { embedText, hasAiBinding, hasVectorBinding, queryVector, syncPendingEntries } from './embedding.js';
-import { MEMORY_CONFIG, recallSettings, soilSettings } from './memory-config.js';
+import { MEMORY_CONFIG, recallSettings } from './memory-config.js';
 import {
   entriesByIds,
   listEntries,
@@ -8,6 +8,7 @@ import {
   markEntriesRecalled,
   readSoil,
 } from './memory-store.js';
+import { formatThinkingSoil } from './thinking-soil.js';
 
 const POOLS = Object.freeze([
   { key: 'conversation_seeds', scope: 'conversation', entryType: 'seed', threshold: 0.46 },
@@ -30,6 +31,7 @@ function keywordScore(entry, query) {
   const content = lower(entry.content);
   const usage = lower(entry.usage_hint);
   if (title === needle) return 1;
+  if (title.length >= 2 && needle.includes(title)) return 0.98;
   if (title.includes(needle)) return 0.96;
   if (lifeCore.includes(needle)) return 0.92;
   if (content.includes(needle)) return 0.8;
@@ -54,26 +56,13 @@ function ageDays(value) {
   return Number.isFinite(timestamp) ? Math.max(0, (Date.now() - timestamp) / 86400000) : 365;
 }
 
-function recallModifiers(entry, modeKey) {
-  const confidence = {
-    user_confirmed: 0.015,
-    system_confirmed: 0.008,
-    model_inferred: -0.02,
-    imported: -0.035,
-    low: -0.09,
-  }[entry.source_confidence] ?? 0;
+function recencyAdjustment(entry) {
   const referenceAge = ageDays(entry.last_confirmed_at || entry.updated_at);
   const protectedMemory = entry.memory_level === 'core'
-    || entry.source_confidence === 'user_confirmed'
     || ageDays(entry.last_confirmed_at) <= 60;
-  const freshness = referenceAge <= 14
+  return referenceAge <= 14
     ? 0.015
     : -Math.min(protectedMemory ? 0.045 : 0.14, Math.log2(1 + referenceAge / 45) * 0.028);
-  const policy = entry.facet_policy && typeof entry.facet_policy === 'object'
-    ? entry.facet_policy[modeKey] : null;
-  const tags = Array.isArray(entry.memory_tags) ? entry.memory_tags : [];
-  const mode = policy || tags.includes(modeKey) ? 0.08 : 0;
-  return { confidence, freshness, mode, total: confidence + freshness + mode };
 }
 
 function topicKey(entry) {
@@ -136,13 +125,11 @@ async function retrievePool(env, db, pool, conversationId, query, queryValues, r
   const ranked = entries.map((entry) => {
     const keyword = keywordScore(entry, query);
     const semanticScore = entry.embedding_status === 'ready' ? semanticScores.get(entry.id) || 0 : 0;
-    const modifiers = recallModifiers(entry, options.modeKey);
-    const score = Math.max(0, Math.max(keyword, semanticScore) + Math.min(keyword, semanticScore) * 0.12 + modifiers.total);
+    const score = Math.max(0, Math.max(keyword, semanticScore) + Math.min(keyword, semanticScore) * 0.12 + recencyAdjustment(entry));
     return {
       entry,
       score,
       reason: keyword >= semanticScore && keyword > 0 ? 'keyword' : semanticScore > 0 ? 'semantic' : 'none',
-      modifiers,
     };
   }).filter((candidate) => {
     if (candidate.score < threshold) return false;
@@ -153,20 +140,8 @@ async function retrievePool(env, db, pool, conversationId, query, queryValues, r
   const limit = poolLimit(pool, options.settings, options);
   return {
     entries: ranked.slice(0, limit).map((candidate) => candidate.entry),
-    trace: {
-      pool: pool.key,
-      threshold,
-      limit,
-      d1_candidates: entries.length,
-      vector_candidates: semantic.length,
-      selected: ranked.slice(0, limit).map((candidate) => ({
-        id: candidate.entry.id,
-        score: candidate.score,
-        reason: candidate.reason,
-        modifiers: candidate.modifiers,
-      })),
-      ...(vectorError ? { vector_error: vectorError } : {}),
-    },
+    selected: ranked.slice(0, limit).map((candidate) => candidate.entry.id),
+    vector_error: vectorError,
   };
 }
 
@@ -175,7 +150,7 @@ export async function buildMemoryContext(env, owner, conversationId, query, opti
   const db = env.COAST_CHAT_DB;
   const settings = recallSettings(options.settings || {});
   const recentIds = new Set((Array.isArray(options.recent_entry_ids) ? options.recent_entry_ids : []).map(String));
-  const explicit = options.mode === 'explicit' || isExplicitRecall(query);
+  const explicit = options.explicit === true || isExplicitRecall(query);
   const stall = isStallQuery(query) || Number(options.conversation_turns || 0) <= 2;
   const vectorEnabled = hasAiBinding(env) && hasVectorBinding(env);
   let queryValues = null;
@@ -191,7 +166,6 @@ export async function buildMemoryContext(env, owner, conversationId, query, opti
 
   const pools = POOLS.filter((pool) => pool.scope !== 'global' || options.include_global !== false);
   const results = Object.fromEntries(POOLS.map((pool) => [pool.key, []]));
-  const traces = [];
   const selectedAcrossPools = new Set();
   const selectedTopics = new Set();
   for (const pool of pools) {
@@ -199,7 +173,6 @@ export async function buildMemoryContext(env, owner, conversationId, query, opti
       explicit,
       stall,
       settings,
-      modeKey: String(options.mode_key || 'normal_chat'),
     });
     results[pool.key] = result.entries.filter((entry) => {
       if (selectedAcrossPools.has(entry.id)) return false;
@@ -209,11 +182,9 @@ export async function buildMemoryContext(env, owner, conversationId, query, opti
       if (topic) selectedTopics.add(topic);
       return true;
     });
-    result.trace.selected = result.trace.selected.filter((candidate) => results[pool.key].some((entry) => entry.id === candidate.id));
-    traces.push(result.trace);
   }
 
-  if (options.mode !== 'explicit') {
+  if (!explicit) {
     let remaining = settings.maxInjectedEntries;
     for (const pool of pools) {
       results[pool.key] = results[pool.key].slice(0, remaining);
@@ -221,21 +192,13 @@ export async function buildMemoryContext(env, owner, conversationId, query, opti
     }
   }
   const selectedIds = pools.flatMap((pool) => results[pool.key].map((entry) => entry.id));
-  if (options.mode !== 'explicit' && options.record_recall !== false) await markEntriesRecalled(db, selectedIds);
+  if (!explicit && options.record_recall !== false) await markEntriesRecalled(db, selectedIds);
   return {
     ...results,
     soil: await readSoil(db, conversationId),
-    trace: {
-      vector_enabled: vectorEnabled,
-      candidates: traces,
-      selected: selectedIds,
-      reasons: {
-        explicit,
-        stall,
-        cooldown_entry_ids: [...recentIds],
-        ...(vectorError ? { vector_error: vectorError } : {}),
-      },
-    },
+    selected_ids: selectedIds,
+    vector_enabled: vectorEnabled,
+    ...(vectorError ? { vector_error: vectorError } : {}),
   };
 }
 
@@ -243,61 +206,38 @@ function clipped(value, max) {
   return String(value || '').trim().slice(0, max);
 }
 
-function seedLine(entry) {
-  return `- ${clipped(entry.title, 100)}｜${clipped(entry.life_core, 480)}${entry.usage_hint ? `｜使用：${clipped(entry.usage_hint, 240)}` : ''}${entry.avoid_hint ? `｜避免：${clipped(entry.avoid_hint, 240)}` : ''}${entry.contradiction_note ? `｜可能冲突：${clipped(entry.contradiction_note, 240)}；不可压过当前输入` : ''}`;
-}
-
-function memoryLine(entry) {
-  return `- ${clipped(entry.title, 100)}｜${clipped(entry.life_core, 520)}${entry.avoid_hint ? `｜避免：${clipped(entry.avoid_hint, 240)}` : ''}${entry.contradiction_note ? `｜可能冲突：${clipped(entry.contradiction_note, 240)}；不可压过当前输入` : ''}`;
-}
-
-function pocketLine(entry) {
-  return `- ${clipped(entry.title, 100)}｜${clipped(entry.life_core, 520)}${entry.content ? `｜内容：${clipped(entry.content, 520)}` : ''}${entry.usage_hint ? `｜使用：${clipped(entry.usage_hint, 240)}` : ''}${entry.avoid_hint ? `｜避免：${clipped(entry.avoid_hint, 240)}` : ''}${entry.contradiction_note ? `｜可能冲突：${clipped(entry.contradiction_note, 240)}；不可压过当前输入` : ''}`;
+function cleanMemoryLine(entry) {
+  const title = clipped(entry?.title, 100);
+  const core = clipped(entry?.life_core || entry?.content, 520);
+  return [title, core].filter(Boolean).join('｜');
 }
 
 export function formatMemoryContext(result, rawSettings = {}) {
   return [
-    formatSoilContext(result, rawSettings),
+    formatThinkingSoil(result?.soil, { maxCharacters: recallSettings(rawSettings).soilBudget }),
     formatRecallMemoryContext(result),
   ].filter(Boolean).join('\n\n');
 }
 
 export function formatSoilContext(result, rawSettings = {}) {
-  const settings = recallSettings(rawSettings);
-  const soilControl = soilSettings(rawSettings);
-  const soil = result?.soil || {};
-  const soilLines = [
-    '【思维壤｜当前窗口的轻量便签，不是规则】',
-    `当前：${clipped(soil.current_text, settings.soilBudget) || '未整理'}`,
-  ];
-  if (soil.hand_seeds?.length) {
-    soilLines.push('手持种：', ...soil.hand_seeds.slice(0, soilControl.maxHandSeeds).map((seed) => `- ${clipped(seed.name, 80)}｜${clipped(seed.life_core, 320)}`));
-  }
-  if (soil.do_not_repeat) soilLines.push(`勿复读：${clipped(soil.do_not_repeat, 600)}`);
-  const soilPriority = '请只作为当前对话方向参考；当前用户输入优先。';
-  const soilBody = soilLines.join('\n').slice(0, Math.max(0, settings.soilBudget - soilPriority.length - 1));
-  return `${soilBody}\n${soilPriority}`;
+  return formatThinkingSoil(result?.soil, { maxCharacters: recallSettings(rawSettings).soilBudget });
+}
+
+export function recallMemoryItems(result) {
+  return [
+    ...(result?.conversation_seeds || []),
+    ...(result?.conversation_memories || []),
+    ...(result?.conversation_pockets || []),
+    ...(result?.global_seeds || []),
+    ...(result?.global_memories || []),
+    ...(result?.global_pockets || []),
+    ...(result?.visitor_memories || []),
+  ].map(cleanMemoryLine).filter(Boolean);
 }
 
 export function formatRecallMemoryContext(result) {
-  const optional = ['【可选上下文｜不要求逐条复述】'];
-  if (result.conversation_seeds?.length) optional.push('当前窗口种子：', ...result.conversation_seeds.map(seedLine));
-  if (result.conversation_memories?.length) optional.push('当前窗口记忆：', ...result.conversation_memories.map(memoryLine));
-  if (result.conversation_pockets?.length) optional.push('当前窗口落袋：', ...result.conversation_pockets.map(pocketLine));
-  const global = [
-    ...(result.global_seeds || []).map(seedLine),
-    ...(result.global_memories || []).map(memoryLine),
-    ...(result.global_pockets || []).map(pocketLine),
-  ];
-  if (global.length) optional.push('跨窗口可用：', ...global);
-  if (optional.length > 1) {
-    optional.push(
-      '约束：当前用户输入优先。不要为了使用记忆而使用记忆，也不要汇报“召回了记忆”。',
-      '若内容与当前输入冲突，以当前输入与最新修订为准；必须尊重避免提示。',
-    );
-    return optional.join('\n');
-  }
-  return '';
+  const items = recallMemoryItems(result);
+  return items.length ? ['【相关记忆】', ...items.map((item) => `- ${item}`)].join('\n') : '';
 }
 
 export async function searchMemory(env, owner, value = {}) {
@@ -342,11 +282,7 @@ export async function searchMemory(env, owner, value = {}) {
   for (const entry of keyword.entries) merged.set(entry.id, entry);
   return {
     entries: [...merged.values()].slice(0, limit),
-    trace: {
-      vector_enabled: vectorEnabled,
-      candidates: { vector: matches.length, keyword: keyword.entries.length },
-      selected: [...merged.keys()].slice(0, limit),
-      reasons: vectorError ? { vector_error: vectorError } : {},
-    },
+    vector_enabled: vectorEnabled,
+    ...(vectorError ? { vector_error: vectorError } : {}),
   };
 }

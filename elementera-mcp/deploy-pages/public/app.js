@@ -14,7 +14,7 @@ import { createSettings } from './features/settings.js';
 import { createShell } from './features/shell.js';
 import { createTools } from './features/tools.js';
 import { createCalendar } from './features/calendar.js';
-import { createContext } from './features/context.js';
+import { createDesk } from './features/desk.js';
 import { createToolroom } from './features/toolroom.js';
 
 const storage = createStorage();
@@ -40,17 +40,16 @@ const memory = createMemory({ chat, router, toast, storage, rooms });
 const models = createModels({ chat, router, toast });
 const tools = createTools({ storage, router, toast, memory });
 const settings = createSettings({ storage, shell, chat, router, toast });
-const daily = createDaily({ storage, router, toast, chat });
-const letters = createLetters({ storage, chat, models, router, toast });
 const calendar = createCalendar({ router, toast });
-const context = createContext({ chat, router, toast });
+const daily = createDaily({ storage, router, toast, chat, calendar });
+const letters = createLetters({ storage, chat, models, router, toast });
+const desk = createDesk({ chat, router, toast });
 const toolroom = createToolroom({ chat, router });
 
 chat.setRunSettingsProvider(tools.getSettings);
 chat.setMemoryController(memory);
 chat.setRoomController(rooms);
-chat.setContextController(context);
-rooms.setContextController(context);
+chat.setDeskController(desk);
 
 const controllers = Object.freeze({
   chat,
@@ -63,7 +62,7 @@ const controllers = Object.freeze({
   daily,
   letters,
   calendar,
-  context,
+  desk,
   toolroom,
 });
 
@@ -131,7 +130,7 @@ async function start() {
   rooms.start();
   models.start();
   await chat.start();
-  await Promise.all([calendar.start(), context.start()]);
+  await Promise.all([calendar.start(), desk.start()]);
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch((error) => {
       console.warn('[service-worker]', error);

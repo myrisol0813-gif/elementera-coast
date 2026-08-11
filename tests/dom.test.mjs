@@ -137,17 +137,13 @@ let dogtalkSequence = 0;
 let calendarSequence = 0;
 const calendarEvents = [];
 const calendarNotes = [];
-const contextModes = [{
-  id: 'mode_normal_chat', mode_key: 'normal_chat', title: '普通聊天', description: '自然聊天与共同生活。',
-  prompt: '保持自然。', enabled: true, scope: 'owner', tool_allowlist: ['calendar.today', 'memory.search'],
-  worldbook_scope: 'owner', default_context_settings: {}, created_at: now(), updated_at: now(),
-}];
-const contextSettings = {
-  ambient: { time: true, calendar: true, tools: true, room: true, model: true },
-  calendar_injection: 'only_when_events', worldbook_enabled: true, memory_facets_enabled: true,
-  context_debug: true, context_budget: 12000, recent_message_turns: 12, soil_budget: 1200,
-  worldbook_limit: 6, memory_limit: 8,
-};
+const deskSettings = new Map([['conv-1', {
+  conversation_id: 'conv-1',
+  cross_window_light_recall_enabled: false,
+  today_coast_reference_enabled: false,
+  updated_at: now(),
+}]]);
+const worldbookEntries = [];
 
 function dogtalkKey(roomScope, conversationId = '') {
   return roomScope === 'conversation'
@@ -310,31 +306,23 @@ globalThis.fetch = async (input, options = {}) => {
     if (method === 'DELETE') note.is_archived = true;
     return response({ ok: true, note });
   }
-  if (url.pathname === '/api/context/modes') return response({ ok: true, modes: contextModes });
-  if (url.pathname === '/api/context/modes/current') return response({
-    ok: true,
-    state: { scope_id: `conversation:${url.searchParams.get('conversation_id') || body.conversation_id || 'conv-1'}`, mode: contextModes[0], settings: contextSettings, updated_at: now() },
-  });
-  if (url.pathname === '/api/context/preview') {
-    const block = (key, title, bodyText, sensitive = false) => ({
-      key, title, body: bodyText, source: 'dom_test', scope: 'current_runtime', priority: key === 'context_manifest' ? 'critical' : 'high',
-      freshness: 'live', confidence: 'system_confirmed', use_hint: '用于 DOM 验收。', avoid_hint: '不要压过当前输入。', trace: {}, sensitive,
-    });
-    const surfaceTitle = { main_chat: '主聊天', radio: '三方聊天室 / 无线电波', lighthouse: '灯塔来信' }[body.surface] || '主聊天';
-    const manifest = block('context_manifest', 'Context Manifest', `【上下文目录】\n当前房间：${surfaceTitle}`);
-    return response({ ok: true, debug: {
-      manifest, ambient: null, mode: contextModes[0],
-      surface_profile: { surface: body.surface || 'main_chat', title: surfaceTitle, owner_only: true, inspector_allowed: true },
-      blocks: [block('ambient_context', 'Coast Ambient Context', '【海岸环境】')],
-      worldbook_matches: [], memory_facets: [], tools: [{ tool_key: 'calendar.today' }],
-      budget: { budget: 12000, estimated_tokens: 180, trimmed: {}, current_user_preserved: true },
-      selected_memory_ids: [], vector_enabled: false, generated_at: now(),
-    } });
+  if (url.pathname === '/api/desk/settings') {
+    const conversationId = url.searchParams.get('conversation_id') || body.conversation_id;
+    const previous = deskSettings.get(conversationId) || {
+      conversation_id: conversationId,
+      cross_window_light_recall_enabled: false,
+      today_coast_reference_enabled: false,
+      updated_at: now(),
+    };
+    if (method === 'PATCH') {
+      deskSettings.set(conversationId, { ...previous, ...body, conversation_id: conversationId, updated_at: now() });
+    }
+    return response({ ok: true, settings: deskSettings.get(conversationId) || previous });
   }
-  if (url.pathname === '/api/context/worldbook') return response({ ok: true, entries: [] });
-  if (url.pathname === '/api/context/worldbook/test-match') return response({ ok: true, matches: [] });
-  if (url.pathname === '/api/context/tools') return response({ ok: true, tools: [{ tool_key: 'calendar.today', description: '读取今日日历', model_exposed: true }] });
-  if (url.pathname === '/api/context/tool-runs') return response({ ok: true, runs: [] });
+  if (url.pathname === '/api/worldbook') return response({ ok: true, entries: worldbookEntries });
+  if (url.pathname === '/api/worldbook/test-match') return response({ ok: true, matches: [] });
+  if (url.pathname === '/api/workbench/tools') return response({ ok: true, tools: [{ tool_key: 'calendar.today', display_name: '翻看台历' }] });
+  if (url.pathname === '/api/workbench/runs') return response({ ok: true, runs: [] });
   if (url.pathname === '/api/chat/profile') {
     if (method === 'PUT') profile = body.profile;
     return response({ ok: true, profile });
@@ -413,6 +401,11 @@ globalThis.fetch = async (input, options = {}) => {
       history: { ...state, conversation_id: body.conversation_id },
       landing,
       memory: { selected_entry_ids: [], vector_enabled: false },
+      desk_slip: {
+        summary: '本轮桌面 · 思维壤 1', soil: true, memory_count: 0,
+        touch_count: 0, touch_sources: [], worldbook_count: 0, worldbook_titles: [],
+        today_coast: false, workbench_count: 0, furniture: [], comfort: '已保持在舒服区间',
+      },
       finish_reason: landingFinishReason,
       max_tokens: body.settings.max_tokens,
     });
@@ -440,6 +433,11 @@ globalThis.fetch = async (input, options = {}) => {
       message: { role: 'assistant', content: `mock: ${body.messages.at(-1)?.content || ''}` },
       finish_reason: formalFinishReason,
       memory: { selected_entry_ids: [`mock-memory-${formalChatRequests}`], vector_enabled: false },
+      desk_slip: {
+        summary: '本轮桌面 · 思维壤 1｜记忆 1', soil: true, memory_count: 1,
+        touch_count: 0, touch_sources: [], worldbook_count: 0, worldbook_titles: [],
+        today_coast: false, workbench_count: 0, furniture: [], comfort: '已保持在舒服区间',
+      },
     });
   }
   if (url.pathname === '/api/daily/moments') {
@@ -1077,9 +1075,13 @@ assert.ok(document.querySelectorAll('svg.icon').length >= 15);
 assert.equal(document.querySelector('#newChatButton svg').getAttribute('viewBox'), '0 0 32 32');
 assert.equal(document.querySelector('[data-action="settings:wolf"] svg').getAttribute('viewBox'), '0 0 128 128');
 assert.equal(document.querySelector('#modelName').textContent, '4.1 Nano ›');
-await waitFor(() => document.querySelector('#contextStatus')?.hidden === false, 'context status strip');
+assert.equal(document.querySelector('#contextStatus'), null, '旧上下文状态条已删除');
+assert.equal(document.querySelector('#deskStatus')?.hidden, true, '本轮桌面在首次回复前不显示空壳');
 
-document.querySelector('[data-action="calendar:open"]').click();
+document.querySelector('[data-action="daily:home"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'daily-home', 'daily home route');
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('海岸日报'));
+document.querySelector('[data-action="daily:calendar"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'calendar-month', 'calendar month route');
 assert.ok(document.querySelector('#overlayRoot').textContent.includes('海岸日历'));
 assert.equal(document.querySelectorAll('.calendar-day-cell').length, 42);
@@ -1105,14 +1107,9 @@ await waitFor(() => !document.querySelector('#overlayRoot').textContent.includes
 document.querySelector('[data-action="router:back"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'calendar-month', 'calendar back to month');
 document.querySelector('[data-action="router:back"]').click();
-await waitFor(() => !document.querySelector('#overlayRoot')?.dataset.route, 'calendar overlay close');
-
-document.querySelector('#contextStatus [data-action="context:inspector"]').click();
-await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'context-inspector', 'context inspector route');
-assert.ok(document.querySelector('#overlayRoot').textContent.includes('Context Manifest'));
-assert.ok(document.querySelector('#overlayRoot').textContent.includes('【上下文目录】'));
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'daily-home', 'calendar returns to daily');
 document.querySelector('[data-action="router:back"]').click();
-await waitFor(() => !document.querySelector('#overlayRoot')?.dataset.route, 'context inspector close');
+await waitFor(() => !document.querySelector('#overlayRoot')?.dataset.route, 'daily overlay close');
 
 const input = document.querySelector('#promptInput');
 for (const options of [
@@ -1150,6 +1147,15 @@ input.value = 'a1';
 input.dispatchEvent(new window.Event('input', { bubbles: true }));
 document.querySelector('#composerActionButton').click();
 await waitFor(() => document.querySelector('.message.assistant')?.textContent.includes('mock: a1'), 'assistant reply');
+await waitFor(() => document.querySelector('#deskStatus')?.hidden === false, 'desk slip status');
+assert.ok(document.querySelector('#deskStatus').textContent.includes('本轮桌面'));
+document.querySelector('#deskStatus [data-action="desk:open"]').click();
+await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'desk-slip', 'desk slip route');
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('相关记忆'));
+assert.ok(document.querySelector('#overlayRoot').textContent.includes('连通一千零一个触角'));
+assert.equal(document.querySelector('#overlayRoot').textContent.includes('Context Manifest'), false);
+document.querySelector('[data-action="router:back"]').click();
+await waitFor(() => !document.querySelector('#overlayRoot')?.dataset.route, 'desk slip close');
 assert.equal(document.querySelector('.message.assistant .avatar').textContent, '', 'default avatar replaces the assistant glyph');
 assert.equal(formalChatRequests, 1, 'the existing right-hand button still submits chat');
 assert.equal(formalChatBodies[0].conversation_id, 'conv-1');
@@ -1397,13 +1403,13 @@ document.querySelector('[data-action="settings:wolf"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'wolf', 'wolf settings route');
 document.querySelector('[data-action="tools:run-control"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'run-control', 'API cottage route');
-for (const label of ['上下文预算（估算 token）', '自然', '最大输出 token', '思维壤预算', '思维壤整理频率', '每个完成轮次自动整理一次', '手持种上限', '种子冷却轮数', '没东西聊时当前种子上限', '当前窗口种子召回上限', '总记忆召回上限', '查看向量状态']) {
+for (const label of ['上下文舒服区间', '舒服区间上沿', '自然', '最大输出 token', '思维壤最多字数', '思维壤整理频率', '每个完成轮次自动整理一次', '手持种上限', '种子冷却轮数', '当前窗口种子上限', '总库记忆上限', '查看向量状态']) {
   assert.ok(document.querySelector('#overlayRoot').textContent.includes(label));
 }
 for (const [name, value] of [
   ['maxOutputTokens', '4096'],
   ['seedCooldownTurns', '0'],
-  ['conversationSeedStallLimit', '6'],
+  ['memoryLimit', '6'],
   ['maxHandSeeds', '3'],
 ]) {
   const control = document.querySelector(`[name="${name}"]`);
@@ -1456,7 +1462,7 @@ assert.equal(document.querySelector('#modelQuickPicker').hidden, true);
 
 document.querySelector('[data-action="daily:home"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'daily-home', 'daily route');
-await waitFor(() => document.querySelectorAll('.daily-grid button').length === 6, 'Daily server load');
+await waitFor(() => document.querySelectorAll('.daily-grid button').length === 7, 'Daily server load');
 assert.equal(document.querySelector('.daily-sync-note'), null);
 assert.equal(document.querySelector('.daily-hero'), null);
 document.querySelector('[data-action="daily:moments"]').click();
@@ -1490,7 +1496,7 @@ assert.equal(dailyMoments[0].comments[0].author, 'myri');
 
 document.querySelector('[data-action="daily:home"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'daily-home'
-  && document.querySelectorAll('.daily-grid button').length === 6, 'return Daily home');
+  && document.querySelectorAll('.daily-grid button').length === 7, 'return Daily home');
 document.querySelector('[data-action="daily:summary"]').click();
 await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'summary', 'summary route');
 assert.equal(document.querySelectorAll('[name="summaryRangeMode"]').length, 2);
@@ -1545,7 +1551,7 @@ assert.equal(landingBodies.at(-1).settings.max_tokens, null, 'landing natural ou
 assert.equal(landingSoil.force, true, 'landing soil refresh must bypass the ordinary schedule');
 assert.equal(landingSoil.model, landingBodies.at(-1).model, 'landing soil must use the model that read the letter');
 assert.equal(landingSoil.settings.seedCooldownTurns, 0);
-assert.equal(landingSoil.settings.conversationSeedStallLimit, 6);
+assert.equal(landingSoil.settings.memoryLimit, 6);
 assert.equal(landingSoil.settings.autoRefreshEveryTurns, 1);
 assert.equal(landingSoil.settings.maxHandSeeds, 3);
 assert.equal(document.querySelectorAll('.message.user').length, visibleUsersBeforeLetter, 'hidden landing input must not render a user bubble');
@@ -1624,11 +1630,7 @@ assert.ok(document.querySelector('#roomComposer').classList.contains('composer--
 assert.equal(document.querySelector('#mainDogtalkComposer').parentElement.id, 'composer');
 assert.equal(document.querySelector('#roomDogtalkComposer').parentElement.id, 'roomComposer');
 assert.ok(document.querySelector('#roomMessages').textContent.includes('官端从灯塔向电波房打了个招呼。'));
-document.querySelector('[data-action="rooms:context-inspector"]').click();
-await waitFor(() => document.querySelector('#overlayRoot')?.dataset.route === 'context-inspector', 'radio context inspector');
-assert.ok(document.querySelector('#overlayRoot').textContent.includes('三方聊天室 / 无线电波'));
-document.querySelector('[data-action="router:back"]').click();
-await waitFor(() => document.querySelector('#overlayRoot').hidden, 'return from radio context inspector');
+assert.equal(document.querySelector('[data-action="rooms:context-inspector"]'), null, '房间中不再保留重型上下文检查器');
 const initialRadioOfficialTip = document.querySelector('#roomMessages .room-soil-tip [data-source-surface="official_mcp"]');
 assert.ok(initialRadioOfficialTip?.textContent.includes('电波房思维壤 · ChatGPT-5.6 Thinking sol≋ · 0 粒手持种'));
 assert.equal(initialRadioOfficialTip.dataset.action, 'memory:soil-open');

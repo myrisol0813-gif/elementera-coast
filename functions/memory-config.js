@@ -44,7 +44,7 @@ export function recallSettings(value = {}) {
     globalPocketLimit: integer(value.globalPocketLimit, defaults.globalPocketLimit, 0, 6),
     seedCooldownTurns: integer(value.seedCooldownTurns, defaults.seedCooldownTurns, 0, 8),
     maxInjectedEntries: integer(
-      value.maxInjectedEntries ?? value.memoryLimit ?? value.memory_limit,
+      value.memoryLimit,
       defaults.maxInjectedEntries,
       0,
       12,

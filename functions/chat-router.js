@@ -3,10 +3,9 @@ import {
   DogtalkStoreError,
 } from './dogtalk-store.js';
 import {
-  assembleContextForSurface,
-  budgetContextMessages,
-  estimateContextTokens as estimateTokens,
-} from './context-assembler.js';
+  assembleCleanContext,
+} from './context-assemble-clean.js';
+import { estimateContextTokens as estimateTokens } from './context-comfort-range.js';
 import { executeRegisteredTool } from './tool-registry.js';
 import {
   ModelRequestError,
@@ -170,9 +169,6 @@ function streamFormalChat(request, env, input, assembled, dogtalkSubmission = nu
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        if (assembled.settings.context_debug) {
-          controller.enqueue(encoder.encode(sseEvent('context_debug', assembled.debug)));
-        }
         for await (const item of performFormalChatStream(env, {
           model: input.model,
           messages: assembled.modelMessages,
@@ -185,6 +181,7 @@ function streamFormalChat(request, env, input, assembled, dogtalkSubmission = nu
         })) {
           controller.enqueue(encoder.encode(sseEvent(item.event, item.data)));
         }
+        controller.enqueue(encoder.encode(sseEvent('desk_slip', assembled.deskSlip())));
       } catch (error) {
         if (error?.name !== 'AbortError') {
           controller.enqueue(encoder.encode(sseEvent('error', safeStreamError(error))));
@@ -199,7 +196,7 @@ function streamFormalChat(request, env, input, assembled, dogtalkSubmission = nu
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
       'X-Content-Type-Options': 'nosniff',
-      'X-Coast-Memory-Selected': JSON.stringify(assembled.memory?.trace?.selected || []),
+      'X-Coast-Memory-Selected': JSON.stringify(assembled.selected_memory_ids || []),
       'X-Coast-Dogtalk-Snapshot': dogtalkSubmission?.snapshot?.id || '',
     },
   });
@@ -235,7 +232,7 @@ async function formalChat(request, env) {
     });
   }
 
-  const assembled = await assembleContextForSurface(env, {
+  const assembled = await assembleCleanContext(env, {
     conversationId,
     sourceTurnId,
     messages,
@@ -243,11 +240,11 @@ async function formalChat(request, env) {
     settings: requestSettings,
     localDate: localDate(value.local_date),
     localDateTime: value.local_datetime,
-    modeKey: value.mode_key,
     surface: 'main_chat',
     recentEntryIds: value.recent_entry_ids,
     model: value.model,
     permission: 'owner',
+    initialFurniture: dogtalkSubmission ? ['收好一张狗话纸条'] : [],
   });
   if (value.stream === true) {
     return streamFormalChat(request, env, {
@@ -267,16 +264,12 @@ async function formalChat(request, env) {
   return json({
     ...result,
     max_tokens: requestSettings.max_tokens ?? null,
-    context: assembled.trace,
     memory: {
-      selected_entry_ids: assembled.memory?.trace?.selected || [],
-      selected_cross_surface_ids: assembled.cross_surface.selected,
-      cross_surface_triggered: assembled.cross_surface.triggered,
-      dogtalk_selected: assembled.dogtalk.selected,
+      selected_entry_ids: assembled.selected_memory_ids,
       dogtalk_snapshot_id: dogtalkSubmission?.snapshot?.id || null,
-      vector_enabled: Boolean(assembled.memory?.trace?.vector_enabled),
+      vector_enabled: assembled.vector_enabled,
     },
-    ...(assembled.settings.context_debug ? { context_debug: assembled.debug } : {}),
+    desk_slip: assembled.deskSlip(),
   });
 }
 
@@ -300,10 +293,6 @@ export function landingRequestSettings(rawSettings = {}) {
 
 export function estimateContextTokens(value) {
   return estimateTokens(value);
-}
-
-export function budgetChatMessages(messages, softContext = '', rawSettings = {}) {
-  return budgetContextMessages(messages, softContext, rawSettings);
 }
 
 function activeStateMessages(state) {
@@ -353,14 +342,13 @@ async function landingLetter(request, env) {
   const state = await readConversationState(env.COAST_CHAT_DB, targetConversationId);
   const messages = [...activeStateMessages(state), { role: 'user', content: letterText }];
   const lastUser = messages.at(-1);
-  const assembled = await assembleContextForSurface(env, {
+  const assembled = await assembleCleanContext(env, {
     conversationId: targetConversationId,
     messages,
     lastUser,
     settings: requestSettings,
     localDate: localDate(value.local_date),
     localDateTime: value.local_datetime,
-    modeKey: value.mode_key,
     surface: 'landing',
     recentEntryIds: value.recent_entry_ids,
     model: modelId,
@@ -396,13 +384,11 @@ async function landingLetter(request, env) {
     usage: generated.usage || null,
     finish_reason: generated.finish_reason || null,
     max_tokens: requestSettings.max_tokens,
-    context: assembled.trace,
     memory: {
-      selected_entry_ids: assembled.memory?.trace?.selected || [],
-      dogtalk_selected: assembled.dogtalk.selected,
-      vector_enabled: Boolean(assembled.memory?.trace?.vector_enabled),
+      selected_entry_ids: assembled.selected_memory_ids,
+      vector_enabled: assembled.vector_enabled,
     },
-    ...(assembled.settings.context_debug ? { context_debug: assembled.debug } : {}),
+    desk_slip: assembled.deskSlip(),
   });
 }
 

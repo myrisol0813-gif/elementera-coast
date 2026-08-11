@@ -1,4 +1,5 @@
 import { readProfile } from './chat-store.js';
+import { assembleCleanContext } from './context-assemble-clean.js';
 import { DailyStoreError, addMomentComment, momentCommentContext } from './daily-store.js';
 import { organizedMemoryRecordsInRange } from './memory-store.js';
 import { performFormalChat } from './models.js';
@@ -8,13 +9,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 function clip(value, max = 1000) {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
-}
-
-function compactList(value, max = 8, itemMax = 600) {
-  return (Array.isArray(value) ? value : [])
-    .map((item) => clip(item, itemMax))
-    .filter(Boolean)
-    .slice(0, max);
 }
 
 function commentText(value) {
@@ -39,102 +33,40 @@ function commentText(value) {
   return text.slice(0, 180).trim();
 }
 
-function diarySnapshot(entry) {
-  return {
-    date: entry.date,
-    author: entry.author,
-    weather: entry.weather,
-    mood: entry.mood,
-    text: clip(entry.text, 1400),
-  };
+function paperSection(title, lines) {
+  const clean = lines.map((line) => String(line || '').trim()).filter(Boolean);
+  return clean.length ? [title, ...clean].join('\n') : '';
 }
 
-function momentSnapshot(entry) {
-  return {
-    date: entry.date,
-    author: entry.author,
-    text: clip(entry.text, 700),
-    reason: clip(entry.reason, 300),
-    comments: (entry.comments || []).slice(-5).map((comment) => ({
-      author: comment.author,
-      text: clip(comment.text, 240),
-    })),
-  };
+function promptPaper(daily, organized, now) {
+  const soilLines = (organized.soils || []).slice(-6).map((soil) => {
+    const seeds = (soil.hand_seeds || []).slice(0, 3)
+      .map((seed) => clip(seed.life_core || seed.name, 220)).filter(Boolean);
+    return [clip(soil.conversation_title || '一个海岸窗口', 80), clip(soil.current_text, 700), ...seeds]
+      .filter(Boolean).join('｜');
+  });
+  const memoryLines = [
+    ...(organized.pockets || []).slice(-6).map((item) => `落袋：${clip(item.title, 100)}｜${clip(item.life_core || item.content, 360)}`),
+    ...(organized.entries || []).slice(-10).map((item) => `${item.entry_type === 'seed' ? '种子' : '记忆'}：${clip(item.title, 100)}｜${clip(item.life_core || item.content, 360)}`),
+  ];
+  return [
+    paperSection('【这条碳硅圈】', [`${daily.target.date || new Date(now).toISOString().slice(0, 10)}｜${clip(daily.target.text, 900)}`]),
+    paperSection('【近期日记】', daily.diaries.map((item) => `${item.date}｜${clip(item.text, 700)}`)),
+    paperSection('【近期海岸日报】', daily.summaries.map((item) => `${item.range?.to || ''}｜${clip(item.summary?.text, 700)}`)),
+    paperSection('【近期思维壤】', soilLines),
+    paperSection('【相关记忆】', memoryLines),
+    paperSection('【近期碳硅圈】', daily.recent_moments.map((item) => `${item.date}｜${clip(item.text, 420)}`)),
+  ].filter(Boolean).join('\n\n');
 }
 
-function summarySnapshot(entry) {
+function sourceCounts(daily, organized) {
   return {
-    range: entry.range,
-    text: clip(entry.summary?.text, 1000),
-    anchors: compactList(entry.summary?.anchors, 6, 160),
-    unresolved: compactList(entry.summary?.unresolved, 6, 160),
-  };
-}
-
-function memorySnapshot(records = {}) {
-  const soils = (records.soils || []).slice(-6).map((soil) => ({
-    conversation_title: soil.conversation_title || '',
-    current_text: clip(soil.current_text, 900),
-    hand_seeds: (soil.hand_seeds || []).slice(0, 5).map((seed) => ({
-      name: clip(seed.name, 80),
-      life_core: clip(seed.life_core, 260),
-    })),
-    do_not_repeat: clip(soil.do_not_repeat, 360),
-    pocket_candidates: (soil.pocket_candidates || []).slice(0, 5).map((candidate) => ({
-      title: clip(candidate.title || candidate.name, 80),
-      life_core: clip(candidate.life_core || candidate.text, 260),
-    })),
-  }));
-  const pockets = (records.pockets || []).slice(-8).map((pocket) => ({
-    conversation_title: pocket.conversation_title || '',
-    status: pocket.status,
-    title: clip(pocket.title, 100),
-    life_core: clip(pocket.life_core, 360),
-    content: clip(pocket.content || pocket.source_text, 500),
-  }));
-  const entries = (records.entries || []).slice(-12).map((entry) => ({
-    conversation_title: entry.conversation_title || '',
-    type: entry.entry_type,
-    scope: entry.scope,
-    status: entry.status,
-    title: clip(entry.title, 100),
-    life_core: clip(entry.life_core, 360),
-    content: clip(entry.content, 500),
-  }));
-  return { soils, pockets, entries };
-}
-
-function promptPayload(daily, organized, now) {
-  return {
-    task: '给这条海岸内部碳硅圈动态写一条 Myri 评论。',
-    source_priority: [
-      '先看 target_moment 本身。',
-      '主要参考 recent_diaries 和 recent_summaries。',
-      '其次参考 recent_organized_memory，其中 soils 是近期思维壤，pockets 是落袋，entries 是种子/记忆/石头。',
-      'recent_moments 只用于确认语气和避免重复。',
-    ],
-    boundaries: [
-      '输入不包含原始聊天记录；不要假装读取了原始聊天。',
-      '碳硅圈类似海岸内部朋友圈，评论应短、轻、贴近，不要写成日记总结。',
-      '如果上下文不够，就只对这一条动态温柔回应，不要强行引用记忆。',
-    ],
-    now: new Date(now).toISOString(),
-    target_moment: momentSnapshot(daily.target),
-    recent_diaries: daily.diaries.map(diarySnapshot),
-    recent_summaries: daily.summaries.map(summarySnapshot),
-    recent_moments: daily.recent_moments.map(momentSnapshot),
-    recent_organized_memory: memorySnapshot(organized),
-  };
-}
-
-function sourceCounts(payload) {
-  return {
-    diaries: payload.recent_diaries.length,
-    summaries: payload.recent_summaries.length,
-    recent_moments: payload.recent_moments.length,
-    soils: payload.recent_organized_memory.soils.length,
-    pockets: payload.recent_organized_memory.pockets.length,
-    entries: payload.recent_organized_memory.entries.length,
+    diaries: daily.diaries.length,
+    summaries: daily.summaries.length,
+    recent_moments: daily.recent_moments.length,
+    soils: organized.soils.length,
+    pockets: organized.pockets.length,
+    entries: organized.entries.length,
   };
 }
 
@@ -154,19 +86,21 @@ export async function createMyriMomentComment(env, momentId, value = {}) {
     }),
   ]);
 
-  const payload = promptPayload(daily, organized, now);
+  const paper = promptPaper(daily, organized, now);
+  const assembled = await assembleCleanContext(env, {
+    surface: 'daily',
+    messages: [{ role: 'user', content: paper }],
+    lastUser: paper,
+    settings: { ...(value.settings || {}), worldbookEnabled: false, recentTurns: 2 },
+    baseSystemPrompt: '你是海岸 Myri，正在给碳硅圈动态写一条短评论。只输出评论正文，不加称呼前缀、解释、项目符号或引号。通常一句，最多两句，温柔、轻、像朋友圈底下的留言。',
+    exposeTools: false,
+    includeTodayCoast: false,
+    permission: 'owner',
+    preview: true,
+  });
   const result = await performFormalChat(env, {
     model: modelId,
-    messages: [
-      {
-        role: 'system',
-        content: '你是海岸 Myri，正在给 Elementera Coast 内部碳硅圈动态写评论。只输出评论正文，不要加称呼前缀、解释、项目符号或引号。评论通常一句话，最多两句，温柔、轻、像朋友圈底下的短留言。',
-      },
-      {
-        role: 'user',
-        content: JSON.stringify(payload),
-      },
-    ],
+    messages: assembled.modelMessages,
     max_tokens: 600,
     temperature: 0.82,
     settings: value.settings || {},
@@ -185,6 +119,6 @@ export async function createMyriMomentComment(env, momentId, value = {}) {
     moment,
     comment: moment.comments.find((comment) => comment.id === commentId) || null,
     model: result.model || modelId,
-    source_counts: sourceCounts(payload),
+    source_counts: sourceCounts(daily, organized),
   };
 }

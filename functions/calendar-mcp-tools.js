@@ -63,7 +63,7 @@ export const CALENDAR_MCP_DEFINITIONS = Object.freeze([
     content: { type: 'string', minLength: 1, maxLength: 8000 },
     color_key: EVENT_FIELDS.color_key,
   }, ['content']), ['write:lighthouse']),
-  definition('calendar.env', '读取日历环境包', 'Return a compact calendar context block. Empty calendars return empty=true and no shell text.', schema({ date: { type: 'string', format: 'date' } }), ['read:coast'], { readOnly: true }),
+  definition('calendar.env', '读取日历小条', 'Return one compact calendar slip. Empty calendars return empty=true and no shell text.', schema({ date: { type: 'string', format: 'date' } }), ['read:coast'], { readOnly: true }),
   definition('calendar.seen', '熄灭官端日历未读', 'Mark selected Xiaohan-to-Myri calendar change ids as seen after Myri has used them.', schema({ change_ids: { type: 'array', maxItems: 300, items: { type: 'string', maxLength: 180 } } }, ['change_ids']), ['write:lighthouse']),
 ]);
 

@@ -3,13 +3,13 @@ import { readFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { createConversation, readConversationState, writeConversationState, writeProfile } from '../functions/chat-store.js';
 import {
-  budgetChatMessages,
   clipGeneratedTitle,
   estimateContextTokens,
   formalChatRequestSettings,
   landingRequestSettings,
   routeChatApi,
 } from '../functions/chat-router.js';
+import { trimContextToComfortRange } from '../functions/context-comfort-range.js';
 import { soilSettings } from '../functions/memory-config.js';
 import { routeMemoryApi } from '../functions/memory-router.js';
 import {
@@ -87,22 +87,22 @@ assert.equal(formalChatRequestSettings({ outputLength: 'short', max_tokens: 350 
 assert.equal(formalChatRequestSettings({ outputLength: 'auto', max_tokens: 600 }).max_tokens, null);
 assert.equal(formalChatRequestSettings({ outputLength: 'long', max_tokens: 1200 }).max_tokens, null);
 assert.equal(formalChatRequestSettings({ max_tokens: 80 }).max_tokens, 80, 'low-level callers without an output preference keep their explicit budget');
-const assistantFirst = budgetChatMessages([
-  { role: 'user', content: '旧'.repeat(80) },
-  { role: 'assistant', content: 'a'.repeat(2000) },
-  { role: 'user', content: '现在' },
-], '记'.repeat(80), { recentTurns: 8, contextBudget: 256 });
-assert.equal(assistantFirst.trace.trimmed.assistants, 1, 'old assistant content is trimmed first');
-assert.equal(assistantFirst.trace.trimmed.users, 0);
-assert.equal(assistantFirst.trace.trimmed.soft_context, false);
-assert.deepEqual(assistantFirst.messages.map((message) => message.role), ['system', 'user', 'user']);
-const preserveCurrent = budgetChatMessages([
-  { role: 'user', content: '旧'.repeat(300) },
-  { role: 'assistant', content: 'a'.repeat(2000) },
-  { role: 'user', content: '当前输入' },
-], '记'.repeat(300), { recentTurns: 8, contextBudget: 256 });
-assert.deepEqual(preserveCurrent.messages, [{ role: 'user', content: '当前输入' }]);
-assert.equal(preserveCurrent.trace.current_user_preserved, true);
+const comfortable = trimContextToComfortRange({
+  basePrompt: '你是 Myri。',
+  soilText: `【思维壤】\n当前：${'潮'.repeat(1200)}`,
+  memoryItems: Array.from({ length: 10 }, (_, index) => `低相关旧纸条 ${index} ${'记'.repeat(400)}`),
+  worldbookItems: Array.from({ length: 6 }, (_, index) => `词典 ${index} ${'词'.repeat(300)}`),
+  messages: [
+    { role: 'user', content: '旧'.repeat(300) },
+    { role: 'assistant', content: 'a'.repeat(2000) },
+    { role: 'user', content: '当前输入' },
+  ],
+  recentTurns: 8,
+  maxTokens: 1800,
+});
+assert.deepEqual(comfortable.modelMessages.at(-1), { role: 'user', content: '当前输入' });
+assert.equal(comfortable.currentUserPreserved, true);
+assert.ok(comfortable.trimmedCount > 0, '超过舒服区间时应裁掉低相关旧纸条');
 assert.deepEqual(soilSettings({ autoRefreshEveryTurns: 99, maxHandSeeds: 0 }), {
   autoRefreshEveryTurns: 12,
   maxHandSeeds: 1,
@@ -336,59 +336,48 @@ const pendingOnly = await createPocket(db, {
 });
 const noVectorEnv = { COAST_CHAT_DB: db };
 const pendingRecall = await buildMemoryContext(noVectorEnv, 'owner', conversationA.id, '绝密待定词', {
-  mode: 'chat',
   conversation_turns: 8,
 });
-assert.equal(pendingRecall.trace.selected.length, 0, 'pending pockets must never participate in recall');
+assert.equal(pendingRecall.selected_ids.length, 0, 'pending pockets must never participate in recall');
 assert.equal((await listPockets(db, { conversation_id: conversationA.id, status: 'pending' })).some((pocket) => pocket.id === pendingOnly.id), true);
 
 const localPocketRecall = await buildMemoryContext(noVectorEnv, 'owner', conversationC.id, '沉睡的潮汐抽屉', {
-  mode: 'chat',
   conversation_turns: 8,
 });
 assert.equal(localPocketRecall.conversation_pockets.some((pocket) => pocket.id === canonicalPocket.id), true, 'origin conversation must read its conversation pocket membership');
 assert.equal(localPocketRecall.global_pockets.some((pocket) => pocket.id === canonicalPocket.id), false, 'the same canonical pocket must not be injected twice in its origin conversation');
-assert.match(formatMemoryContext(localPocketRecall), /当前窗口落袋/);
+assert.match(formatMemoryContext(localPocketRecall), /【相关记忆】/);
 const otherConversationPocketRecall = await buildMemoryContext(noVectorEnv, 'owner', conversationB.id, '沉睡的潮汐抽屉', {
-  mode: 'chat',
   conversation_turns: 8,
 });
 assert.equal(otherConversationPocketRecall.conversation_pockets.some((pocket) => pocket.id === canonicalPocket.id), false, 'A pocket must never enter B conversation pool');
 assert.equal(otherConversationPocketRecall.global_pockets.some((pocket) => pocket.id === canonicalPocket.id), true, 'a highly relevant global pocket may enter B global pool');
 const thresholdLocalRecall = await buildMemoryContext(noVectorEnv, 'owner', conversationC.id, '同一生命核的新压缩正文', {
-  mode: 'chat',
   conversation_turns: 8,
 });
 const thresholdGlobalRecall = await buildMemoryContext(noVectorEnv, 'owner', conversationB.id, '同一生命核的新压缩正文', {
-  mode: 'chat',
   conversation_turns: 8,
 });
 assert.equal(thresholdLocalRecall.conversation_pockets.some((pocket) => pocket.id === canonicalPocket.id), true, 'conversation pocket threshold must admit a content match');
 assert.equal(thresholdGlobalRecall.global_pockets.some((pocket) => pocket.id === canonicalPocket.id), false, 'global pocket threshold must keep a plain content match asleep');
 const explicitGlobalRecall = await buildMemoryContext(noVectorEnv, 'owner', conversationB.id, '同一生命核的新压缩正文', {
-  mode: 'explicit',
+  explicit: true,
   conversation_turns: 8,
 });
 assert.equal(explicitGlobalRecall.global_pockets.some((pocket) => pocket.id === canonicalPocket.id), true, 'explicit recall may relax the global pocket threshold');
-const localPocketPolicy = thresholdLocalRecall.trace.candidates.find((candidate) => candidate.pool === 'conversation_pockets');
-const globalPocketPolicy = thresholdLocalRecall.trace.candidates.find((candidate) => candidate.pool === 'global_pockets');
-assert.ok(localPocketPolicy.threshold < globalPocketPolicy.threshold, 'conversation pocket semantic threshold must be wider than global pocket');
-assert.ok(localPocketPolicy.limit > globalPocketPolicy.limit, 'conversation pocket limit must be higher than global pocket');
 
 const firstRecall = await buildMemoryContext(noVectorEnv, 'owner', conversationA.id, '潮汐钥匙', {
-  mode: 'chat',
   conversation_turns: 8,
 });
 assert.equal(firstRecall.conversation_seeds.length, 3);
 assert.equal(firstRecall.global_seeds.length, 1);
 assert.ok(firstRecall.conversation_seeds.length > firstRecall.global_seeds.length, 'conversation seeds must be easier to recall than global seeds');
 const secondRecall = await buildMemoryContext(noVectorEnv, 'owner', conversationA.id, '潮汐钥匙', {
-  mode: 'chat',
   conversation_turns: 8,
-  recent_entry_ids: firstRecall.trace.selected,
+  recent_entry_ids: firstRecall.selected_ids,
 });
-assert.equal(secondRecall.conversation_seeds.some((entry) => firstRecall.trace.selected.includes(entry.id)), false, 'a seed cannot be recalled on consecutive turns');
-assert.match(formatMemoryContext(firstRecall), /当前用户输入优先/);
+assert.equal(secondRecall.conversation_seeds.some((entry) => firstRecall.selected_ids.includes(entry.id)), false, 'a seed cannot be recalled on consecutive turns');
+assert.match(formatMemoryContext(firstRecall), /【相关记忆】/);
 
 for (const status of ['archived', 'stone', 'discarded']) {
   await createEntry(db, {
@@ -401,10 +390,9 @@ for (const status of ['archived', 'stone', 'discarded']) {
   });
 }
 const excludedRecall = await buildMemoryContext(noVectorEnv, 'owner', conversationA.id, '封存石头丢弃测试词', {
-  mode: 'chat',
   conversation_turns: 8,
 });
-assert.equal(excludedRecall.trace.selected.length, 0, 'archived, stone, and discarded entries must not enter chat recall');
+assert.equal(excludedRecall.selected_ids.length, 0, 'archived, stone, and discarded entries must not enter chat recall');
 const isolatedSearch = await searchMemory(noVectorEnv, 'owner', {
   conversation_id: conversationB.id,
   scope: 'conversation',
@@ -579,13 +567,13 @@ const chatData = await chatResponse.json();
 assert.equal(chatResponse.status, 200);
 assert.equal(providerPayload.messages[0].role, 'system');
 assert.match(providerPayload.messages[0].content, /思维壤/);
-assert.match(providerPayload.messages[0].content, /当前窗口种子/);
-assert.match(providerPayload.messages[0].content, /当前用户输入优先/);
+assert.match(providerPayload.messages[0].content, /【相关记忆】/);
+assert.match(providerPayload.messages[0].content, /潮汐钥匙/);
+assert.doesNotMatch(providerPayload.messages[0].content, /上下文目录|海岸环境|记忆球｜当前情境面/);
 assert.deepEqual(providerPayload.messages.at(-1), { role: 'user', content: '潮汐钥匙' });
 assert.ok(chatData.memory.selected_entry_ids.length > 0);
-assert.equal(chatData.context.mode, 'estimated_tokens');
-assert.equal(chatData.context.budget, 2000);
-assert.equal(chatData.context.recent_turns, 2);
+assert.equal(typeof chatData.desk_slip?.summary, 'string');
+assert.equal(Object.hasOwn(chatData, 'context'), false, '聊天 API 不应再返回旧预算 / trace 报告');
 
 const naturalLongReply = '这是一段由模型自行决定长度的回复。'.repeat(1500);
 providerContent = naturalLongReply;

@@ -225,7 +225,7 @@ function normalizeTools(value) {
       && /^[a-zA-Z0-9_-]{1,64}$/.test(String(tool?.function?.name || ''))
       && tool?.function?.parameters
       && typeof tool.function.parameters === 'object')
-    .slice(0, 8)
+    .slice(0, 16)
     .map((tool) => ({
       type: 'function',
       function: {

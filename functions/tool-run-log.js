@@ -79,7 +79,7 @@ export function summarizeToolValue(toolKey, value) {
       status: object.status || object.dogtalk?.status || null,
     }).slice(0, 2000);
   }
-  if (/^(?:radio\.|lighthouse\.|official_soil\.|memory\.authorized_|daily\.(?:moments|diaries|albums|summary\.))/u.test(String(toolKey))) {
+  if (/^(?:radio\.|lighthouse\.|official_soil\.|memory\.|daily\.)/u.test(String(toolKey))) {
     const object = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
     const counts = {};
     for (const [key, item] of Object.entries(object)) {

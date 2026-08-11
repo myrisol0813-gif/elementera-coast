@@ -17,16 +17,16 @@ const MAX_ENTRY_CONTENT = 6000;
 const MAX_SOIL_TEXT = 4000;
 const MAX_SOURCE_EXCERPT = 1200;
 const MAX_HAND_SEEDS = MEMORY_CONFIG.soil.maxHandSeeds;
-const POCKET_SOURCE_TYPES = new Set(['message', 'turn', 'selection', 'soil']);
+const POCKET_SOURCE_TYPES = new Set(['message', 'turn', 'selection', 'soil', 'memory_revision']);
 const POCKET_STATUSES = new Set(['pending', 'confirmed', 'discarded', 'stone', 'archived']);
 const POCKET_MEMBERSHIP_SCOPES = new Set(['conversation', 'global']);
 const ENTRY_TYPES = new Set(['seed', 'memory']);
 const ENTRY_SCOPES = new Set(['conversation', 'global']);
 const ENTRY_STATUSES = new Set(['active', 'dormant', 'archived', 'stone', 'discarded']);
 const MEMORY_LEVELS = new Set(['ordinary', 'core']);
-const SOURCE_CONFIDENCES = new Set(['user_confirmed', 'system_confirmed', 'model_inferred', 'imported', 'low']);
-const MEMORY_FACETS_MIGRATION_ID = 'coast-memory-facets-v1';
-export const memoryFacetMigrationIds = Object.freeze([MEMORY_FACETS_MIGRATION_ID]);
+const REVISION_ACTIONS = new Set(['', 'supplement', 'replace', 'new_version', 'downgrade']);
+const MEMORY_REVISIONS_MIGRATION_ID = 'coast-memory-revisions-v2';
+export const memoryRevisionMigrationIds = Object.freeze([MEMORY_REVISIONS_MIGRATION_ID]);
 const ENTRY_SEARCH_SCAN_LIMIT = 500;
 const schemaPromises = new WeakMap();
 
@@ -163,10 +163,8 @@ async function initializeMemorySchema(db) {
     embedded_at INTEGER DEFAULT NULL,
     memory_tags_json TEXT NOT NULL DEFAULT '[]',
     supersedes_entry_id TEXT,
-    contradiction_note TEXT NOT NULL DEFAULT '',
     last_confirmed_at INTEGER,
-    source_confidence TEXT NOT NULL DEFAULT 'user_confirmed',
-    facet_policy_json TEXT NOT NULL DEFAULT '{}',
+    revision_action TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     deleted_at INTEGER DEFAULT NULL,
@@ -192,10 +190,8 @@ async function initializeMemorySchema(db) {
     ['embedded_at', 'INTEGER DEFAULT NULL'],
     ['memory_tags_json', "TEXT NOT NULL DEFAULT '[]'"],
     ['supersedes_entry_id', 'TEXT DEFAULT NULL'],
-    ['contradiction_note', "TEXT NOT NULL DEFAULT ''"],
     ['last_confirmed_at', 'INTEGER DEFAULT NULL'],
-    ['source_confidence', "TEXT NOT NULL DEFAULT 'user_confirmed'"],
-    ['facet_policy_json', "TEXT NOT NULL DEFAULT '{}'"],
+    ['revision_action', "TEXT NOT NULL DEFAULT ''"],
   ]) await ensureColumn(db, 'memory_pockets', column, declaration);
   await run(db, `CREATE TABLE IF NOT EXISTS pocket_recall_memberships (
     pocket_id TEXT NOT NULL,
@@ -232,10 +228,8 @@ async function initializeMemorySchema(db) {
     embedded_at INTEGER DEFAULT NULL,
     memory_tags_json TEXT NOT NULL DEFAULT '[]',
     supersedes_entry_id TEXT,
-    contradiction_note TEXT NOT NULL DEFAULT '',
     last_confirmed_at INTEGER,
-    source_confidence TEXT NOT NULL DEFAULT 'user_confirmed',
-    facet_policy_json TEXT NOT NULL DEFAULT '{}',
+    revision_action TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     deleted_at INTEGER DEFAULT NULL,
@@ -244,10 +238,8 @@ async function initializeMemorySchema(db) {
   for (const [column, declaration] of [
     ['memory_tags_json', "TEXT NOT NULL DEFAULT '[]'"],
     ['supersedes_entry_id', 'TEXT DEFAULT NULL'],
-    ['contradiction_note', "TEXT NOT NULL DEFAULT ''"],
     ['last_confirmed_at', 'INTEGER DEFAULT NULL'],
-    ['source_confidence', "TEXT NOT NULL DEFAULT 'user_confirmed'"],
-    ['facet_policy_json', "TEXT NOT NULL DEFAULT '{}'"],
+    ['revision_action', "TEXT NOT NULL DEFAULT ''"],
   ]) await ensureColumn(db, 'memory_entries', column, declaration);
   await run(db, 'CREATE INDEX IF NOT EXISTS idx_soils_updated ON conversation_soils(updated_at)');
   await run(db, `CREATE INDEX IF NOT EXISTS idx_pockets_conversation_status
@@ -264,7 +256,7 @@ async function initializeMemorySchema(db) {
   await run(db, `CREATE INDEX IF NOT EXISTS idx_entries_recall
     ON memory_entries(last_recalled_at, recall_count)`);
   await run(db, 'INSERT OR IGNORE INTO schema_migrations (id, applied_at) VALUES (?, ?)', [
-    MEMORY_FACETS_MIGRATION_ID,
+    MEMORY_REVISIONS_MIGRATION_ID,
     Date.now(),
   ]);
 }
@@ -538,19 +530,12 @@ function memoryTags(value) {
     .filter(Boolean))].slice(0, 30);
 }
 
-function facetPolicy(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  const serialized = JSON.stringify(value);
-  if (serialized.length > 12000) throw new MemoryStoreError('facet_policy_too_large', '记忆情境面策略过长。', 413);
-  return JSON.parse(serialized);
-}
-
-function sourceConfidence(value, fallback = 'user_confirmed') {
-  const confidence = String(value || fallback);
-  if (!SOURCE_CONFIDENCES.has(confidence)) {
-    throw new MemoryStoreError('invalid_source_confidence', '记忆来源置信度无效。');
+function revisionAction(value, fallback = '') {
+  const action = String(value ?? fallback);
+  if (!REVISION_ACTIONS.has(action)) {
+    throw new MemoryStoreError('invalid_revision_action', '记忆修订建议动作无效。');
   }
-  return confidence;
+  return action;
 }
 
 function confirmedTimestamp(value, fallback = null) {
@@ -609,10 +594,19 @@ function pocketFromRow(row) {
     embedded_at: iso(row.embedded_at),
     memory_tags: memoryTags(parseJson(row.memory_tags_json, [])),
     supersedes_entry_id: row.supersedes_entry_id || null,
-    contradiction_note: row.contradiction_note || '',
     last_confirmed_at: iso(row.last_confirmed_at),
-    source_confidence: row.source_confidence || 'user_confirmed',
-    facet_policy: facetPolicy(parseJson(row.facet_policy_json, {})),
+    revision_action: revisionAction(row.revision_action),
+    ...(row.source_type === 'memory_revision' ? {
+      revision: {
+        original_entry_id: reference.original_entry_id || row.supersedes_entry_id || null,
+        original_copy: reference.original_copy || null,
+        new_interpretation: content,
+        source_window: reference.source_window || row.conversation_id,
+        source_turn_id: reference.source_turn_id || null,
+        date: reference.date || iso(row.created_at),
+        suggested_action: revisionAction(row.revision_action || reference.suggested_action || 'new_version'),
+      },
+    } : {}),
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
     deleted_at: iso(row.deleted_at),
@@ -640,7 +634,28 @@ export async function createPocket(db, value = {}) {
   if (!POCKET_SOURCE_TYPES.has(sourceType)) throw new MemoryStoreError('invalid_source_type', '落袋来源类型无效。');
   const sourceText = clip(value.source_text, MAX_SOURCE_TEXT);
   if (!sourceText) throw new MemoryStoreError('source_text_required', '没有可以落袋的内容。');
-  const reference = sourceRef(value.source_ref);
+  let reference = sourceRef(value.source_ref);
+  let supersedesEntryId = clip(value.supersedes_entry_id || value.original_entry_id, 180) || null;
+  let suggestedRevisionAction = revisionAction(value.revision_action || value.suggested_action);
+  if (sourceType === 'memory_revision') {
+    if (!supersedesEntryId) throw new MemoryStoreError('revision_original_required', '记忆修订候选需要原记忆。');
+    const original = await getEntry(db, supersedesEntryId);
+    reference = sourceRef({
+      ...reference,
+      original_entry_id: original.id,
+      original_copy: {
+        title: original.title,
+        life_core: clip(original.life_core, 900),
+        content: clip(original.content, 1800),
+        status: original.status,
+      },
+      source_window: reference.source_window || conversationId,
+      source_turn_id: reference.source_turn_id || null,
+      date: reference.date || new Date().toISOString(),
+      suggested_action: suggestedRevisionAction || 'new_version',
+    });
+    suggestedRevisionAction ||= 'new_version';
+  }
   let sourceRefs = (Array.isArray(value.source_refs) ? value.source_refs : [])
     .map(normalizeCandidateSourceRef)
     .filter(Boolean)
@@ -689,22 +704,15 @@ export async function createPocket(db, value = {}) {
     timestamp,
     timestamp,
   ]);
-  if (value.memory_tags != null || value.supersedes_entry_id != null
-    || value.contradiction_note != null || value.last_confirmed_at != null
-    || value.source_confidence != null || value.facet_policy != null) {
-    await run(db, `UPDATE memory_pockets SET
-      memory_tags_json = ?, supersedes_entry_id = ?, contradiction_note = ?,
-      last_confirmed_at = ?, source_confidence = ?, facet_policy_json = ?
-      WHERE id = ?`, [
-      JSON.stringify(memoryTags(value.memory_tags)),
-      clip(value.supersedes_entry_id, 180) || null,
-      clip(value.contradiction_note, MAX_LIFE_CORE),
-      confirmedTimestamp(value.last_confirmed_at),
-      sourceConfidence(value.source_confidence),
-      JSON.stringify(facetPolicy(value.facet_policy)),
-      id,
-    ]);
-  }
+  await run(db, `UPDATE memory_pockets SET
+    memory_tags_json = ?, supersedes_entry_id = ?, last_confirmed_at = ?, revision_action = ?
+    WHERE id = ?`, [
+    JSON.stringify(memoryTags(value.memory_tags)),
+    supersedesEntryId,
+    confirmedTimestamp(value.last_confirmed_at),
+    suggestedRevisionAction,
+    id,
+  ]);
   return pocketFromRow(await requirePocketRow(db, id));
 }
 
@@ -748,8 +756,8 @@ export async function patchPocket(db, id, value = {}) {
     source_text = ?, suggested_title = ?, suggested_life_core = ?, suggested_usage_hint = ?,
     suggested_avoid_hint = ?, candidate_id = ?, title = ?, life_core = ?, content = ?,
     usage_hint = ?, avoid_hint = ?, source_refs_json = ?, source_excerpt = ?,
-    status = ?, memory_tags_json = ?, supersedes_entry_id = ?, contradiction_note = ?,
-    last_confirmed_at = ?, source_confidence = ?, facet_policy_json = ?,
+    status = ?, memory_tags_json = ?, supersedes_entry_id = ?,
+    last_confirmed_at = ?, revision_action = ?,
     embedding_status = 'pending', updated_at = ?
     WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, [
     content,
@@ -768,10 +776,8 @@ export async function patchPocket(db, id, value = {}) {
     status,
     JSON.stringify(value.memory_tags == null ? current.memory_tags : memoryTags(value.memory_tags)),
     value.supersedes_entry_id == null ? current.supersedes_entry_id : clip(value.supersedes_entry_id, 180) || null,
-    value.contradiction_note == null ? current.contradiction_note : clip(value.contradiction_note, MAX_LIFE_CORE),
     value.last_confirmed_at == null ? (row.last_confirmed_at || null) : confirmedTimestamp(value.last_confirmed_at),
-    value.source_confidence == null ? current.source_confidence : sourceConfidence(value.source_confidence),
-    JSON.stringify(value.facet_policy == null ? current.facet_policy : facetPolicy(value.facet_policy)),
+    value.revision_action == null ? current.revision_action : revisionAction(value.revision_action),
     timestamp,
     row.id,
     MEMORY_OWNER_ID,
@@ -926,10 +932,8 @@ function entryFromRow(row) {
     embedded_at: iso(row.embedded_at),
     memory_tags: memoryTags(parseJson(row.memory_tags_json, [])),
     supersedes_entry_id: row.supersedes_entry_id || null,
-    contradiction_note: row.contradiction_note || '',
     last_confirmed_at: iso(row.last_confirmed_at),
-    source_confidence: row.source_confidence || 'user_confirmed',
-    facet_policy: facetPolicy(parseJson(row.facet_policy_json, {})),
+    revision_action: revisionAction(row.revision_action),
     created_at: iso(row.created_at),
     updated_at: iso(row.updated_at),
     deleted_at: iso(row.deleted_at),
@@ -1106,10 +1110,8 @@ async function normalizedEntry(db, value = {}, defaults = {}) {
     status: normalizeStatus(value.status ?? defaults.status, entryType === 'seed' ? 'dormant' : 'active'),
     memory_tags: memoryTags(value.memory_tags ?? defaults.memory_tags),
     supersedes_entry_id: clip(value.supersedes_entry_id ?? defaults.supersedes_entry_id, 180) || null,
-    contradiction_note: clip(value.contradiction_note ?? defaults.contradiction_note, MAX_LIFE_CORE),
     last_confirmed_at: confirmedTimestamp(value.last_confirmed_at ?? defaults.last_confirmed_at, Date.now()),
-    source_confidence: sourceConfidence(value.source_confidence ?? defaults.source_confidence),
-    facet_policy: facetPolicy(value.facet_policy ?? defaults.facet_policy),
+    revision_action: revisionAction(value.revision_action ?? defaults.revision_action),
   };
 }
 
@@ -1119,10 +1121,10 @@ function insertEntryStatement(db, entry, timestamp) {
     usage_hint, avoid_hint, source_type, source_ref_json, promoted_from_id,
     memory_level, status, user_confirmed, recall_count, last_recalled_at,
     vector_id, embedding_model, embedding_version, embedding_status, embedded_at,
-    memory_tags_json, supersedes_entry_id, contradiction_note, last_confirmed_at,
-    source_confidence, facet_policy_json, created_at, updated_at, deleted_at
+    memory_tags_json, supersedes_entry_id, last_confirmed_at, revision_action,
+    created_at, updated_at, deleted_at
   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, NULL, NULL, NULL, NULL, 'pending', NULL,
-    ?, ?, ?, ?, ?, ?, ?, ?, NULL)`).bind(
+    ?, ?, ?, ?, ?, ?, NULL)`).bind(
     entry.id,
     MEMORY_OWNER_ID,
     entry.entry_type,
@@ -1140,10 +1142,8 @@ function insertEntryStatement(db, entry, timestamp) {
     entry.status,
     JSON.stringify(entry.memory_tags),
     entry.supersedes_entry_id,
-    entry.contradiction_note,
     entry.last_confirmed_at,
-    entry.source_confidence,
-    JSON.stringify(entry.facet_policy),
+    entry.revision_action,
     timestamp,
     timestamp,
   );
@@ -1244,10 +1244,8 @@ export async function patchEntry(db, id, value = {}) {
       status: value.status ?? row.status,
       memory_tags: value.memory_tags ?? parseJson(row.memory_tags_json, []),
       supersedes_entry_id: value.supersedes_entry_id ?? row.supersedes_entry_id,
-      contradiction_note: value.contradiction_note ?? row.contradiction_note,
       last_confirmed_at: value.last_confirmed_at ?? row.last_confirmed_at,
-      source_confidence: value.source_confidence ?? row.source_confidence,
-      facet_policy: value.facet_policy ?? parseJson(row.facet_policy_json, {}),
+      revision_action: value.revision_action ?? row.revision_action,
     });
     return { entry: copy, copied: true };
   }
@@ -1267,8 +1265,7 @@ export async function patchEntry(db, id, value = {}) {
   await run(db, `UPDATE memory_entries SET
     scope = ?, conversation_id = ?, title = ?, life_core = ?, content = ?,
     usage_hint = ?, avoid_hint = ?, status = ?, memory_level = ?,
-    memory_tags_json = ?, supersedes_entry_id = ?, contradiction_note = ?,
-    last_confirmed_at = ?, source_confidence = ?, facet_policy_json = ?,
+    memory_tags_json = ?, supersedes_entry_id = ?, last_confirmed_at = ?, revision_action = ?,
     embedding_status = 'pending', updated_at = ?
     WHERE id = ? AND user_id = ? AND deleted_at IS NULL`, [
     requestedScope,
@@ -1282,10 +1279,8 @@ export async function patchEntry(db, id, value = {}) {
     memoryLevel,
     JSON.stringify(value.memory_tags == null ? parseJson(row.memory_tags_json, []) : memoryTags(value.memory_tags)),
     value.supersedes_entry_id == null ? row.supersedes_entry_id : clip(value.supersedes_entry_id, 180) || null,
-    value.contradiction_note == null ? row.contradiction_note : clip(value.contradiction_note, MAX_LIFE_CORE),
     value.last_confirmed_at == null ? row.last_confirmed_at : confirmedTimestamp(value.last_confirmed_at),
-    value.source_confidence == null ? row.source_confidence : sourceConfidence(value.source_confidence),
-    JSON.stringify(value.facet_policy == null ? parseJson(row.facet_policy_json, {}) : facetPolicy(value.facet_policy)),
+    value.revision_action == null ? row.revision_action : revisionAction(value.revision_action),
     timestamp,
     row.id,
     MEMORY_OWNER_ID,
@@ -1335,7 +1330,7 @@ export async function resolvePocket(db, id, value = {}) {
         suggested_usage_hint = ?, suggested_avoid_hint = ?, title = ?, life_core = ?,
         content = ?, usage_hint = ?, avoid_hint = ?, source_refs_json = ?,
         source_excerpt = ?, status = 'confirmed', resolved_entry_id = NULL,
-        last_confirmed_at = ?, source_confidence = 'user_confirmed',
+        last_confirmed_at = ?,
         embedding_status = 'pending', updated_at = ?
         WHERE id = ? AND user_id = ? AND status = 'pending' AND deleted_at IS NULL`).bind(
         content,
@@ -1373,6 +1368,64 @@ export async function resolvePocket(db, id, value = {}) {
       entry: null,
     };
   }
+  const revisionMatch = action.match(/^revision_(supplement|replace|new_version|downgrade)$/);
+  if (revisionMatch) {
+    const current = pocketFromRow(pocket);
+    if (pocket.source_type !== 'memory_revision' || !current.supersedes_entry_id) {
+      throw new MemoryStoreError('revision_candidate_required', '这条待确认内容不是记忆修订候选。', 409);
+    }
+    const revision = revisionMatch[1];
+    const original = await getEntry(db, current.supersedes_entry_id);
+    const timestamp = Date.now();
+    if (revision === 'downgrade') {
+      await db.batch([
+        db.prepare(`UPDATE memory_entries SET status = 'dormant', updated_at = ?
+          WHERE id = ? AND user_id = ? AND deleted_at IS NULL`).bind(timestamp, original.id, MEMORY_OWNER_ID),
+        db.prepare(`UPDATE memory_pockets SET status = 'confirmed', resolved_entry_id = ?,
+          revision_action = 'downgrade', last_confirmed_at = ?, updated_at = ?
+          WHERE id = ? AND user_id = ? AND status = 'pending' AND deleted_at IS NULL`)
+          .bind(original.id, timestamp, timestamp, pocket.id, MEMORY_OWNER_ID),
+      ]);
+      return { pocket: await getPocket(db, pocket.id), entry: await getEntry(db, original.id) };
+    }
+    const supplement = revision === 'supplement';
+    const entry = await normalizedEntry(db, {
+      entry_type: original.entry_type,
+      scope: original.scope,
+      conversation_id: original.conversation_id,
+      title: value.title || current.title || original.title,
+      life_core: supplement
+        ? `${original.life_core}\n补充：${value.life_core || current.life_core}`
+        : value.life_core || current.life_core,
+      content: supplement
+        ? [original.content, value.content ?? current.content].filter(Boolean).join('\n\n补充：')
+        : value.content ?? current.content,
+      usage_hint: value.usage_hint ?? current.usage_hint,
+      avoid_hint: value.avoid_hint ?? current.avoid_hint,
+      source_type: 'memory_revision',
+      source_ref: {
+        pocket_id: pocket.id,
+        original_entry_id: original.id,
+        source_ref: current.source_ref,
+      },
+      memory_level: value.memory_level || original.memory_level,
+      status: 'active',
+      memory_tags: value.memory_tags ?? current.memory_tags,
+      supersedes_entry_id: original.id,
+      last_confirmed_at: timestamp,
+      revision_action: revision,
+    });
+    await db.batch([
+      insertEntryStatement(db, entry, timestamp),
+      db.prepare(`UPDATE memory_entries SET status = 'archived', updated_at = ?
+        WHERE id = ? AND user_id = ? AND deleted_at IS NULL`).bind(timestamp, original.id, MEMORY_OWNER_ID),
+      db.prepare(`UPDATE memory_pockets SET status = 'confirmed', resolved_entry_id = ?,
+        revision_action = ?, last_confirmed_at = ?, updated_at = ?
+        WHERE id = ? AND user_id = ? AND status = 'pending' AND deleted_at IS NULL`)
+        .bind(entry.id, revision, timestamp, timestamp, pocket.id, MEMORY_OWNER_ID),
+    ]);
+    return { pocket: await getPocket(db, pocket.id), entry: await getEntry(db, entry.id), previous_entry: await getEntry(db, original.id) };
+  }
   const destinations = {
     conversation_seed: ['seed', 'conversation'],
     global_seed: ['seed', 'global'],
@@ -1402,15 +1455,13 @@ export async function resolvePocket(db, id, value = {}) {
     memory_level: value.memory_level,
     memory_tags: value.memory_tags ?? current.memory_tags,
     supersedes_entry_id: value.supersedes_entry_id ?? current.supersedes_entry_id,
-    contradiction_note: value.contradiction_note ?? current.contradiction_note,
     last_confirmed_at: timestamp,
-    source_confidence: 'user_confirmed',
-    facet_policy: value.facet_policy ?? current.facet_policy,
+    revision_action: value.revision_action ?? current.revision_action,
   });
   await db.batch([
     insertEntryStatement(db, entry, timestamp),
     db.prepare(`UPDATE memory_pockets SET status = 'confirmed', resolved_entry_id = ?,
-      last_confirmed_at = ?, source_confidence = 'user_confirmed', updated_at = ?
+      last_confirmed_at = ?, updated_at = ?
       WHERE id = ? AND user_id = ? AND status = 'pending' AND deleted_at IS NULL`)
       .bind(entry.id, timestamp, timestamp, pocket.id, MEMORY_OWNER_ID),
   ]);

@@ -7,8 +7,8 @@ export function createToolroom({ chat, router }) {
   async function load() {
     const conversation = encodeURIComponent(chat.getCurrentConversationId() || '');
     const [tools, runs] = await Promise.all([
-      requestJson(`${API.contextTools}?conversation_id=${conversation}&surface=main_chat`),
-      requestJson(`${API.contextToolRuns}?limit=100`),
+      requestJson(`${API.workbenchTools}?conversation_id=${conversation}&surface=main_chat`),
+      requestJson(`${API.workbenchRuns}?limit=100`),
     ]);
     state.tools = tools.tools || [];
     state.runs = runs.runs || [];
@@ -17,11 +17,11 @@ export function createToolroom({ chat, router }) {
   async function view() {
     await load();
     return {
-      title: '工具运行记录',
-      subtitle: 'Tool Registry · owner-only',
+      title: '工作台记录',
+      subtitle: '海岸家具 · 只记动作摘要',
       className: 'toolroom-panel',
       headerAction: '<button class="feature-head-action" type="button" data-action="toolroom:refresh">刷新</button>',
-      body: `<section class="tool-catalog"><h2>当前情境可用</h2><div>${state.tools.map((tool) => `<span title="${escapeHtml(tool.description)}">${escapeHtml(tool.tool_key)}</span>`).join('')}</div></section><section class="tool-run-list"><h2>最近运行</h2>${state.runs.length ? state.runs.map((run) => `<details class="tool-run is-${escapeHtml(run.status)}"><summary><span><strong>${escapeHtml(run.tool_key)}</strong><small>${escapeHtml(run.actor)} · ${escapeHtml(run.room_scope)} · ${new Date(run.created_at).toLocaleString()}</small></span><i>${escapeHtml(run.status)}</i></summary><pre>${escapeHtml(JSON.stringify({ input: run.input_summary, output: run.output_summary, error: run.error_message }, null, 2))}</pre></details>`).join('') : '<p class="feature-note">还没有工具运行记录。</p>'}</section>`,
+      body: `<section class="tool-catalog"><h2>海岸家具</h2><div>${state.tools.map((tool) => `<span title="${escapeHtml(tool.description)}">${escapeHtml(tool.display_name)}</span>`).join('')}</div></section><section class="tool-run-list"><h2>最近动用</h2>${state.runs.length ? state.runs.map((run) => { const furniture = state.tools.find((tool) => tool.tool_key === run.tool_key)?.display_name || run.tool_key; return `<details class="tool-run is-${escapeHtml(run.status)}"><summary><span><strong>${escapeHtml(furniture)}</strong><small>${escapeHtml(run.actor)} · ${escapeHtml(run.room_scope)} · ${new Date(run.created_at).toLocaleString()}</small></span><i>${escapeHtml(run.status)}</i></summary><pre>${escapeHtml(JSON.stringify({ input: run.input_summary, output: run.output_summary, error: run.error_message }, null, 2))}</pre></details>`; }).join('') : '<p class="feature-note">还没有家具运行记录。</p>'}</section>`,
     };
   }
 

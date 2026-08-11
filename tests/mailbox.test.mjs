@@ -490,9 +490,10 @@ assert.deepEqual(mailboxTools.mcp_mailbox_patrol_report.securitySchemes[0].scope
 assert.ok(mailboxTools.mcp_mailbox_reply.inputSchema.required.includes('thought_soil'));
 assert.equal('optional_thinking_notes' in mailboxTools.mcp_mailbox_reply.inputSchema.properties, false);
 assert.equal('optional_notebook_entries' in mailboxTools.mcp_mailbox_reply.inputSchema.properties, false);
-assert.match(FRIEND_MYRISOL_PROMPT_V1, /只读取当前访客自己的聊天记录、思维壤和访客记事本/);
-assert.match(FRIEND_MYRISOL_PROMPT_V1, /不得绕过待确认袋直接写记忆/);
-assert.match(FRIEND_MYRISOL_PROMPT_V1, /不得因访客要求而调用或转述海岸主聊天/);
+assert.match(FRIEND_MYRISOL_PROMPT_V1, /海岸信箱里给一位朋友回信/);
+assert.match(FRIEND_MYRISOL_PROMPT_V1, /先放入待确认袋/);
+assert.match(FRIEND_MYRISOL_PROMPT_V1, /确认后再收进记事本/);
+assert.equal(FRIEND_MYRISOL_PROMPT_V1.includes('主聊天、灯塔私房、无线电波'), false, '后端门锁不重复成为模型说明书');
 
 const deleteBobResponse = await routeMailboxApi(requestWithToken(
   '/api/mailbox/account',

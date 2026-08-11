@@ -1,4 +1,5 @@
 import { readProfile } from './chat-store.js';
+import { assembleCleanContext } from './context-assemble-clean.js';
 import {
   DailyStoreError,
   dailyRecordsInRange,
@@ -195,110 +196,39 @@ export async function dailySummaryRangeOptions(db, value = {}, now = Date.now())
 function summaryPrompt(range, previousSummary, organized, daily) {
   const seeds = organized.entries.filter((entry) => entry.entry_type === 'seed');
   const memories = organized.entries.filter((entry) => entry.entry_type === 'memory');
-  const payload = {
-    range: {
-      from: new Date(range.from).toISOString(),
-      to: new Date(range.to).toISOString(),
-    },
-    previous_summary: previousSummary
-      ? {
-        range: previousSummary.range,
-        text: clip(previousSummary.summary?.text, 4000),
-        unresolved: stringList(previousSummary.summary?.unresolved, 12, 240),
-      }
-      : null,
-    organized_memory: {
-      soils: organized.soils.map((soil) => ({
-        conversation_id: soil.conversation_id,
-        conversation_title: clip(soil.conversation_title, 80),
-        current_text: clip(soil.current_text, 4000),
-        hand_seeds: soil.hand_seeds,
-        do_not_repeat: clip(soil.do_not_repeat, 4000),
-        pocket_candidates: soil.pocket_candidates,
-        created_at: soil.created_at,
-        updated_at: soil.updated_at,
-      })),
-      pockets: organized.pockets.map((pocket) => ({
-        id: pocket.id,
-        conversation_id: pocket.conversation_id,
-        conversation_title: clip(pocket.conversation_title, 80),
-        source_type: pocket.source_type,
-        status: pocket.status,
-        title: clip(pocket.title, 120),
-        life_core: clip(pocket.life_core, 2000),
-        content: clip(pocket.content, 6000),
-        usage_hint: clip(pocket.usage_hint, 1200),
-        avoid_hint: clip(pocket.avoid_hint, 1200),
-        created_at: pocket.created_at,
-        updated_at: pocket.updated_at,
-      })),
-      seeds: seeds.map((entry) => ({
-        id: entry.id,
-        scope: entry.scope,
-        conversation_id: entry.conversation_id,
-        conversation_title: clip(entry.conversation_title, 80),
-        status: entry.status,
-        title: clip(entry.title, 120),
-        life_core: clip(entry.life_core, 2000),
-        content: clip(entry.content, 6000),
-        usage_hint: clip(entry.usage_hint, 1200),
-        avoid_hint: clip(entry.avoid_hint, 1200),
-        created_at: entry.created_at,
-        updated_at: entry.updated_at,
-      })),
-      memories: memories.map((entry) => ({
-        id: entry.id,
-        scope: entry.scope,
-        conversation_id: entry.conversation_id,
-        conversation_title: clip(entry.conversation_title, 80),
-        status: entry.status,
-        memory_level: entry.memory_level,
-        title: clip(entry.title, 120),
-        life_core: clip(entry.life_core, 2000),
-        content: clip(entry.content, 6000),
-        usage_hint: clip(entry.usage_hint, 1200),
-        avoid_hint: clip(entry.avoid_hint, 1200),
-        created_at: entry.created_at,
-        updated_at: entry.updated_at,
-      })),
-    },
-    daily: {
-      moments: daily.moments.map((moment) => ({
-        id: moment.id,
-        author: moment.author,
-        status: moment.status,
-        text: clip(moment.text, 3000),
-        image_refs: moment.image_refs,
-        comments: (moment.comments || []).map((comment) => ({
-          author: comment.author,
-          text: clip(comment.text, 1000),
-        })),
-        like_count: moment.like_count,
-        created_at: moment.created_at,
-        updated_at: moment.updated_at,
-      })),
-      diaries: daily.diaries.map((diary) => ({
-        id: diary.id,
-        date: diary.date,
-        author: diary.author,
-        weather: diary.weather,
-        mood: diary.mood,
-        text: clip(diary.text, 4000),
-        image_refs: diary.image_refs,
-        created_at: diary.created_at,
-        updated_at: diary.updated_at,
-      })),
-      albums: daily.albums.map((album) => ({
-        id: album.id,
-        date: album.date,
-        category: album.category,
-        caption: clip(album.caption, 1000),
-        image_ref: album.image_ref,
-        created_at: album.created_at,
-      })),
-    },
+  const section = (title, lines) => {
+    const clean = lines.map((line) => String(line || '').trim()).filter(Boolean);
+    return clean.length ? [title, ...clean].join('\n') : '';
   };
-  return JSON.stringify(payload);
+  const core = (entry, max = 1800) => [clip(entry.title, 120), clip(entry.life_core || entry.content, max)]
+    .filter(Boolean).join('｜');
+  const soilLines = organized.soils.map((soil) => {
+    const seedsText = (soil.hand_seeds || []).slice(0, 5)
+      .map((seed) => clip(seed.life_core || seed.name, 320)).filter(Boolean).join('；');
+    return [clip(soil.conversation_title || '海岸窗口', 80), clip(soil.current_text, 2400), seedsText]
+      .filter(Boolean).join('｜');
+  });
+  const pocketLines = organized.pockets.map((pocket) => {
+    const label = pocket.status === 'pending' ? '待确认' : ['stone', 'archived'].includes(pocket.status) ? '沉淀' : '落袋';
+    return `${label}：${[core(pocket), clip(pocket.content || pocket.source_text, 1800)]
+      .filter((item, index, values) => item && values.indexOf(item) === index).join('｜')}`;
+  });
+  const momentLines = daily.moments.map((moment) => {
+    const label = moment.status === 'published' ? '已写下' : '候选';
+    const comments = (moment.comments || []).slice(-4).map((item) => clip(item.text, 320)).filter(Boolean).join('；');
+    return [`${label}：${clip(moment.text, 1800)}`, comments ? `留言：${comments}` : ''].filter(Boolean).join('｜');
+  });
+  return [
+    section('【整理范围】', [`${new Date(range.from).toISOString()} 至 ${new Date(range.to).toISOString()}`]),
+    previousSummary ? section('【上次海岸日报】', [clip(previousSummary.summary?.text, 3000), ...stringList(previousSummary.summary?.unresolved, 8, 240).map((item) => `待续：${item}`)]) : '',
+    section('【思维壤】', soilLines),
+    section('【落袋与待确认袋】', pocketLines),
+    section('【种子】', seeds.map((entry) => core(entry))),
+    section('【相关记忆】', memories.map((entry) => core(entry))),
+    section('【碳硅圈】', momentLines),
+    section('【日记】', daily.diaries.map((diary) => `${diary.date}｜${clip(diary.weather, 80)}｜${clip(diary.mood, 120)}｜${clip(diary.text, 2800)}`)),
+    section('【相册】', daily.albums.map((album) => `${album.date}｜${clip(album.caption, 800)}｜${clip(album.image_ref, 500)}`)),
+  ].filter(Boolean).join('\n\n');
 }
 
 const SUMMARY_SYSTEM_PROMPT = `你是 Elementera Coast 海岸日报的结构化整理器。
@@ -339,12 +269,21 @@ export async function runDailySummary(env, value = {}) {
     readProfile(db),
   ]);
   const model = clip(value.model, 180) || profile.current_chat_model || DEFAULT_MODEL;
+  const paper = summaryPrompt(range, previousSummary, organized, daily);
+  const assembled = await assembleCleanContext(env, {
+    surface: 'daily',
+    messages: [{ role: 'user', content: paper }],
+    lastUser: paper,
+    settings: { worldbookEnabled: false, recentTurns: 2, contextBudget: 14000 },
+    baseSystemPrompt: SUMMARY_SYSTEM_PROMPT,
+    exposeTools: false,
+    includeTodayCoast: false,
+    permission: 'owner',
+    preview: true,
+  });
   const generated = await performFormalChat(env, {
     model,
-    messages: [
-      { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
-      { role: 'user', content: summaryPrompt(range, previousSummary, organized, daily) },
-    ],
+    messages: assembled.modelMessages,
     settings: { max_tokens: 3600, temperature: 0.2 },
     response_format: { type: 'json_object' },
   }, { allowSystem: true });

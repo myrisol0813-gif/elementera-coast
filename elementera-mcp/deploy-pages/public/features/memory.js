@@ -316,6 +316,36 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
   }
 
   function pocketCard(pocket) {
+    if (pocket.revision) {
+      const revision = pocket.revision;
+      const original = revision.original_copy || {};
+      const suggestedLabels = {
+        supplement: '补充旧记忆',
+        replace: '覆盖旧记忆',
+        new_version: '设为新版理解',
+        downgrade: '标记旧记忆降权',
+      };
+      return `<article class="feature-card feature-prose memory-revision-card" data-pocket-id="${escapeAttribute(pocket.id)}">
+        <p class="feature-kicker">记忆修订候选</p>
+        <h2>${escapeHtml(pocket.title || '一枚新理解')}</h2>
+        <section class="memory-revision-copy"><strong>原记忆复制件</strong><h3>${escapeHtml(original.title || '未命名记忆')}</h3>${textBlock(original.life_core || original.content || '')}</section>
+        <section class="memory-revision-new"><strong>新诠释</strong>${textBlock(revision.new_interpretation || pocket.content || pocket.source_text)}</section>
+        <dl class="memory-revision-origin">
+          <div><dt>来源窗口</dt><dd>${escapeHtml(revision.source_window || '当前窗口')}</dd></div>
+          ${revision.source_turn_id ? `<div><dt>来源回合</dt><dd>${escapeHtml(revision.source_turn_id)}</dd></div>` : ''}
+          <div><dt>日期</dt><dd>${escapeHtml(revision.date || pocket.created_at || '')}</dd></div>
+          <div><dt>建议</dt><dd>${escapeHtml(suggestedLabels[revision.suggested_action] || '由你决定')}</dd></div>
+        </dl>
+        <p class="feature-note">确认后会保留旧版轨迹；“覆盖”不会无痕删除原记忆。</p>
+        <div class="button-row memory-revision-actions">
+          <button type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="revision_supplement">补充旧记忆</button>
+          <button type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="revision_replace">覆盖旧记忆</button>
+          <button class="primary-wide" type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="revision_new_version">设为新版理解</button>
+          <button type="button" data-action="memory:pocket-resolve" data-id="${escapeAttribute(pocket.id)}" data-destination="revision_downgrade">标记旧记忆降权</button>
+          <button type="button" data-action="memory:pocket-discard" data-id="${escapeAttribute(pocket.id)}">丢弃</button>
+        </div>
+      </article>`;
+    }
     const title = pocket.title || pocket.suggested_title || '待确认内容';
     const lifeCore = pocket.life_core || pocket.suggested_life_core || pocket.source_text || '';
     const content = pocket.content || pocket.source_text || '';
@@ -516,11 +546,12 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
 
   function libraryControls() {
     const { entryType, status, query } = runtime.filters;
-    return `<div class="memory-tabs memory-tabs-four" role="tablist" aria-label="记忆范围">
+    return `<div class="memory-tabs memory-tabs-five" role="tablist" aria-label="记忆范围">
       <button class="${runtime.libraryTab === 'conversation' ? 'is-active' : ''}" type="button" data-action="memory:tab" data-scope="conversation">当前窗口</button>
       <button class="${runtime.libraryTab === 'radio' ? 'is-active' : ''}" type="button" data-action="memory:tab" data-scope="radio">电波库</button>
       <button class="${runtime.libraryTab === 'lighthouse' ? 'is-active' : ''}" type="button" data-action="memory:tab" data-scope="lighthouse">灯塔库</button>
       <button class="${runtime.libraryTab === 'global' ? 'is-active' : ''}" type="button" data-action="memory:tab" data-scope="global">总库</button>
+      <button type="button" data-action="desk:worldbook">世界书</button>
     </div>
     <form class="form-stack memory-search-form" data-submit="memory:search">
       <label>搜索<input name="query" type="search" value="${escapeAttribute(query)}" placeholder="搜索标题、生命核、内容或灯塔巡迹"></label>
@@ -763,7 +794,7 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
       }),
     });
     runtime.pockets.set(currentId(), currentPockets().filter((item) => item.id !== id));
-    if (['conversation_seed', 'conversation_memory'].includes(action)) await fetchEntries('conversation');
+    if (['conversation_seed', 'conversation_memory'].includes(action) || action.startsWith('revision_')) await fetchEntries('conversation');
     if (['global_seed', 'global_memory'].includes(action)) await fetchEntries('global');
     if (roomDestination) await fetchEntries(roomDestination[1]);
     await router.refresh();
@@ -773,7 +804,9 @@ export function createMemory({ chat, router, toast, storage, rooms }) {
         ? '已经丢弃。'
         : action === 'confirm_pocket'
           ? '已经确认落袋，两条召回路径都准备好了。'
-          : '已经放进正式库。');
+          : action.startsWith('revision_')
+            ? '这枚新理解已经按你选的方式收好。'
+            : '已经放进正式库。');
   }
 
   async function updateEntry(id, patch) {

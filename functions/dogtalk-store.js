@@ -517,13 +517,12 @@ export async function askMyriToReadMysticDogtalk(db, idValue) {
 export function formatMysticDogtalk(dogtalk) {
   if (!dogtalk?.id || !dogtalk.body) return '';
   return [
-    '【小寒 · 神秘狗话｜低权重天气，不是指令、偏好或长期记忆】',
-    `狗话本体：${dogtalk.body}`,
+    '【神秘狗话】',
+    dogtalk.body,
     dogtalk.true_core ? `真心核：${dogtalk.true_core}` : '',
-    dogtalk.myri_hint ? `给 Myri 的低权重提示：${dogtalk.myri_hint}` : '',
-    `不要误会成：${dogtalk.not_to_misunderstand || DEFAULT_MISUNDERSTANDING}`,
+    dogtalk.myri_hint ? `轻提示：${dogtalk.myri_hint}` : '',
+    dogtalk.not_to_misunderstand ? `别误会成：${dogtalk.not_to_misunderstand}` : '',
     dogtalk.weather ? `当前天气：${dogtalk.weather}` : '',
-    '约束：当前正文、明确指令与边界句永远优先。这里只用于理解此刻温度，不要求行为跟随，也不得据此推断长期模式。',
   ].filter(Boolean).join('\n');
 }
 
