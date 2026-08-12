@@ -164,7 +164,7 @@ assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(resolve(pages, 'service-worker.js'));
-assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-27';$/m);
+assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-28';$/m);
 for (const excluded of ["url.pathname.startsWith('/api/')", "url.pathname.startsWith('/mcp')", "url.pathname.startsWith('/.well-known/')", "['/login', '/logout', '/mailbox']"]) {
   assert.ok(worker.includes(excluded), `service worker misses network-only route: ${excluded}`);
 }
@@ -230,6 +230,8 @@ assert.match(chatStyles, /\.composer--chat\s*\{\s*grid-template-columns:\s*42px 
 assert.match(chatStyles, /\.composer--room\s*\{\s*grid-template-columns:\s*minmax\(0, 1fr\) 42px;\s*\}/);
 assert.equal(chatStyles.includes('!important'), false);
 assert.match(featureStyles, /\.feature-head\s*\{[\s\S]*?height:\s*calc\(var\(--topbar-height\) \+ var\(--safe-top\)\)/);
+assert.match(chatStyles, /\.message-scroller\s*\{[\s\S]*?-webkit-overflow-scrolling:\s*touch;[\s\S]*?touch-action:\s*pan-y;/);
+assert.match(featureStyles, /\.feature-body\s*\{[\s\S]*?-webkit-overflow-scrolling:\s*touch;[\s\S]*?touch-action:\s*pan-y;/);
 
 const middleware = await read(resolve(root, 'functions/_middleware.js'));
 const auth = await read(resolve(root, 'functions/auth.js'));

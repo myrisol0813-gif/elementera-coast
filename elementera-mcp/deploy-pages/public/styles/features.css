@@ -2,6 +2,7 @@
   position: fixed;
   z-index: 70;
   inset: 0;
+  min-height: 0;
   background: var(--bg);
 }
 
@@ -10,6 +11,7 @@
   grid-template-rows: calc(var(--topbar-height) + var(--safe-top)) minmax(0, 1fr) auto;
   width: min(100%, 920px);
   height: 100%;
+  min-height: 0;
   margin: 0 auto;
   background: var(--bg);
 }
@@ -82,6 +84,8 @@
 .feature-body {
   min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   overscroll-behavior: contain;
   padding: 18px max(16px, var(--safe-right)) calc(34px + var(--safe-bottom)) max(16px, var(--safe-left));
 }
