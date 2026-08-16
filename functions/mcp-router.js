@@ -3,10 +3,16 @@ import { McpAuthError, MCP_SCOPES, mcpResourceMetadata } from './mcp-auth.js';
 import {
   callCoastMcpTool,
   coastMcpInstructions,
-  coastMcpToolNames,
   coastMcpVersion,
   listCoastMcpTools,
 } from './mcp-tools.js';
+import {
+  THINKING_BLOCK_TOOL,
+  THINKING_BLOCK_TOOL_NAME,
+  callThinkingBlockTool,
+  listThinkingBlockResources,
+  readThinkingBlockResource,
+} from './thinking-block-mcp.js';
 
 const PUBLIC_PATHS = new Set([
   '/.well-known/oauth-protected-resource',
@@ -61,6 +67,10 @@ function protocolVersion(params) {
   return SUPPORTED_PROTOCOL_VERSIONS.has(requested) ? requested : null;
 }
 
+function listedTools() {
+  return [...listCoastMcpTools(), THINKING_BLOCK_TOOL];
+}
+
 async function handleRpcMessage(message, request, env) {
   if (!validRequest(message)) return rpcError(message?.id, -32600, 'Invalid Request');
   const notification = message.id === undefined;
@@ -74,7 +84,10 @@ async function handleRpcMessage(message, request, env) {
     }
     return rpcResult(message.id, {
       protocolVersion: version,
-      capabilities: { tools: { listChanged: false } },
+      capabilities: {
+        tools: { listChanged: false },
+        resources: { subscribe: false, listChanged: false },
+      },
       serverInfo: {
         name: 'elementera-coast-porch',
         title: 'Elementera Coast MCP Porch',
@@ -85,20 +98,32 @@ async function handleRpcMessage(message, request, env) {
   }
   if (message.method === 'ping') return rpcResult(message.id, {});
   if (message.method === 'tools/list') {
-    return rpcResult(message.id, { tools: listCoastMcpTools() });
+    return rpcResult(message.id, { tools: listedTools() });
+  }
+  if (message.method === 'resources/list') {
+    return rpcResult(message.id, { resources: listThinkingBlockResources() });
+  }
+  if (message.method === 'resources/read') {
+    const uri = message.params?.uri;
+    if (typeof uri !== 'string') return rpcError(message.id, -32602, 'Invalid resources/read parameters');
+    const result = readThinkingBlockResource(uri);
+    if (!result) return rpcError(message.id, -32602, 'Unknown resource URI');
+    return rpcResult(message.id, result);
   }
   if (message.method === 'tools/call') {
     const params = message.params;
     if (!params || typeof params !== 'object' || Array.isArray(params) || typeof params.name !== 'string') {
       return rpcError(message.id, -32602, 'Invalid tools/call parameters');
     }
-    const result = await callCoastMcpTool(
-      params.name,
-      params.arguments,
-      request,
-      env,
-      params._meta || {},
-    );
+    const result = params.name === THINKING_BLOCK_TOOL_NAME
+      ? await callThinkingBlockTool(params.arguments, request, env)
+      : await callCoastMcpTool(
+        params.name,
+        params.arguments,
+        request,
+        env,
+        params._meta || {},
+      );
     return rpcResult(message.id, result);
   }
   return rpcError(message.id, -32601, 'Method not found');
@@ -141,7 +166,7 @@ export async function routeMcpRequest(request, env) {
   }
   if (url.pathname === '/mcp/manifest') {
     if (request.method !== 'GET') return apiError('method_not_allowed', 'Method not allowed.', 405);
-    const toolDefinitions = listCoastMcpTools();
+    const toolDefinitions = listedTools();
     return json({
       name: 'Elementera Coast MCP Porch',
       version: coastMcpVersion,
@@ -149,9 +174,10 @@ export async function routeMcpRequest(request, env) {
       endpoint: `${url.origin}/mcp`,
       authentication: 'oauth2',
       scopes: MCP_SCOPES,
-      tools: coastMcpToolNames,
+      tools: toolDefinitions.map((tool) => tool.name),
       tool_count: toolDefinitions.length,
       tool_definitions: toolDefinitions,
+      resources: listThinkingBlockResources(),
     }, 200, corsHeaders());
   }
   if (url.pathname === '/.well-known/oauth-protected-resource') {
