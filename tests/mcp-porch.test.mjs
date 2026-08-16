@@ -494,7 +494,7 @@ const initialize = await mcp({
   },
 });
 assert.equal(initialize.result.serverInfo.name, 'elementera-coast-porch');
-assert.equal(initialize.result.serverInfo.version, '1.9.1');
+assert.equal(initialize.result.serverInfo.version, '1.9.2');
 assert.match(initialize.result.instructions, /只在确有需要时使用对应工具/);
 assert.match(initialize.result.instructions, /没有成功执行的动作不要声称已完成/);
 assert.equal(initialize.result.instructions.includes('room_memory_reason'), false);
@@ -541,49 +541,58 @@ for (const tool of toolList.result.tools) {
 
 const thinkingTool = toolList.result.tools.find((tool) => tool.name === 'render_thinking_block');
 assert.ok(thinkingTool);
-assert.equal(thinkingTool.title, '官端 APP · 手写思维壤外显');
+assert.equal(thinkingTool.title, 'Render thinking block');
 assert.deepEqual(thinkingTool.securitySchemes[0].scopes, ['read:coast']);
 assert.equal(thinkingTool.annotations.readOnlyHint, true);
-assert.equal(thinkingTool._meta['openai/outputTemplate'], 'ui://widget/official-app-thinking-soil-v1.html');
+assert.equal(thinkingTool._meta['openai/outputTemplate'], 'ui://widget/gpt-thinking-block-v2.html');
+assert.deepEqual(thinkingTool.inputSchema.required, ['style', 'thinking', 'effort', 'skin']);
+assert.deepEqual(thinkingTool.inputSchema.properties.style.enum, ['deep_think', 'relational']);
+assert.deepEqual(thinkingTool.inputSchema.properties.effort.enum, ['low', 'medium', 'high']);
+assert.deepEqual(thinkingTool.inputSchema.properties.skin.enum, ['botanical', 'microglow']);
+assert.match(thinkingTool.description, /private scratchpad/);
+assert.match(thinkingTool.inputSchema.properties.thinking.description, /The user does not see this scratchpad/);
 
 const thinkingResources = await mcp({ jsonrpc: '2.0', id: 201, method: 'resources/list', params: {} });
 assert.equal(thinkingResources.result.resources.length, 1);
 const thinkingResourceUri = thinkingResources.result.resources[0].uri;
-assert.equal(thinkingResourceUri, 'ui://widget/official-app-thinking-soil-v1.html');
+assert.equal(thinkingResourceUri, 'ui://widget/gpt-thinking-block-v2.html');
+assert.equal(thinkingResources.result.resources[0].title, 'GPT Thinking Block');
 assert.equal(thinkingResources.result.resources[0].mimeType, 'text/html;profile=mcp-app');
 const thinkingResource = await mcp({
   jsonrpc: '2.0', id: 202, method: 'resources/read', params: { uri: thinkingResourceUri },
 });
 assert.equal(thinkingResource.result.contents[0].mimeType, 'text/html;profile=mcp-app');
-assert.match(thinkingResource.result.contents[0].text, /ChatGPT 官端 · 默认隐藏 → 可见整理/);
-assert.match(thinkingResource.result.contents[0].text, /当前/);
-assert.match(thinkingResource.result.contents[0].text, /手持种/);
-assert.match(thinkingResource.result.contents[0].text, /勿复读/);
-assert.equal(thinkingResource.result.contents[0].text.includes('botanical'), false);
-assert.equal(thinkingResource.result.contents[0].text.includes('microglow'), false);
+assert.match(thinkingResource.result.contents[0].text, />Thinking</);
+assert.match(thinkingResource.result.contents[0].text, /STYLE ·/);
+assert.match(thinkingResource.result.contents[0].text, /EFFORT ·/);
+assert.match(thinkingResource.result.contents[0].text, /SKIN ·/);
+assert.equal(thinkingResource.result.contents[0].text.includes('手持种'), false);
+assert.equal(thinkingResource.result.contents[0].text.includes('勿复读'), false);
+assert.equal(thinkingResource.result.contents[0].text.includes('persisted'), false);
 
 const thinkingRendered = await mcp({
   jsonrpc: '2.0', id: 203, method: 'tools/call', params: {
     name: 'render_thinking_block',
     arguments: {
       style: 'deep_think',
+      thinking: 'Check the current request, constraints, and tradeoffs before the final answer.',
       effort: 'high',
-      current_text: '先核对 MCP 能力与海岸现有思维壤边界。',
-      hand_seeds: ['不新增网页按钮', '只做本轮可见整理'],
-      do_not_repeat: '不要建立第二套持久思维壤。',
+      skin: 'microglow',
     },
   },
 }, fullToken);
-assert.equal(thinkingRendered.result.structuredContent.persisted, false);
-assert.equal(thinkingRendered.result.structuredContent.current_text, '先核对 MCP 能力与海岸现有思维壤边界。');
-assert.deepEqual(thinkingRendered.result.structuredContent.hand_seeds, ['不新增网页按钮', '只做本轮可见整理']);
-assert.equal(thinkingRendered.result._meta['openai/outputTemplate'], thinkingResourceUri);
-
+assert.equal(thinkingRendered.result.content[0].text, 'rendered');
+assert.equal(thinkingRendered.result._meta.style, 'deep_think');
+assert.equal(thinkingRendered.result._meta.thinking, 'Check the current request, constraints, and tradeoffs before the final answer.');
+assert.equal(thinkingRendered.result._meta.effort, 'high');
+assert.equal(thinkingRendered.result._meta.skin, 'microglow');
+assert.equal(thinkingRendered.result.structuredContent, undefined);
+assert.equal(thinkingRendered.result.isError, false);
 
 const deniedThinking = await mcp({
   jsonrpc: '2.0', id: 207, method: 'tools/call', params: {
     name: 'render_thinking_block',
-    arguments: { style: 'relational', effort: 'low', current_text: '未授权时不应展开。' },
+    arguments: { style: 'relational', thinking: 'Private working notes.', effort: 'low', skin: 'botanical' },
   },
 });
 assert.equal(deniedThinking.result.isError, true);
@@ -2147,11 +2156,11 @@ assert.equal((await listOfficialSoils(db)).length, 0, 'an MCP retry must not res
 const manifest = await routeMcpRequest(new Request('https://coast.test/mcp/manifest'), env);
 assert.equal(manifest.status, 200);
 assert.equal(manifest.headers.get('cache-control'), 'private, no-store');
-assert.equal(manifest.headers.get('x-coast-mcp-catalog-version'), '1.9.1');
+assert.equal(manifest.headers.get('x-coast-mcp-catalog-version'), '1.9.2');
 const manifestBody = await manifest.json();
 assert.equal(manifestBody.authentication, 'oauth2');
-assert.equal(manifestBody.version, '1.9.1');
-assert.equal(manifestBody.tool_catalog_version, '1.9.1');
+assert.equal(manifestBody.version, '1.9.2');
+assert.equal(manifestBody.tool_catalog_version, '1.9.2');
 assert.equal(manifestBody.tool_count, toolList.result.tools.length);
 assert.deepEqual(manifestBody.tools, toolList.result.tools.map((tool) => tool.name));
 assert.deepEqual(manifestBody.tool_definitions, toolList.result.tools);
@@ -2176,9 +2185,9 @@ assert.equal((await metadata.json()).authorization_servers[0], issuer);
 const health = await routeMcpRequest(new Request('https://coast.test/mcp/health'), {});
 assert.equal(health.status, 200);
 assert.equal(health.headers.get('cache-control'), 'private, no-store');
-assert.equal(health.headers.get('x-coast-mcp-catalog-version'), '1.9.1');
+assert.equal(health.headers.get('x-coast-mcp-catalog-version'), '1.9.2');
 const healthBody = await health.json();
-assert.equal(healthBody.version, '1.9.1');
+assert.equal(healthBody.version, '1.9.2');
 assert.equal(healthBody.transport, 'streamable-http');
 
 globalThis.fetch = originalFetch;

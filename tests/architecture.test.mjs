@@ -80,7 +80,7 @@ assert.equal(registry.includes('worldbook.test_match'), false);
 for (const calendarTool of ['calendar.today', 'calendar.list', 'calendar.create', 'calendar.update', 'calendar.delete', 'calendar.comment', 'calendar.env', 'calendar.seen']) {
   assert.ok(`${mcp}\n${calendarMcp}`.includes(calendarTool), `official MCP misses ${calendarTool}`);
 }
-assert.match(mcp, /const VERSION = '1\.9\.1'/);
+assert.match(mcp, /const VERSION = '1\.9\.2'/);
 assert.match(mcp, /executeRegisteredTool\(env\.COAST_CHAT_DB, name/);
 
 for (const forbiddenPattern of [/globalThis\.__[A-Za-z_$]/, /window\.__[A-Za-z_$]/, /setInterval\([^)]*querySelector/s, /document\.write\s*\(/]) {
