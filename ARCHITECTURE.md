@@ -5,6 +5,12 @@ Clean-context baseline: P6.3
 
 This contract covers the Pages document and browser runtime, root `functions/` API, D1 persistence, service worker, and the Streamable HTTP MCP porch at `/mcp`.
 
+The pre-Cloudflare Node.js/Codespaces server, Developer Hands, Write Hands, relay,
+and standalone porch assets are retired. The only canonical runtime is
+`elementera-mcp/deploy-pages/` plus root `functions/`, including the `/mcp`
+Functions route. `elementera-mcp/data/*.json` and `elementera-mcp/CHANGELOG.md`
+remain historical artifacts and are not runtime inputs.
+
 ## Non-negotiable construction rules
 
 1. `elementera-mcp/deploy-pages/index.html` is the only app document and loads one module entry, `public/app.js`.

@@ -3,6 +3,17 @@ Elementera Coast Changelog
 
 All notable changes to Elementera Coast are recorded here.
 
+P6.4 - Node/Codespaces construction island retired
+
+Date: 2026-08-17
+
+- Retired the pre-Cloudflare Node.js/Codespaces server, Developer Hands,
+  Write Hands, relay startup scripts, smoke test, and standalone porch assets.
+- The canonical runtime is now only `deploy-pages/`, root `functions/`, D1,
+  and the Streamable HTTP MCP porch at `/mcp`.
+- Historical `data/*.json` records and this changelog remain preserved and do
+  not participate in the runtime.
+
 v0.4.1 - Protected Write Hands
 
 Date: 2026-06-09

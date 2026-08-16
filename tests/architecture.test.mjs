@@ -29,6 +29,28 @@ const scripts = [...index.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((match
 assert.deepEqual(scripts, [`/public/app.js?v=${APP_CACHE_VERSION}`]);
 for (const duplicate of ['app.html', 'gptlike.html', 'index-next.html']) assert.equal(await exists(resolve(pages, duplicate)), false);
 
+for (const retiredNodeIslandPath of [
+  'elementera-mcp/index.js',
+  'elementera-mcp/dev-hands.js',
+  'elementera-mcp/write-hands.js',
+  'elementera-mcp/start-coast.sh',
+  'elementera-mcp/package.json',
+  'elementera-mcp/package-lock.json',
+  'elementera-mcp/public',
+  'elementera-mcp/scripts',
+  'elementera-mcp/README.md',
+  'elementera-mcp/ARCHITECTURE.md',
+  'elementera-mcp/HANDS_TEST.md',
+]) assert.equal(await exists(resolve(root, retiredNodeIslandPath)), false, `${retiredNodeIslandPath} still exists`);
+for (const historicalDataFile of [
+  'memories.json',
+  'memory-drafts.json',
+  'releases.json',
+  'rooms.json',
+]) assert.equal(await exists(resolve(root, 'elementera-mcp/data', historicalDataFile)), true, `${historicalDataFile} history was removed`);
+const applicationContract = await readFile(resolve(root, 'ARCHITECTURE.md'), 'utf8');
+assert.match(applicationContract, /only canonical runtime is[\s\S]*elementera-mcp\/deploy-pages\/[\s\S]*root `functions\/`/);
+
 const retiredModules = [
   'context-ambient.js', 'context-api.js', 'context-assembler.js', 'context-inspector.js',
   'context-intent.js', 'context-manifest.js', 'context-memory-facets.js', 'context-modes.js',
