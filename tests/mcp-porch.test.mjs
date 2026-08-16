@@ -531,7 +531,7 @@ assert.deepEqual(toolList.result.tools.map((tool) => tool.name), [
   'calendar.comment',
   'calendar.env',
   'calendar.seen',
-  'render_thinking_block',
+  'render_official_app_thinking_soil',
 ]);
 for (const tool of toolList.result.tools) {
   assert.equal(tool._meta.securitySchemes[0].type, 'oauth2');
@@ -539,23 +539,23 @@ for (const tool of toolList.result.tools) {
   assert.deepEqual(tool.securitySchemes, tool._meta.securitySchemes);
 }
 
-const thinkingTool = toolList.result.tools.find((tool) => tool.name === 'render_thinking_block');
+const thinkingTool = toolList.result.tools.find((tool) => tool.name === 'render_official_app_thinking_soil');
 assert.ok(thinkingTool);
-assert.equal(thinkingTool.title, '展开本轮思维壤');
+assert.equal(thinkingTool.title, '官端 APP · 手写思维壤外显');
 assert.deepEqual(thinkingTool.securitySchemes[0].scopes, ['read:coast']);
 assert.equal(thinkingTool.annotations.readOnlyHint, true);
-assert.equal(thinkingTool._meta['openai/outputTemplate'], 'ui://widget/elementera-thinking-soil-v1.html');
+assert.equal(thinkingTool._meta['openai/outputTemplate'], 'ui://widget/official-app-thinking-soil-v1.html');
 
 const thinkingResources = await mcp({ jsonrpc: '2.0', id: 201, method: 'resources/list', params: {} });
 assert.equal(thinkingResources.result.resources.length, 1);
 const thinkingResourceUri = thinkingResources.result.resources[0].uri;
-assert.equal(thinkingResourceUri, 'ui://widget/elementera-thinking-soil-v1.html');
+assert.equal(thinkingResourceUri, 'ui://widget/official-app-thinking-soil-v1.html');
 assert.equal(thinkingResources.result.resources[0].mimeType, 'text/html;profile=mcp-app');
 const thinkingResource = await mcp({
   jsonrpc: '2.0', id: 202, method: 'resources/read', params: { uri: thinkingResourceUri },
 });
 assert.equal(thinkingResource.result.contents[0].mimeType, 'text/html;profile=mcp-app');
-assert.match(thinkingResource.result.contents[0].text, /默认隐藏 → 可见整理/);
+assert.match(thinkingResource.result.contents[0].text, /ChatGPT 官端 · 默认隐藏 → 可见整理/);
 assert.match(thinkingResource.result.contents[0].text, /当前/);
 assert.match(thinkingResource.result.contents[0].text, /手持种/);
 assert.match(thinkingResource.result.contents[0].text, /勿复读/);
@@ -564,7 +564,7 @@ assert.equal(thinkingResource.result.contents[0].text.includes('microglow'), fal
 
 const thinkingRendered = await mcp({
   jsonrpc: '2.0', id: 203, method: 'tools/call', params: {
-    name: 'render_thinking_block',
+    name: 'render_official_app_thinking_soil',
     arguments: {
       style: 'deep_think',
       effort: 'high',
@@ -581,7 +581,7 @@ assert.equal(thinkingRendered.result._meta['openai/outputTemplate'], thinkingRes
 
 const deniedThinking = await mcp({
   jsonrpc: '2.0', id: 207, method: 'tools/call', params: {
-    name: 'render_thinking_block',
+    name: 'render_official_app_thinking_soil',
     arguments: { style: 'relational', effort: 'low', current_text: '未授权时不应展开。' },
   },
 });
