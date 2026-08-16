@@ -8,7 +8,7 @@ import {
 } from './friend-myrisol-prompt.js';
 import { McpAuthError, mcpAuthChallenge, requireMcpAuth } from './mcp-auth.js';
 
-const VERSION = '1.9.1';
+const VERSION = '1.9.2';
 const PRIVATE_RECORD_SCHEMA = Object.freeze({ type: 'object', additionalProperties: true });
 
 function objectSchema(properties = {}, required = []) {
