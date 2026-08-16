@@ -1,0 +1,224 @@
+name: Thinking block quiet aside CI
+
+on:
+  push:
+    branches:
+      - style/thinking-block-quiet-aside
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Apply quiet aside UI
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('functions/thinking-block-mcp.js')
+          s = p.read_text()
+          marker = 'export function readThinkingBlockResource(uri) {'
+          head = s[:s.index(marker)]
+          tail = r'''export function readThinkingBlockResource(uri) {
+            if (String(uri || '') !== WIDGET_URI) return null;
+            return {
+              contents: [{
+                uri: WIDGET_URI,
+                mimeType: WIDGET_MIME,
+                text: WIDGET_HTML,
+                _meta: {
+                  ui: { prefersBorder: false },
+                  'openai/widgetPrefersBorder': false,
+                  'openai/widgetDescription': "A readable themed card showing this turn's thinking, style, effort, and skin.",
+                },
+              }],
+            };
+          }
+
+          const WIDGET_HTML = `<!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+              :root {
+                color-scheme: light dark;
+                font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                --ink: rgba(24, 24, 24, .88);
+                --muted: rgba(24, 24, 24, .46);
+                --faint: rgba(24, 24, 24, .30);
+                --surface: rgba(127, 127, 127, .055);
+              }
+              :root[data-theme="dark"] {
+                --ink: rgba(245, 245, 245, .88);
+                --muted: rgba(245, 245, 245, .48);
+                --faint: rgba(245, 245, 245, .30);
+                --surface: rgba(255, 255, 255, .038);
+              }
+              @media (prefers-color-scheme: dark) {
+                :root:not([data-theme="light"]) {
+                  --ink: rgba(245, 245, 245, .88);
+                  --muted: rgba(245, 245, 245, .48);
+                  --faint: rgba(245, 245, 245, .30);
+                  --surface: rgba(255, 255, 255, .038);
+                }
+              }
+              * { box-sizing: border-box; }
+              body {
+                margin: 0;
+                padding: 0;
+                background: transparent;
+                color: var(--ink);
+                font-family: inherit;
+              }
+              .card {
+                border: 0;
+                border-radius: 11px;
+                background: var(--surface);
+                box-shadow: none;
+                padding: 13px 15px 14px;
+              }
+              .header {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                width: 100%;
+                margin: 0 0 8px;
+                padding: 0;
+                border: 0;
+                background: transparent;
+                color: inherit;
+                font: inherit;
+                text-align: left;
+                cursor: pointer;
+                appearance: none;
+                -webkit-appearance: none;
+                -webkit-tap-highlight-color: transparent;
+                touch-action: manipulation;
+              }
+              .header:hover, .header:active { background: transparent; color: inherit; }
+              .header:focus:not(:focus-visible) { outline: none; }
+              .header:focus-visible {
+                outline: 1px solid var(--faint);
+                outline-offset: 4px;
+                border-radius: 5px;
+              }
+              .title {
+                color: var(--muted);
+                font: 500 12px/1.4 inherit;
+                letter-spacing: 0;
+              }
+              .meta {
+                margin-left: auto;
+                color: var(--faint);
+                font: 400 11px/1.4 inherit;
+                letter-spacing: 0;
+                white-space: nowrap;
+              }
+              .chevron {
+                color: var(--faint);
+                font: 400 12px/1 inherit;
+                transform: translateY(-1px) rotate(180deg);
+                transform-origin: center;
+              }
+              .card[data-collapsed="true"] { padding-bottom: 13px; }
+              .card[data-collapsed="true"] .header { margin-bottom: 0; }
+              .card[data-collapsed="true"] .content { display: none; }
+              .card[data-collapsed="true"] .chevron { transform: translateY(1px) rotate(0deg); }
+              .thinking {
+                margin: 0;
+                white-space: pre-wrap;
+                overflow-wrap: anywhere;
+                color: var(--ink);
+                font: 400 14px/1.68 inherit;
+                letter-spacing: 0;
+              }
+            </style>
+          </head>
+          <body>
+            <section class="card" id="card" data-collapsed="false" aria-label="Thinking block">
+              <button class="header" id="toggle" type="button" aria-expanded="true"
+                      aria-controls="thinking-content" title="Collapse thinking">
+                <span class="title">Thinking</span>
+                <span class="meta" id="meta"></span>
+                <span class="chevron" aria-hidden="true">⌄</span>
+              </button>
+              <div class="content" id="thinking-content">
+                <div class="thinking" id="thinking"></div>
+              </div>
+            </section>
+            <script>
+              const card = document.getElementById("card");
+              const toggle = document.getElementById("toggle");
+
+              function setCollapsed(collapsed) {
+                card.dataset.collapsed = collapsed ? "true" : "false";
+                toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+                toggle.title = collapsed ? "Expand thinking" : "Collapse thinking";
+              }
+
+              toggle.addEventListener("click", () => {
+                setCollapsed(card.dataset.collapsed !== "true");
+              });
+
+              function render() {
+                const api = window.openai || {};
+                const input = api.toolInput || {};
+                const output = api.toolOutput || {};
+                const responseMeta = api.toolResponseMetadata || {};
+                if (api.theme) document.documentElement.dataset.theme = api.theme;
+                const resultMeta = (responseMeta.mcp_tool_result && responseMeta.mcp_tool_result._meta)
+                  || (responseMeta.call_tool_result && responseMeta.call_tool_result._meta)
+                  || responseMeta._meta
+                  || responseMeta;
+                const style = resultMeta.style || input.style || output.style || "deep_think";
+                const effort = resultMeta.effort || input.effort || output.effort || "";
+                const styleLabel = style === "relational" ? "relational" : "deep think";
+                document.getElementById("meta").textContent = effort ? styleLabel + " · " + effort : styleLabel;
+                document.getElementById("thinking").textContent = resultMeta.thinking || input.thinking || output.thinking || "Thinking block captured.";
+              }
+              window.addEventListener("openai:set_globals", render);
+              render();
+            </script>
+          </body>
+          </html>`;
+          '''
+          p.write_text(head + tail)
+
+          p = Path('tests/mcp-porch.test.mjs')
+          s = p.read_text()
+          old = '''assert.match(thinkingResource.result.contents[0].text, />Thinking</);\nassert.match(thinkingResource.result.contents[0].text, /STYLE ·/);\nassert.match(thinkingResource.result.contents[0].text, /EFFORT ·/);\nassert.match(thinkingResource.result.contents[0].text, /SKIN ·/);'''
+          new = '''assert.match(thinkingResource.result.contents[0].text, />Thinking</);\nassert.equal(thinkingResource.result.contents[0]._meta['openai/widgetPrefersBorder'], false);\nassert.equal(thinkingResource.result.contents[0].text.includes('class="badge'), false);\nassert.equal(thinkingResource.result.contents[0].text.includes('linear-gradient'), false);\nassert.equal(thinkingResource.result.contents[0].text.includes('box-shadow:'), true);\nassert.match(thinkingResource.result.contents[0].text, /box-shadow: none/);\nassert.equal(thinkingResource.result.contents[0].text.includes('STYLE ·'), false);\nassert.equal(thinkingResource.result.contents[0].text.includes('EFFORT ·'), false);\nassert.equal(thinkingResource.result.contents[0].text.includes('SKIN ·'), false);'''
+          if old not in s:
+              raise SystemExit('thinking resource assertion block not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+      - name: Verify tool contract untouched
+        run: |
+          grep -q "title: 'Render thinking block'" functions/thinking-block-mcp.js
+          grep -q "Use a private scratchpad before the final answer" functions/thinking-block-mcp.js
+          grep -q "The user does not see this" functions/thinking-block-mcp.js
+          grep -q "required: \['style', 'thinking', 'effort', 'skin'\]" functions/thinking-block-mcp.js
+          grep -q "ui://widget/gpt-thinking-block-v2.html" functions/thinking-block-mcp.js
+          grep -q "widgetPrefersBorder': false" functions/thinking-block-mcp.js
+          ! grep -q "linear-gradient" functions/thinking-block-mcp.js
+          ! grep -q "class=\"badge" functions/thinking-block-mcp.js
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+      - name: Commit validated UI
+        run: |
+          git config user.name "myrisol0813-gif"
+          git config user.email "myrisol0813@gmail.com"
+          git add functions/thinking-block-mcp.js tests/mcp-porch.test.mjs
+          if ! git diff --cached --quiet; then
+            git commit -m "style: make thinking block a quiet inline aside"
+            git push
+          fi
