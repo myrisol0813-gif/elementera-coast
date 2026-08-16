@@ -3,6 +3,11 @@ import { access, readFile, readdir } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  APP_CACHE_NAME,
+  APP_CACHE_VERSION,
+  MAILBOX_CACHE_VERSION,
+} from '../scripts/cache-versions.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const pages = resolve(root, 'elementera-mcp/deploy-pages');
@@ -21,7 +26,7 @@ async function files(dir, extensions = new Set(['.js'])) {
 
 const index = await readFile(resolve(pages, 'index.html'), 'utf8');
 const scripts = [...index.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((match) => match[1]);
-assert.deepEqual(scripts, ['/public/app.js?v=coast-app-27']);
+assert.deepEqual(scripts, [`/public/app.js?v=${APP_CACHE_VERSION}`]);
 for (const duplicate of ['app.html', 'gptlike.html', 'index-next.html']) assert.equal(await exists(resolve(pages, duplicate)), false);
 
 const retiredModules = [
@@ -164,7 +169,7 @@ assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
 
 const worker = await read(resolve(pages, 'service-worker.js'));
-assert.match(worker, /^const CACHE_NAME = 'elementera-coast-app-28';$/m);
+assert.ok(worker.includes(`const CACHE_NAME = '${APP_CACHE_NAME}';`));
 for (const excluded of ["url.pathname.startsWith('/api/')", "url.pathname.startsWith('/mcp')", "url.pathname.startsWith('/.well-known/')", "['/login', '/logout', '/mailbox']"]) {
   assert.ok(worker.includes(excluded), `service worker misses network-only route: ${excluded}`);
 }
@@ -246,7 +251,7 @@ for (const copy of ['海岸信箱', '输入暗号', '填记名册', '之前来�
   assert.ok(auth.includes(copy), `mailbox entrance misses ${copy}`);
 }
 assert.ok(middleware.indexOf('isMailboxApiPath(url.pathname)') < middleware.indexOf('verifySession(request, env)'));
-assert.ok(mailboxPage.includes('/public/mailbox.js?v=coast-mailbox-04'));
+assert.ok(mailboxPage.includes(`/public/mailbox.js?v=${MAILBOX_CACHE_VERSION}`));
 for (const table of ['mailbox_visitors', 'mailbox_messages', 'mailbox_reply_queue', 'visitor_notebook_entries', 'mailbox_thinking_notes', 'mailbox_thought_soils', 'mailbox_memory_pockets', 'mailbox_patrol_batches']) {
   assert.ok(mailboxSchema.includes(`CREATE TABLE IF NOT EXISTS ${table}`), `missing mailbox table: ${table}`);
 }
