@@ -18,7 +18,7 @@ function cleanSeeds(value) {
     .slice(0, MAX_SEEDS);
 }
 
-export const THINKING_BLOCK_TOOL_NAME = 'render_official_app_thinking_soil';
+export const THINKING_BLOCK_TOOL_NAME = 'render_thinking_block';
 
 export const THINKING_BLOCK_TOOL = Object.freeze({
   name: THINKING_BLOCK_TOOL_NAME,
