@@ -1,0 +1,86 @@
+name: Thinking soil legacy alias CI
+
+on:
+  push:
+    branches:
+      - fix/thinking-soil-legacy-alias
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/thinking-soil-legacy-alias
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Add legacy alias and bump catalog
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const replaceOnce = (text, from, to, label) => {
+            if (text.includes(to)) return text;
+            if (!text.includes(from)) throw new Error(`missing target: ${label}`);
+            return text.replace(from, to);
+          };
+
+          const routerPath = 'functions/mcp-router.js';
+          let router = fs.readFileSync(routerPath, 'utf8');
+          router = replaceOnce(
+            router,
+            "const PUBLIC_PATHS = new Set([",
+            "const LEGACY_THINKING_BLOCK_TOOL_NAME = 'render_thinking_block';\n\nconst PUBLIC_PATHS = new Set([",
+            'legacy alias constant',
+          );
+          router = replaceOnce(
+            router,
+            "    const result = params.name === THINKING_BLOCK_TOOL_NAME\n      ? await callThinkingBlockTool(params.arguments, request, env)",
+            "    const result = (params.name === THINKING_BLOCK_TOOL_NAME || params.name === LEGACY_THINKING_BLOCK_TOOL_NAME)\n      ? await callThinkingBlockTool(params.arguments, request, env)",
+            'legacy alias routing',
+          );
+          fs.writeFileSync(routerPath, router);
+
+          const toolsPath = 'functions/mcp-tools.js';
+          let tools = fs.readFileSync(toolsPath, 'utf8');
+          tools = replaceOnce(tools, "const VERSION = '1.9.0';", "const VERSION = '1.9.1';", 'catalog version');
+          fs.writeFileSync(toolsPath, tools);
+
+          const testPath = 'tests/mcp-porch.test.mjs';
+          let test = fs.readFileSync(testPath, 'utf8');
+          test = replaceOnce(
+            test,
+            "assert.ok(thinkingTool);\nassert.equal(thinkingTool.title, '官端 APP · 手写思维壤外显');",
+            "assert.ok(thinkingTool);\nassert.equal(toolList.result.tools.some((tool) => tool.name === 'render_thinking_block'), false);\nassert.equal(thinkingTool.title, '官端 APP · 手写思维壤外显');",
+            'legacy alias hidden from list',
+          );
+          test = replaceOnce(
+            test,
+            "assert.equal(thinkingRendered.result._meta['openai/outputTemplate'], thinkingResourceUri);\n\nconst deniedThinking = await mcp({",
+            "assert.equal(thinkingRendered.result._meta['openai/outputTemplate'], thinkingResourceUri);\n\nconst legacyThinkingRendered = await mcp({\n  jsonrpc: '2.0', id: 2031, method: 'tools/call', params: {\n    name: 'render_thinking_block',\n    arguments: {\n      style: 'deep_think',\n      effort: 'low',\n      current_text: '旧官端快照仍应能调用同一外显 handler。',\n      hand_seeds: [],\n      do_not_repeat: '',\n    },\n  },\n}, fullToken);\nassert.equal(legacyThinkingRendered.result.structuredContent.persisted, false);\nassert.equal(legacyThinkingRendered.result.structuredContent.current_text, '旧官端快照仍应能调用同一外显 handler。');\nassert.equal(legacyThinkingRendered.result._meta['openai/outputTemplate'], thinkingResourceUri);\n\nconst deniedThinking = await mcp({",
+            'legacy alias call test',
+          );
+          fs.writeFileSync(testPath, test);
+          NODE
+      - name: Verify catalog surface
+        run: |
+          grep -q "const VERSION = '1.9.1'" functions/mcp-tools.js
+          grep -q "LEGACY_THINKING_BLOCK_TOOL_NAME = 'render_thinking_block'" functions/mcp-router.js
+          grep -q "render_official_app_thinking_soil" functions/thinking-block-mcp.js
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+      - name: Commit validated compatibility fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add functions/mcp-router.js functions/mcp-tools.js tests/mcp-porch.test.mjs
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "fix: support legacy thinking block calls"
+          git push origin HEAD:fix/thinking-soil-legacy-alias
