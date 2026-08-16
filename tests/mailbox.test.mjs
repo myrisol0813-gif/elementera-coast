@@ -267,11 +267,30 @@ await assert.rejects(
   (error) => error.type === 'mailbox_message_not_found',
 );
 
+const originalPrepare = db.prepare.bind(db);
+const patrolQueries = [];
+db.prepare = (sql) => {
+  patrolQueries.push(String(sql));
+  return originalPrepare(sql);
+};
 const patrol = await fetchUnrepliedMailbox(db, { message_limit: 60 });
+db.prepare = originalPrepare;
 assert.equal(patrol.visitor_count, 2);
 assert.equal(patrol.message_count, 3);
+assert.equal(
+  patrolQueries.filter((sql) => /SELECT COUNT\(\*\) AS count FROM mailbox_messages\s+WHERE visitor_id/.test(sql)).length,
+  0,
+  'patrol pending counts must be collected with the bounded queue query, not one query per visitor',
+);
+assert.equal(
+  patrolQueries.filter((sql) => /AS pending_message_count[\s\S]*LIMIT \?/.test(sql)).length,
+  1,
+  'patrol queue selection must include pending counts and an internal visitor limit',
+);
 const alicePatrol = patrol.visitors.find((visitor) => visitor.visitor_id === alice.id);
 const bobPatrol = patrol.visitors.find((visitor) => visitor.visitor_id === bob.id);
+assert.equal(alicePatrol.pending_message_count, 2);
+assert.equal(bobPatrol.pending_message_count, 1);
 assert.deepEqual(alicePatrol.recent_messages.map((message) => message.visitor_id), [alice.id, alice.id]);
 assert.deepEqual(bobPatrol.recent_messages.map((message) => message.visitor_id), [bob.id]);
 assert.deepEqual(bobPatrol.visitor_notebook_entries, []);

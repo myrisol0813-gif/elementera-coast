@@ -680,6 +680,8 @@ const mailboxReportTool = toolList.result.tools.find(
   (tool) => tool.name === 'mcp_mailbox_patrol_report',
 );
 assert.deepEqual(mailboxFetchTool.securitySchemes[0].scopes, ['read:coast']);
+assert.equal(mailboxFetchTool.inputSchema.properties.message_limit.minimum, 10);
+assert.equal(mailboxFetchTool.inputSchema.properties.message_limit.maximum, 100);
 assert.deepEqual(mailboxReplyTool.securitySchemes[0].scopes, ['write:lighthouse']);
 assert.deepEqual(mailboxResolveTool.securitySchemes[0].scopes, ['write:lighthouse']);
 assert.deepEqual(mailboxReportTool.securitySchemes[0].scopes, ['read:coast']);

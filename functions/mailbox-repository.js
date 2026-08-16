@@ -1,5 +1,11 @@
 import { ensureMailboxSchema } from './mailbox-schema.js';
 
+const PATROL_VISITOR_LIMIT = 50;
+const PATROL_MESSAGE_LIMIT = 100;
+const VISITOR_NOTEBOOK_LIMIT = 100;
+const VISITOR_POCKET_LIMIT = 100;
+const OWNER_VISITOR_LIMIT = 200;
+
 export class MailboxRepositoryError extends Error {
   constructor(type, message, status = 400) {
     super(message);
@@ -15,6 +21,13 @@ function now() {
 
 function boolean(value) {
   return Number(value || 0) === 1;
+}
+
+function boundedLimit(value, fallback, maximum) {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric > 0
+    ? Math.min(numeric, maximum)
+    : fallback;
 }
 
 function parseJson(value, fallback) {
@@ -460,12 +473,16 @@ export async function mailboxStatusForVisitor(db, visitorId) {
   };
 }
 
-export async function listVisitorNotebook(db, visitorId, { visitorVisibleOnly = false } = {}) {
+export async function listVisitorNotebook(db, visitorId, {
+  visitorVisibleOnly = false,
+  limit = VISITOR_NOTEBOOK_LIMIT,
+} = {}) {
   await ensureMailboxSchema(db);
+  const readLimit = boundedLimit(limit, VISITOR_NOTEBOOK_LIMIT, VISITOR_NOTEBOOK_LIMIT);
   const rows = await all(db, `SELECT * FROM visitor_notebook_entries
     WHERE visitor_id = ? AND archived = 0 AND status = 'active'
       ${visitorVisibleOnly ? "AND visibility = 'visitor_visible'" : ''}
-    ORDER BY updated_at DESC, id DESC`, [visitorId]);
+    ORDER BY updated_at DESC, id DESC LIMIT ?`, [visitorId, readLimit]);
   return rows.map(notebookFromRow);
 }
 
@@ -496,20 +513,25 @@ export async function readMailboxThoughtSoil(db, visitorId) {
   );
 }
 
-export async function listMailboxMemoryPockets(db, visitorId, { status = 'pending' } = {}) {
+export async function listMailboxMemoryPockets(db, visitorId, {
+  status = 'pending',
+  limit = VISITOR_POCKET_LIMIT,
+} = {}) {
   await ensureMailboxSchema(db);
+  const readLimit = boundedLimit(limit, VISITOR_POCKET_LIMIT, VISITOR_POCKET_LIMIT);
   const rows = await all(db, `SELECT * FROM mailbox_memory_pockets
     WHERE visitor_id = ? AND status = ?
-    ORDER BY updated_at DESC, id DESC`, [visitorId, status]);
+    ORDER BY updated_at DESC, id DESC LIMIT ?`, [visitorId, status, readLimit]);
   return rows.map(pocketFromRow);
 }
 
 async function recentMessagesForPatrol(db, visitorId, limit) {
+  const readLimit = boundedLimit(limit, 60, PATROL_MESSAGE_LIMIT);
   const rows = await all(db, `SELECT * FROM (
       SELECT * FROM mailbox_messages
       WHERE visitor_id = ? AND status != 'hidden'
       ORDER BY created_at DESC, id DESC LIMIT ?
-    ) ORDER BY created_at ASC, id ASC`, [visitorId, limit]);
+    ) ORDER BY created_at ASC, id ASC`, [visitorId, readLimit]);
   return rows.map(messageFromRow);
 }
 
@@ -523,19 +545,25 @@ export async function claimMailboxPatrol(db, { messageLimit = 60 } = {}) {
       v.display_name,
       v.preferred_name,
       v.allow_memory,
-      v.privacy_level
+      v.privacy_level,
+      COALESCE(pending.pending_message_count, 0) AS pending_message_count
     FROM mailbox_reply_queue q
     JOIN mailbox_visitors v ON v.id = q.visitor_id
+    LEFT JOIN (
+      SELECT visitor_id, COUNT(*) AS pending_message_count
+      FROM mailbox_messages
+      WHERE role = 'visitor' AND status = 'waiting_for_myri'
+      GROUP BY visitor_id
+    ) pending ON pending.visitor_id = q.visitor_id
     WHERE q.status IN ('pending', 'processing') AND v.is_active = 1
-    ORDER BY q.updated_at ASC, q.id ASC`);
-  const pendingCounts = await Promise.all(queues.map(async (queue) => {
-    const row = await first(db, `SELECT COUNT(*) AS count FROM mailbox_messages
-      WHERE visitor_id = ? AND role = 'visitor' AND status = 'waiting_for_myri'`, [queue.visitor_id]);
-    return Number(row?.count || 0);
-  }));
+    ORDER BY q.updated_at ASC, q.id ASC
+    LIMIT ?`, [PATROL_VISITOR_LIMIT]);
   const batchId = `mailbox-patrol-${crypto.randomUUID()}`;
   const timestamp = now();
-  const messageCount = pendingCounts.reduce((sum, count) => sum + count, 0);
+  const messageCount = queues.reduce(
+    (sum, queue) => sum + Number(queue.pending_message_count || 0),
+    0,
+  );
   await db.batch([
     db.prepare(`INSERT INTO mailbox_patrol_batches (
       id, status, visitor_count, message_count, reply_count, failure_count,
@@ -557,7 +585,7 @@ export async function claimMailboxPatrol(db, { messageLimit = 60 } = {}) {
     )),
   ]);
 
-  const visitors = await Promise.all(queues.map(async (queue, index) => ({
+  const visitors = await Promise.all(queues.map(async (queue) => ({
     visitor_id: queue.visitor_id,
     display_name: queue.display_name,
     preferred_name: queue.preferred_name || queue.display_name,
@@ -565,7 +593,7 @@ export async function claimMailboxPatrol(db, { messageLimit = 60 } = {}) {
     privacy_level: queue.privacy_level,
     queue_id: queue.queue_id,
     latest_message_id: queue.latest_message_id,
-    pending_message_count: pendingCounts[index],
+    pending_message_count: Number(queue.pending_message_count || 0),
     recent_messages: await recentMessagesForPatrol(db, queue.visitor_id, messageLimit),
     visitor_notebook_entries: boolean(queue.allow_memory)
       ? await listVisitorNotebook(db, queue.visitor_id)
@@ -940,8 +968,9 @@ export async function completeMailboxPatrol(db, batchId) {
   };
 }
 
-export async function listOwnerMailboxVisitors(db) {
+export async function listOwnerMailboxVisitors(db, { limit = OWNER_VISITOR_LIMIT } = {}) {
   await ensureMailboxSchema(db);
+  const readLimit = boundedLimit(limit, OWNER_VISITOR_LIMIT, OWNER_VISITOR_LIMIT);
   const rows = await all(db, `SELECT
       v.id AS visitor_id,
       v.display_name,
@@ -961,7 +990,8 @@ export async function listOwnerMailboxVisitors(db) {
     FROM mailbox_visitors v
     LEFT JOIN mailbox_reply_queue q ON q.visitor_id = v.id
     WHERE v.is_active = 1
-    ORDER BY COALESCE(v.last_seen_at, v.created_at) DESC, v.id ASC`);
+    ORDER BY COALESCE(v.last_seen_at, v.created_at) DESC, v.id ASC
+    LIMIT ?`, [readLimit]);
   return rows.map((row) => ({
     visitor_id: row.visitor_id,
     display_name: row.display_name,

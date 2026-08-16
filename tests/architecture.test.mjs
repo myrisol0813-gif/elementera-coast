@@ -258,6 +258,15 @@ for (const table of ['mailbox_visitors', 'mailbox_messages', 'mailbox_reply_queu
 assert.ok(mailboxSchema.includes('passphrase_hash TEXT NOT NULL UNIQUE'));
 assert.ok(mailboxAuth.includes('const PBKDF2_ITERATIONS = 100000'));
 assert.ok(mailboxRepository.includes('is_visible_to_owner, safety_flag'));
+for (const limit of [
+  'PATROL_VISITOR_LIMIT',
+  'PATROL_MESSAGE_LIMIT',
+  'VISITOR_NOTEBOOK_LIMIT',
+  'VISITOR_POCKET_LIMIT',
+  'OWNER_VISITOR_LIMIT',
+]) assert.ok(mailboxRepository.includes(limit), `mailbox repository misses ${limit}`);
+assert.match(mailboxRepository, /AS pending_message_count[\s\S]*LIMIT \?/);
+assert.equal(mailboxRepository.includes('const pendingCounts = await Promise.all'), false);
 assert.equal(ownerMailbox.includes('content'), false, 'owner mailbox route cannot return sealed content');
 assert.equal(ownerMailbox.includes('visitor_notebook_entries'), false, 'owner mailbox route cannot read notebook text');
 assert.ok(mailboxFrontend.includes('确认落袋'));
