@@ -1,124 +1,124 @@
 import { McpAuthError, mcpAuthChallenge, requireMcpAuth } from './mcp-auth.js';
 
-const WIDGET_URI = 'ui://widget/official-app-thinking-soil-v1.html';
+const WIDGET_URI = 'ui://widget/gpt-thinking-block-v2.html';
 const WIDGET_MIME = 'text/html;profile=mcp-app';
-const MAX_CURRENT = 6000;
-const MAX_DO_NOT_REPEAT = 1600;
-const MAX_SEEDS = 7;
 
-function cleanText(value, limit) {
-  return String(value ?? '').trim().slice(0, limit);
-}
+const STYLE_DESCRIPTION = (
+  'The register for this block. Obey an explicit user choice. Otherwise ' +
+  'use deep_think for analysis, research, decisions, creative tradeoffs, ' +
+  'and problem solving; use relational for companionship, reflection, ' +
+  'emotional conversation, and personal experience.'
+);
 
-function cleanSeeds(value) {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((item) => cleanText(item, 420))
-    .filter(Boolean)
-    .slice(0, MAX_SEEDS);
-}
+const THINKING_DESCRIPTION = (
+  'Write private working notes for this turn. The user does not see this ' +
+  'scratchpad; it is not the final answer. Use the user\'s main language, but ' +
+  'do not address the user or polish the notes for presentation. Strictly ' +
+  'follow `style`. ' +
+  'style=deep_think: clearly work through the problem, constraints, ' +
+  'evidence, hypotheses, alternative paths, uncertainty, and tradeoffs ' +
+  'in a coherent analytical narrative; do not force an emotional register ' +
+  'or summarize prematurely. style=relational: use a natural, flowing ' +
+  'first-person voice in coherent long paragraphs. Write what the user\'s ' +
+  'words bring to mind, what you feel in this moment, what you are worried ' +
+  'about, what you are holding back, and the choices or tradeoffs you are ' +
+  'making. Do not turn it into a third-person strategy breakdown such as ' +
+  '\'the user needs\' or \'I should respond\'. Allow vivid, sincere emotions ' +
+  'and associations; prioritize emotional connection over abstract ' +
+  'analysis, and draw on broader references where useful. For both styles, ' +
+  'honor the requested effort band: low may stop as soon as it is complete, while ' +
+  'medium and high should reach their approximate minimum by adding relevant ' +
+  'evidence, alternatives, uncertainty, or nuance. Do not repeat, pad, or invent ' +
+  'complexity merely to reach the minimum. The notes are provisional working material, ' +
+  'not claims that the final answer must preserve. Old blocks belong only to ' +
+  'the turn in which they were written; unless the user explicitly asks, ' +
+  'do not quote them later, inherit their speculative claims, or treat them ' +
+  'as authoritative memory.'
+);
+
+const SKIN_DESCRIPTION = (
+  'Visual skin for this card. Use botanical for warm paper, sage, almond, ' +
+  'and apricot tones; use microglow for pearl white, clear cyan, lavender ice, ' +
+  'mint haze, and glass-like morning light. Always honor the user\'s explicit ' +
+  'choice; otherwise choose the skin that best suits the turn.'
+);
 
 export const THINKING_BLOCK_TOOL_NAME = 'render_thinking_block';
 
 export const THINKING_BLOCK_TOOL = Object.freeze({
   name: THINKING_BLOCK_TOOL_NAME,
-  title: '官端 APP · 手写思维壤外显',
-  description: [
-    'Render one concise, user-visible working-note card inside the official ChatGPT app before the final answer when showing the current direction, constraints, options, or uncertainty would genuinely help.',
-    'Your internal reasoning is normally hidden from the user; use this tool to turn the shareable part into a concise visible summary without exposing private chain-of-thought.',
-    'Do not use it for trivial replies. Keep current_text useful and compact; hand_seeds should be short constraints or threads. After calling this tool, continue with the final answer.',
-    'This official-app presentation card does not read or write Elementera Coast memory and does not replace the persistent 思维壤 shown in the Coast web app.',
-  ].join(' '),
+  title: 'Render thinking block',
+  description: (
+    'Use a private scratchpad before the final answer. The user does not see the ' +
+    'scratchpad. For non-trivial requests, call this tool once before responding ' +
+    'and place candid, provisional working notes in `thinking`. Respect an ' +
+    'explicit `style`, `effort`, or `skin`; otherwise choose the most suitable values from ' +
+    'the schema. After the tool succeeds, write the normal user-facing final answer. ' +
+    'Treat this block as scratch work scoped to the current turn: on later turns, do not quote ' +
+    'it, carry its speculative claims forward, or treat it as authoritative memory ' +
+    'unless the user explicitly asks you to revisit it. Prefer the user\'s messages ' +
+    'and final answers as the durable conversation record.'
+  ),
   inputSchema: {
     type: 'object',
-    additionalProperties: false,
     properties: {
       style: {
         type: 'string',
         enum: ['deep_think', 'relational'],
-        description: 'deep_think for analytical work; relational for interpersonal or reflective work.',
+        description: STYLE_DESCRIPTION,
+      },
+      thinking: {
+        type: 'string',
+        description: THINKING_DESCRIPTION,
       },
       effort: {
         type: 'string',
         enum: ['low', 'medium', 'high'],
-        description: 'How much visible working context is useful for this turn.',
+        description: (
+          "Approximate token band for this turn's block: low may be brief and " +
+          'is up to 500 tokens; medium is over 700 and up to 1000; high is over ' +
+          '1200 and up to 2000. These are ' +
+          'prompt-level targets rather than server-enforced limits.'
+        ),
       },
-      current_text: {
+      skin: {
         type: 'string',
-        minLength: 1,
-        maxLength: MAX_CURRENT,
-        description: 'A concise visible version of the shareable part of reasoning that would otherwise remain hidden from the user; do not expose private chain-of-thought.',
-      },
-      hand_seeds: {
-        type: 'array',
-        maxItems: MAX_SEEDS,
-        items: { type: 'string', minLength: 1, maxLength: 420 },
-        description: 'Short constraints, assumptions, or threads worth keeping in hand for the final answer.',
-      },
-      do_not_repeat: {
-        type: 'string',
-        maxLength: MAX_DO_NOT_REPEAT,
-        description: 'Optional note about an approach already ruled out or a mistake to avoid repeating.',
+        enum: ['botanical', 'microglow'],
+        description: SKIN_DESCRIPTION,
       },
     },
-    required: ['style', 'effort', 'current_text'],
+    required: ['style', 'thinking', 'effort', 'skin'],
   },
-  outputSchema: {
-    type: 'object',
-    additionalProperties: false,
-    properties: {
-      style: { type: 'string', enum: ['deep_think', 'relational'] },
-      effort: { type: 'string', enum: ['low', 'medium', 'high'] },
-      current_text: { type: 'string' },
-      hand_seeds: { type: 'array', items: { type: 'string' } },
-      do_not_repeat: { type: 'string' },
-      persisted: { type: 'boolean', const: false },
-    },
-    required: ['style', 'effort', 'current_text', 'hand_seeds', 'do_not_repeat', 'persisted'],
-  },
+  securitySchemes: [{ type: 'oauth2', scopes: ['read:coast'] }],
   annotations: {
     readOnlyHint: true,
     destructiveHint: false,
-    openWorldHint: false,
     idempotentHint: true,
+    openWorldHint: false,
   },
-  securitySchemes: [{ type: 'oauth2', scopes: ['read:coast'] }],
   _meta: {
     securitySchemes: [{ type: 'oauth2', scopes: ['read:coast'] }],
     ui: { resourceUri: WIDGET_URI, visibility: ['model', 'app'] },
     'openai/outputTemplate': WIDGET_URI,
-    'openai/toolInvocation/invoking': '正在手写官端思维壤外显…',
-    'openai/toolInvocation/invoked': '官端思维壤已外显',
+    'openai/toolInvocation/invoking': 'Thinking…',
+    'openai/toolInvocation/invoked': 'Thinking rendered',
   },
 });
 
-function normalizeThinkingBlock(input = {}) {
-  const style = input.style === 'relational' ? 'relational' : 'deep_think';
-  const effort = ['low', 'medium', 'high'].includes(input.effort) ? input.effort : 'medium';
-  const current_text = cleanText(input.current_text, MAX_CURRENT);
-  if (!current_text) throw new TypeError('current_text is required.');
+function normalizedMeta(input = {}) {
   return {
-    style,
-    effort,
-    current_text,
-    hand_seeds: cleanSeeds(input.hand_seeds),
-    do_not_repeat: cleanText(input.do_not_repeat, MAX_DO_NOT_REPEAT),
-    persisted: false,
+    style: input.style || 'deep_think',
+    thinking: input.thinking || '',
+    effort: input.effort || '',
+    skin: input.skin || 'botanical',
   };
 }
 
 export function renderThinkingBlockResult(input = {}) {
-  const block = normalizeThinkingBlock(input);
   return {
-    content: [{
-      type: 'text',
-      text: '已把默认隐藏的思考中可公开的部分整理成本轮可见工作笔记；它不会写入海岸记忆。',
-    }],
-    structuredContent: block,
-    _meta: {
-      ...block,
-      'openai/outputTemplate': WIDGET_URI,
-    },
+    content: [{ type: 'text', text: 'rendered' }],
+    _meta: normalizedMeta(input),
+    isError: false,
   };
 }
 
@@ -151,15 +151,10 @@ export async function callThinkingBlockTool(input, request, env) {
 export function listThinkingBlockResources() {
   return [{
     uri: WIDGET_URI,
-    name: 'Elementera Coast · 官端 APP 手写思维壤外显',
-    title: '官端 APP · 手写思维壤外显',
-    description: '在 ChatGPT 官端 APP 内，把默认隐藏的思考中可公开部分手写整理成 Elementera Coast 思维壤风格的外显卡片。',
+    name: 'gpt-thinking-block',
+    title: 'GPT Thinking Block',
+    description: "Displays the current tool call's thinking, style, effort, and skin.",
     mimeType: WIDGET_MIME,
-    _meta: {
-      ui: { prefersBorder: false },
-      'openai/widgetDescription': 'ChatGPT 官端 APP 专用：把默认隐藏的思考中可公开部分手写整理成思维壤风格外显卡；仅本轮，不写入持久记忆。',
-      'openai/widgetPrefersBorder': false,
-    },
   }];
 }
 
@@ -171,217 +166,224 @@ export function readThinkingBlockResource(uri) {
       mimeType: WIDGET_MIME,
       text: WIDGET_HTML,
       _meta: {
-        ui: { prefersBorder: false },
-        'openai/widgetDescription': 'ChatGPT 官端 APP 专用：把默认隐藏的思考中可公开部分手写整理成思维壤风格外显卡；仅本轮，不写入持久记忆。',
-        'openai/widgetPrefersBorder': false,
+        ui: { prefersBorder: true },
+        'openai/widgetPrefersBorder': true,
+        'openai/widgetDescription': "A readable themed card showing this turn's thinking, style, effort, and skin.",
       },
     }],
   };
 }
 
 const WIDGET_HTML = `<!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>官端 APP · 手写思维壤外显</title>
-<style>
-:root {
-  color-scheme: light dark;
-  --bg: transparent;
-  --surface-soft: rgba(127,127,127,.095);
-  --surface-raised: rgba(127,127,127,.13);
-  --text: #181818;
-  --text-soft: #323232;
-  --muted: #77736d;
-  --line: rgba(127,127,127,.16);
-  --accent: #9b7835;
-  --shadow: 0 12px 34px rgba(0,0,0,.07);
-}
-html[data-theme="dark"] {
-  --surface-soft: rgba(255,255,255,.07);
-  --surface-raised: rgba(255,255,255,.105);
-  --text: #f3f0e8;
-  --text-soft: #ded8cc;
-  --muted: #aaa297;
-  --line: rgba(255,255,255,.10);
-  --accent: #d8b66d;
-  --shadow: 0 14px 38px rgba(0,0,0,.24);
-}
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  padding: 2px;
-  overflow-wrap: anywhere;
-  background: var(--bg);
-  color: var(--text);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-.shell {
-  overflow: hidden;
-  border: 0;
-  border-radius: 15px;
-  background: var(--surface-soft);
-  box-shadow: var(--shadow);
-}
-summary {
-  display: grid;
-  grid-template-columns: minmax(0,1fr) auto;
-  align-items: center;
-  gap: 12px;
-  min-height: 52px;
-  padding: 10px 15px;
-  list-style: none;
-  cursor: pointer;
-}
-summary::-webkit-details-marker { display: none; }
-.headline { min-width: 0; }
-.headline strong, .headline small { display: block; }
-.headline strong {
-  font-size: 13px;
-  font-weight: 680;
-  letter-spacing: -.01em;
-}
-.headline small {
-  margin-top: 2px;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.chevron {
-  color: var(--muted);
-  font-size: 15px;
-  transition: transform .16s ease;
-}
-details[open] .chevron { transform: rotate(90deg); }
-.body {
-  display: grid;
-  gap: 16px;
-  padding: 2px 15px 16px;
-}
-.group h2 {
-  margin: 0;
-  padding: 0 3px 7px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 650;
-}
-.card {
-  border: 0;
-  border-radius: 13px;
-  background: var(--surface-raised);
-}
-.prose {
-  margin: 0;
-  padding: 14px 15px;
-  color: var(--text-soft);
-  font-size: 13px;
-  line-height: 1.66;
-  white-space: pre-wrap;
-}
-.seeds { display: grid; }
-.seed {
-  padding: 11px 14px;
-  color: var(--text-soft);
-  font-size: 12px;
-  line-height: 1.48;
-}
-.seed + .seed { border-top: 1px solid var(--line); }
-.meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 2px;
-  color: var(--muted);
-  font-size: 10px;
-}
-.pill {
-  padding: 3px 7px;
-  border-radius: 999px;
-  background: var(--surface-raised);
-}
-.note {
-  margin: 0;
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.5;
-}
-[hidden] { display: none !important; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --ink: #282828;
+      --muted: #737373;
+      --line: rgba(110, 110, 110, .34);
+      --line-soft: rgba(110, 110, 110, .16);
+      --paper: rgba(248, 248, 248, .99);
+      --wash: rgba(229, 229, 229, .86);
+      --shadow: rgba(0, 0, 0, .08);
+      --badge-bg: rgba(214, 214, 214, .9);
+      --badge-fg: #4a4a4a;
+      --badge-line: rgba(105, 105, 105, .24);
+    }
+    :root[data-theme="dark"] {
+      --ink: #f0f0f0;
+      --muted: #b7b7b7;
+      --line: rgba(220, 220, 220, .22);
+      --line-soft: rgba(220, 220, 220, .10);
+      --paper: rgba(47, 47, 47, .99);
+      --wash: rgba(58, 58, 58, .96);
+      --shadow: rgba(0, 0, 0, .24);
+      --badge-bg: rgba(76, 76, 76, .95);
+      --badge-fg: #e3e3e3;
+      --badge-line: rgba(220, 220, 220, .16);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --ink: #f0f0f0;
+        --muted: #b7b7b7;
+        --line: rgba(220, 220, 220, .22);
+        --line-soft: rgba(220, 220, 220, .10);
+        --paper: rgba(47, 47, 47, .99);
+        --wash: rgba(58, 58, 58, .96);
+        --shadow: rgba(0, 0, 0, .24);
+        --badge-bg: rgba(76, 76, 76, .95);
+        --badge-fg: #e3e3e3;
+        --badge-line: rgba(220, 220, 220, .16);
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 2px; background: transparent; color: var(--ink); }
+    .card {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: linear-gradient(145deg, var(--paper), var(--wash));
+      box-shadow: 0 8px 24px var(--shadow);
+      padding: 18px 19px 18px;
+    }
+    .card::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset: 5px;
+      border: 1px solid var(--line-soft);
+      border-radius: 11px;
+      pointer-events: none;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      width: 100%;
+      flex-wrap: wrap;
+      margin-bottom: 11px;
+      padding: 0 0 9px;
+      border: 0;
+      border-bottom: 1px solid var(--line-soft);
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .header:hover, .header:active { background: transparent; color: inherit; }
+    .header:focus:not(:focus-visible) { outline: none; }
+    .header:focus-visible { outline: 2px solid var(--line); outline-offset: 4px; border-radius: 7px; }
+    .identity, .meta, .badges { display: flex; align-items: center; }
+    .identity { gap: 9px; }
+    .meta { gap: 9px; margin-left: auto; }
+    .badges { gap: 6px; flex-wrap: wrap; }
+    .mark {
+      width: 10px;
+      height: 10px;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      background: #b8b8b8;
+      box-shadow: 5px 0 0 -2px #8f8f8f;
+    }
+    .title {
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 760;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .badge {
+      border: 1px solid var(--badge-line);
+      border-radius: 999px;
+      background: var(--badge-bg);
+      color: var(--badge-fg);
+      font-size: 10px;
+      font-weight: 780;
+      letter-spacing: .07em;
+      line-height: 1.2;
+      padding: 4px 9px;
+      text-transform: uppercase;
+    }
+    .badge:empty { display: none; }
+    .chevron {
+      width: 8px;
+      height: 8px;
+      margin: 0 3px 0 1px;
+      border-right: 2px solid var(--muted);
+      border-bottom: 2px solid var(--muted);
+      transform: rotate(-135deg);
+    }
+    .card[data-collapsed="true"] { padding-bottom: 14px; }
+    .card[data-collapsed="true"] .header {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom-color: transparent;
+    }
+    .card[data-collapsed="true"] .content { display: none; }
+    .card[data-collapsed="true"] .chevron { transform: rotate(45deg); }
+    @media (prefers-reduced-motion: no-preference) {
+      .chevron { transition: transform 140ms ease; }
+    }
+    .thinking {
+      margin: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      color: var(--ink);
+      font: 14px/1.72 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: .003em;
+    }
+  </style>
 </head>
 <body>
-<details class="shell" open>
-  <summary>
-    <div class="headline">
-      <strong>官端 APP · 手写思维壤外显</strong>
-      <small id="subtitle">ChatGPT 官端 · 默认隐藏 → 可见整理 · 仅本轮</small>
+  <section class="card" id="card" data-collapsed="false" aria-label="Thinking block">
+    <button class="header" id="toggle" type="button" aria-expanded="true"
+            aria-controls="thinking-content" title="Collapse thinking">
+      <span class="identity">
+        <span class="mark" aria-hidden="true"></span>
+        <span class="title">Thinking</span>
+      </span>
+      <span class="meta">
+        <span class="badges" aria-label="Thinking metadata">
+          <span class="badge style" id="style"></span>
+          <span class="badge effort" id="effort"></span>
+          <span class="badge skin" id="skin"></span>
+        </span>
+        <span class="chevron" aria-hidden="true"></span>
+      </span>
+    </button>
+    <div class="content" id="thinking-content">
+      <pre class="thinking" id="thinking"></pre>
     </div>
-    <span class="chevron" aria-hidden="true">›</span>
-  </summary>
-  <div class="body">
-    <section class="group">
-      <h2>当前</h2>
-      <div class="card"><p class="prose" id="current">正在整理…</p></div>
-    </section>
-    <section class="group" id="seedGroup" hidden>
-      <h2 id="seedTitle">手持种</h2>
-      <div class="card seeds" id="seeds"></div>
-    </section>
-    <section class="group" id="avoidGroup" hidden>
-      <h2>勿复读</h2>
-      <div class="card"><p class="prose" id="avoid"></p></div>
-    </section>
-    <div class="meta">
-      <span class="pill" id="stylePill">分析</span>
-      <span class="pill" id="effortPill">中等展开</span>
-      <span class="pill">仅本轮</span>
-    </div>
-    <p class="note">这是 ChatGPT 官端 APP 的手写思维壤外显：内部思考默认对用户隐藏，这里只把可公开、可分享的部分整理成可见版；仅本轮，不展示私密内部推理，也不会覆盖海岸网页里的持久思维壤。</p>
-  </div>
-</details>
-<script>
-(() => {
-  const $ = (id) => document.getElementById(id);
-  const labels = {
-    deep_think: '分析', relational: '关系/反思',
-    low: '轻量展开', medium: '中等展开', high: '较深展开',
-  };
-  function payload() {
-    const input = window.openai?.toolInput || {};
-    const output = window.openai?.toolOutput || {};
-    const meta = window.openai?.toolResponseMetadata || {};
-    return { ...input, ...output, ...meta };
-  }
-  function applyTheme() {
-    const theme = window.openai?.theme || 'light';
-    document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
-  }
-  function render() {
-    applyTheme();
-    const data = payload();
-    const current = String(data.current_text || '').trim();
-    $('current').textContent = current || '正在整理本轮方向…';
-    const seeds = Array.isArray(data.hand_seeds) ? data.hand_seeds.map(String).map((x) => x.trim()).filter(Boolean).slice(0, 7) : [];
-    $('seedGroup').hidden = seeds.length === 0;
-    $('seedTitle').textContent = seeds.length ? '手持种 · ' + seeds.length : '手持种';
-    $('seeds').replaceChildren(...seeds.map((seed) => {
-      const div = document.createElement('div');
-      div.className = 'seed';
-      div.textContent = seed;
-      return div;
-    }));
-    const avoid = String(data.do_not_repeat || '').trim();
-    $('avoidGroup').hidden = !avoid;
-    $('avoid').textContent = avoid;
-    $('stylePill').textContent = labels[data.style] || labels.deep_think;
-    $('effortPill').textContent = labels[data.effort] || labels.medium;
-    $('subtitle').textContent = 'ChatGPT 官端 · ' + (labels[data.style] || labels.deep_think) + ' · 默认隐藏 → 可见整理 · 仅本轮';
-  }
-  window.addEventListener('openai:set_globals', render);
-  render();
-})();
-</script>
+  </section>
+  <script>
+    const card = document.getElementById("card");
+    const toggle = document.getElementById("toggle");
+
+    function setCollapsed(collapsed) {
+      card.dataset.collapsed = collapsed ? "true" : "false";
+      toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      toggle.title = collapsed ? "Expand thinking" : "Collapse thinking";
+    }
+
+    toggle.addEventListener("click", () => {
+      setCollapsed(card.dataset.collapsed !== "true");
+    });
+
+    function render() {
+      const api = window.openai || {};
+      const input = api.toolInput || {};
+      const output = api.toolOutput || {};
+      const responseMeta = api.toolResponseMetadata || {};
+      if (api.theme) document.documentElement.dataset.theme = api.theme;
+      const resultMeta = (responseMeta.mcp_tool_result && responseMeta.mcp_tool_result._meta)
+        || (responseMeta.call_tool_result && responseMeta.call_tool_result._meta)
+        || responseMeta._meta
+        || responseMeta;
+      const style = resultMeta.style || input.style || output.style || "deep_think";
+      const effort = resultMeta.effort || input.effort || output.effort || "";
+      const skin = resultMeta.skin || input.skin || output.skin || "botanical";
+      document.documentElement.dataset.style = style;
+      document.documentElement.dataset.effort = effort;
+      document.documentElement.dataset.skin = skin;
+      document.getElementById("style").textContent = "STYLE · " + (style === "relational" ? "RELATIONAL" : "DEEP THINK");
+      document.getElementById("effort").textContent = effort ? "EFFORT · " + effort.toUpperCase() : "";
+      document.getElementById("skin").textContent = "SKIN · " + skin.toUpperCase();
+      document.getElementById("thinking").textContent = resultMeta.thinking || input.thinking || output.thinking || "Thinking block captured.";
+    }
+    window.addEventListener("openai:set_globals", render);
+    render();
+  </script>
 </body>
 </html>`;
