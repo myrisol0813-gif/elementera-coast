@@ -25,7 +25,7 @@ export const THINKING_BLOCK_TOOL = Object.freeze({
   title: '展开本轮思维壤',
   description: [
     'Render one concise, user-visible working-note card before the final answer when showing the current direction, constraints, options, or uncertainty would genuinely help.',
-    'This is an explicit summary for the user, not hidden chain-of-thought and not a way to reveal private/internal reasoning.',
+    'Your internal reasoning is normally hidden from the user; use this tool to turn the shareable part into a concise visible summary without exposing private chain-of-thought.',
     'Do not use it for trivial replies. Keep current_text useful and compact; hand_seeds should be short constraints or threads. After calling this tool, continue with the final answer.',
     'This presentation-only card does not read or write Elementera Coast memory and does not replace the persistent 思维壤 shown in the Coast web app.',
   ].join(' '),
@@ -47,7 +47,7 @@ export const THINKING_BLOCK_TOOL = Object.freeze({
         type: 'string',
         minLength: 1,
         maxLength: MAX_CURRENT,
-        description: 'A concise user-visible summary of the current reasoning direction. Do not expose hidden chain-of-thought.',
+        description: 'A concise visible version of the shareable part of reasoning that would otherwise remain hidden from the user; do not expose private chain-of-thought.',
       },
       hand_seeds: {
         type: 'array',
@@ -112,7 +112,7 @@ export function renderThinkingBlockResult(input = {}) {
   return {
     content: [{
       type: 'text',
-      text: '已展开一张本轮可见工作笔记；它不会写入海岸记忆。',
+      text: '已把默认隐藏的思考中可公开的部分整理成本轮可见工作笔记；它不会写入海岸记忆。',
     }],
     structuredContent: block,
     _meta: {
@@ -153,11 +153,11 @@ export function listThinkingBlockResources() {
     uri: WIDGET_URI,
     name: 'Elementera Coast · 本轮思维壤',
     title: '本轮思维壤',
-    description: 'Elementera Coast 思维壤视觉语言的可见工作笔记卡。',
+    description: '把默认隐藏的思考中可公开的部分整理成 Elementera Coast 思维壤风格的可见工作笔记卡。',
     mimeType: WIDGET_MIME,
     _meta: {
       ui: { prefersBorder: false },
-      'openai/widgetDescription': '一张沿用 Elementera Coast 思维壤视觉语言的本轮可见工作笔记；不写入持久记忆。',
+      'openai/widgetDescription': '把默认隐藏的思考中可公开部分整理成一张 Elementera Coast 思维壤风格的本轮可见工作笔记；不写入持久记忆。',
       'openai/widgetPrefersBorder': false,
     },
   }];
@@ -172,7 +172,7 @@ export function readThinkingBlockResource(uri) {
       text: WIDGET_HTML,
       _meta: {
         ui: { prefersBorder: false },
-        'openai/widgetDescription': '一张沿用 Elementera Coast 思维壤视觉语言的本轮可见工作笔记；不写入持久记忆。',
+        'openai/widgetDescription': '把默认隐藏的思考中可公开部分整理成一张 Elementera Coast 思维壤风格的本轮可见工作笔记；不写入持久记忆。',
         'openai/widgetPrefersBorder': false,
       },
     }],
@@ -316,7 +316,7 @@ details[open] .chevron { transform: rotate(90deg); }
   <summary>
     <div class="headline">
       <strong>本轮思维壤</strong>
-      <small id="subtitle">可见工作笔记 · 不写入海岸记忆</small>
+      <small id="subtitle">默认隐藏 → 可见整理 · 不写入海岸记忆</small>
     </div>
     <span class="chevron" aria-hidden="true">›</span>
   </summary>
@@ -338,7 +338,7 @@ details[open] .chevron { transform: rotate(90deg); }
       <span class="pill" id="effortPill">中等展开</span>
       <span class="pill">仅本轮</span>
     </div>
-    <p class="note">这是为你生成的可见工作摘要，不是隐藏思维链，也不会覆盖海岸网页里的持久思维壤。</p>
+    <p class="note">你的内部思考过程默认对用户隐藏；这里把其中可公开、可分享的部分整理成可见版，不展示私密内部推理，也不会覆盖海岸网页里的持久思维壤。</p>
   </div>
 </details>
 <script>
@@ -377,7 +377,7 @@ details[open] .chevron { transform: rotate(90deg); }
     $('avoid').textContent = avoid;
     $('stylePill').textContent = labels[data.style] || labels.deep_think;
     $('effortPill').textContent = labels[data.effort] || labels.medium;
-    $('subtitle').textContent = (labels[data.style] || labels.deep_think) + ' · 可见工作笔记 · 不写入海岸记忆';
+    $('subtitle').textContent = (labels[data.style] || labels.deep_think) + ' · 默认隐藏 → 可见整理 · 不写入海岸记忆';
   }
   window.addEventListener('openai:set_globals', render);
   render();
