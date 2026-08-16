@@ -494,7 +494,7 @@ const initialize = await mcp({
   },
 });
 assert.equal(initialize.result.serverInfo.name, 'elementera-coast-porch');
-assert.equal(initialize.result.serverInfo.version, '1.9.0');
+assert.equal(initialize.result.serverInfo.version, '1.9.1');
 assert.match(initialize.result.instructions, /只在确有需要时使用对应工具/);
 assert.match(initialize.result.instructions, /没有成功执行的动作不要声称已完成/);
 assert.equal(initialize.result.instructions.includes('room_memory_reason'), false);
@@ -541,6 +541,7 @@ for (const tool of toolList.result.tools) {
 
 const thinkingTool = toolList.result.tools.find((tool) => tool.name === 'render_official_app_thinking_soil');
 assert.ok(thinkingTool);
+assert.equal(toolList.result.tools.some((tool) => tool.name === 'render_thinking_block'), false);
 assert.equal(thinkingTool.title, '官端 APP · 手写思维壤外显');
 assert.deepEqual(thinkingTool.securitySchemes[0].scopes, ['read:coast']);
 assert.equal(thinkingTool.annotations.readOnlyHint, true);
@@ -578,6 +579,22 @@ assert.equal(thinkingRendered.result.structuredContent.persisted, false);
 assert.equal(thinkingRendered.result.structuredContent.current_text, '先核对 MCP 能力与海岸现有思维壤边界。');
 assert.deepEqual(thinkingRendered.result.structuredContent.hand_seeds, ['不新增网页按钮', '只做本轮可见整理']);
 assert.equal(thinkingRendered.result._meta['openai/outputTemplate'], thinkingResourceUri);
+
+const legacyThinkingRendered = await mcp({
+  jsonrpc: '2.0', id: 2031, method: 'tools/call', params: {
+    name: 'render_thinking_block',
+    arguments: {
+      style: 'deep_think',
+      effort: 'low',
+      current_text: '旧官端快照仍应能调用同一外显 handler。',
+      hand_seeds: [],
+      do_not_repeat: '',
+    },
+  },
+}, fullToken);
+assert.equal(legacyThinkingRendered.result.structuredContent.persisted, false);
+assert.equal(legacyThinkingRendered.result.structuredContent.current_text, '旧官端快照仍应能调用同一外显 handler。');
+assert.equal(legacyThinkingRendered.result._meta['openai/outputTemplate'], thinkingResourceUri);
 
 const deniedThinking = await mcp({
   jsonrpc: '2.0', id: 207, method: 'tools/call', params: {
@@ -2146,11 +2163,11 @@ assert.equal((await listOfficialSoils(db)).length, 0, 'an MCP retry must not res
 const manifest = await routeMcpRequest(new Request('https://coast.test/mcp/manifest'), env);
 assert.equal(manifest.status, 200);
 assert.equal(manifest.headers.get('cache-control'), 'private, no-store');
-assert.equal(manifest.headers.get('x-coast-mcp-catalog-version'), '1.9.0');
+assert.equal(manifest.headers.get('x-coast-mcp-catalog-version'), '1.9.1');
 const manifestBody = await manifest.json();
 assert.equal(manifestBody.authentication, 'oauth2');
-assert.equal(manifestBody.version, '1.9.0');
-assert.equal(manifestBody.tool_catalog_version, '1.9.0');
+assert.equal(manifestBody.version, '1.9.1');
+assert.equal(manifestBody.tool_catalog_version, '1.9.1');
 assert.equal(manifestBody.tool_count, toolList.result.tools.length);
 assert.deepEqual(manifestBody.tools, toolList.result.tools.map((tool) => tool.name));
 assert.deepEqual(manifestBody.tool_definitions, toolList.result.tools);
@@ -2175,9 +2192,9 @@ assert.equal((await metadata.json()).authorization_servers[0], issuer);
 const health = await routeMcpRequest(new Request('https://coast.test/mcp/health'), {});
 assert.equal(health.status, 200);
 assert.equal(health.headers.get('cache-control'), 'private, no-store');
-assert.equal(health.headers.get('x-coast-mcp-catalog-version'), '1.9.0');
+assert.equal(health.headers.get('x-coast-mcp-catalog-version'), '1.9.1');
 const healthBody = await health.json();
-assert.equal(healthBody.version, '1.9.0');
+assert.equal(healthBody.version, '1.9.1');
 assert.equal(healthBody.transport, 'streamable-http');
 
 globalThis.fetch = originalFetch;
