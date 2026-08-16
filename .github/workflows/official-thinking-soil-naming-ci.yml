@@ -1,0 +1,77 @@
+name: Official thinking soil naming CI
+
+on:
+  push:
+    branches:
+      - chore/official-thinking-soil-naming
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/official-thinking-soil-naming
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Patch official-app naming
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const apply = (text, from, to, label) => {
+            if (!text.includes(from)) throw new Error(`missing target: ${label}`);
+            return text.split(from).join(to);
+          };
+
+          const thinkingPath = 'functions/thinking-block-mcp.js';
+          let thinking = fs.readFileSync(thinkingPath, 'utf8');
+          const changes = [
+            ["const WIDGET_URI = 'ui://widget/elementera-thinking-soil-v1.html';", "const WIDGET_URI = 'ui://widget/official-app-thinking-soil-v1.html';", 'widget uri'],
+            ["export const THINKING_BLOCK_TOOL_NAME = 'render_thinking_block';", "export const THINKING_BLOCK_TOOL_NAME = 'render_official_app_thinking_soil';", 'tool name'],
+            ["  title: '展开本轮思维壤',", "  title: '官端 APP · 手写思维壤外显',", 'tool title'],
+            ["    'Render one concise, user-visible working-note card before the final answer when showing the current direction, constraints, options, or uncertainty would genuinely help.',", "    'Render one concise, user-visible working-note card inside the official ChatGPT app before the final answer when showing the current direction, constraints, options, or uncertainty would genuinely help.',", 'tool description host'],
+            ["    'This presentation-only card does not read or write Elementera Coast memory and does not replace the persistent 思维壤 shown in the Coast web app.',", "    'This official-app presentation card does not read or write Elementera Coast memory and does not replace the persistent 思维壤 shown in the Coast web app.',", 'tool description boundary'],
+            ["    'openai/toolInvocation/invoking': '正在整理本轮思维壤…',", "    'openai/toolInvocation/invoking': '正在手写官端思维壤外显…',", 'invoking label'],
+            ["    'openai/toolInvocation/invoked': '本轮思维壤已展开',", "    'openai/toolInvocation/invoked': '官端思维壤已外显',", 'invoked label'],
+            ["    name: 'Elementera Coast · 本轮思维壤',", "    name: 'Elementera Coast · 官端 APP 手写思维壤外显',", 'resource name'],
+            ["    title: '本轮思维壤',", "    title: '官端 APP · 手写思维壤外显',", 'resource title'],
+            ["    description: '把默认隐藏的思考中可公开的部分整理成 Elementera Coast 思维壤风格的可见工作笔记卡。',", "    description: '在 ChatGPT 官端 APP 内，把默认隐藏的思考中可公开部分手写整理成 Elementera Coast 思维壤风格的外显卡片。',", 'resource description'],
+            ["      'openai/widgetDescription': '把默认隐藏的思考中可公开部分整理成一张 Elementera Coast 思维壤风格的本轮可见工作笔记；不写入持久记忆。',", "      'openai/widgetDescription': 'ChatGPT 官端 APP 专用：把默认隐藏的思考中可公开部分手写整理成思维壤风格外显卡；仅本轮，不写入持久记忆。',", 'widget description'],
+            ["        'openai/widgetDescription': '把默认隐藏的思考中可公开部分整理成一张 Elementera Coast 思维壤风格的本轮可见工作笔记；不写入持久记忆。',", "        'openai/widgetDescription': 'ChatGPT 官端 APP 专用：把默认隐藏的思考中可公开部分手写整理成思维壤风格外显卡；仅本轮，不写入持久记忆。',", 'read widget description'],
+            ["<title>本轮思维壤</title>", "<title>官端 APP · 手写思维壤外显</title>", 'html title'],
+            ["      <strong>本轮思维壤</strong>", "      <strong>官端 APP · 手写思维壤外显</strong>", 'card title'],
+            ["      <small id=\"subtitle\">默认隐藏 → 可见整理 · 不写入海岸记忆</small>", "      <small id=\"subtitle\">ChatGPT 官端 · 默认隐藏 → 可见整理 · 仅本轮</small>", 'subtitle'],
+            ["    <p class=\"note\">你的内部思考过程默认对用户隐藏；这里把其中可公开、可分享的部分整理成可见版，不展示私密内部推理，也不会覆盖海岸网页里的持久思维壤。</p>", "    <p class=\"note\">这是 ChatGPT 官端 APP 的手写思维壤外显：内部思考默认对用户隐藏，这里只把可公开、可分享的部分整理成可见版；仅本轮，不展示私密内部推理，也不会覆盖海岸网页里的持久思维壤。</p>", 'footer note'],
+            ["    $('subtitle').textContent = (labels[data.style] || labels.deep_think) + ' · 默认隐藏 → 可见整理 · 不写入海岸记忆';", "    $('subtitle').textContent = 'ChatGPT 官端 · ' + (labels[data.style] || labels.deep_think) + ' · 默认隐藏 → 可见整理 · 仅本轮';", 'dynamic subtitle'],
+          ];
+          for (const [from, to, label] of changes) thinking = apply(thinking, from, to, label);
+          fs.writeFileSync(thinkingPath, thinking);
+
+          const testPath = 'tests/mcp-porch.test.mjs';
+          let test = fs.readFileSync(testPath, 'utf8');
+          test = apply(test, "'render_thinking_block'", "'render_official_app_thinking_soil'", 'test tool name');
+          test = apply(test, "'展开本轮思维壤'", "'官端 APP · 手写思维壤外显'", 'test title');
+          test = apply(test, "'ui://widget/elementera-thinking-soil-v1.html'", "'ui://widget/official-app-thinking-soil-v1.html'", 'test resource uri');
+          test = apply(test, "/默认隐藏 → 可见整理/", "/ChatGPT 官端 · 默认隐藏 → 可见整理/", 'test visible label');
+          fs.writeFileSync(testPath, test);
+          NODE
+      - name: Check old naming is gone
+        run: |
+          if grep -R -n -E 'render_thinking_block|elementera-thinking-soil-v1|展开本轮思维壤' functions tests; then
+            echo 'old thinking-block naming still exists' >&2
+            exit 1
+          fi
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+      - name: Commit validated rename
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add functions/thinking-block-mcp.js tests/mcp-porch.test.mjs
+          git commit -m "chore: clarify official app thinking soil naming"
+          git push origin HEAD:chore/official-thinking-soil-naming
