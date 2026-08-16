@@ -563,9 +563,14 @@ const thinkingResource = await mcp({
 });
 assert.equal(thinkingResource.result.contents[0].mimeType, 'text/html;profile=mcp-app');
 assert.match(thinkingResource.result.contents[0].text, />Thinking</);
-assert.match(thinkingResource.result.contents[0].text, /STYLE ·/);
-assert.match(thinkingResource.result.contents[0].text, /EFFORT ·/);
-assert.match(thinkingResource.result.contents[0].text, /SKIN ·/);
+assert.equal(thinkingResource.result.contents[0]._meta['openai/widgetPrefersBorder'], false);
+assert.equal(thinkingResource.result.contents[0].text.includes('class="badge'), false);
+assert.equal(thinkingResource.result.contents[0].text.includes('linear-gradient'), false);
+assert.equal(thinkingResource.result.contents[0].text.includes('box-shadow:'), true);
+assert.match(thinkingResource.result.contents[0].text, /box-shadow: none/);
+assert.equal(thinkingResource.result.contents[0].text.includes('STYLE ·'), false);
+assert.equal(thinkingResource.result.contents[0].text.includes('EFFORT ·'), false);
+assert.equal(thinkingResource.result.contents[0].text.includes('SKIN ·'), false);
 assert.equal(thinkingResource.result.contents[0].text.includes('手持种'), false);
 assert.equal(thinkingResource.result.contents[0].text.includes('勿复读'), false);
 assert.equal(thinkingResource.result.contents[0].text.includes('persisted'), false);
