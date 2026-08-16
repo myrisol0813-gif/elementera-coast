@@ -6,14 +6,18 @@ import {
   getMysticDogtalk,
   saveMysticDogtalk,
 } from './dogtalk-store.js';
-import { apiError, json, readJson } from './http.js';
+import {
+  apiError,
+  isRequestBodyError,
+  json,
+  methodNotAllowed,
+  readJson,
+  requestBodyError,
+  unexpectedApiError,
+} from './http.js';
 import { OwnerAccessError, requireOwnerSession } from './owner-access.js';
 
 const DOGTALK_PATH = '/api/dogtalk';
-
-function methodNotAllowed(allow) {
-  return apiError('method_not_allowed', 'Method not allowed.', 405, { allow });
-}
 
 function scopeFromUrl(url) {
   return {
@@ -74,15 +78,10 @@ export async function routeDogtalkApi(request, env, session = null) {
     if (error instanceof DogtalkStoreError || error instanceof OwnerAccessError) {
       return apiError(error.type, error.message, error.status);
     }
-    if (error?.message === 'invalid_json' || error?.message === 'body_too_large') {
-      return apiError(
-        error.message,
-        error.message === 'invalid_json' ? '请求内容不是有效 JSON。' : '请求内容过长。',
-        error.status || 400,
-      );
+    if (isRequestBodyError(error)) {
+      const mapped = requestBodyError(error);
+      return apiError(mapped.type, mapped.message, mapped.status);
     }
-    const reference = crypto.randomUUID().slice(0, 8);
-    console.error(`[dogtalk-api:${reference}]`, error);
-    return apiError('dogtalk_failed', `神秘狗话暂时没有收好（${reference}）。`, 500);
+    return unexpectedApiError('dogtalk-api', error, 'dogtalk_failed', '神秘狗话暂时没有收好');
   }
 }

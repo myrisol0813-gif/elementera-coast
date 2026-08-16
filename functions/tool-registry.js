@@ -13,6 +13,7 @@ import {
 import { runDailySummary } from './daily-summary.js';
 import { DOGTALK_MODEL_TOOL, executeDogtalkModelTool } from './dogtalk-model-tool.js';
 import { dogtalkContext, saveMysticDogtalkWithSnapshot } from './dogtalk-store.js';
+import { safeLogError } from './http.js';
 import { createPocket } from './memory-store.js';
 import { searchMemory } from './memory-recall.js';
 import { writeLighthouseLetter } from './lighthouse-store.js';
@@ -352,7 +353,7 @@ export async function executeRegisteredTool(db, toolKey, input, context = {}) {
   try {
     runId = await startToolRun(db, definition, input, context);
   } catch (error) {
-    console.error('[tool-run-log:start]', definition.tool_key, error);
+    safeLogError('tool-run-log:start', error, { operation: definition.tool_key });
   }
   try {
     const output = await definition.handler(db, input, context);
@@ -361,7 +362,7 @@ export async function executeRegisteredTool(db, toolKey, input, context = {}) {
       try {
         await finishToolRun(db, runId, { status: 'success', output });
       } catch (error) {
-        console.error('[tool-run-log:finish]', definition.tool_key, error);
+        safeLogError('tool-run-log:finish', error, { operation: definition.tool_key });
       }
     }
     return output;
@@ -370,7 +371,7 @@ export async function executeRegisteredTool(db, toolKey, input, context = {}) {
       try {
         await finishToolRun(db, runId, { status: 'error', error });
       } catch (logError) {
-        console.error('[tool-run-log:finish]', definition.tool_key, logError);
+        safeLogError('tool-run-log:finish', logError, { operation: definition.tool_key });
       }
     }
     throw error;

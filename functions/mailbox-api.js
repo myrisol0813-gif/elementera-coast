@@ -4,7 +4,16 @@ import {
   mailboxSessionCookie,
   verifyMailboxSession,
 } from './mailbox-auth.js';
-import { apiError, json, readJson, sameOrigin } from './http.js';
+import {
+  apiError,
+  isRequestBodyError,
+  json,
+  methodNotAllowed,
+  readJson,
+  requestBodyError,
+  sameOrigin,
+  unexpectedApiError,
+} from './http.js';
 import {
   currentMailboxVisitor,
   deleteVisibleVisitorNotebookEntry,
@@ -22,10 +31,6 @@ import {
 } from './mailbox-service.js';
 
 const ROOT = '/api/mailbox';
-
-function methodNotAllowed(allow) {
-  return apiError('method_not_allowed', 'Method not allowed.', 405, { allow });
-}
 
 function publicVisitor(visitor) {
   return {
@@ -178,18 +183,13 @@ export async function routeMailboxApi(request, env) {
     if (error instanceof MailboxServiceError) {
       return apiError(error.type, error.message, error.status);
     }
-    if (error?.message === 'invalid_json' || error?.message === 'body_too_large') {
-      return apiError(
-        error.message,
-        error.message === 'invalid_json' ? '请求内容不是有效 JSON。' : '请求内容过长。',
-        error.status || 400,
-      );
+    if (isRequestBodyError(error)) {
+      const mapped = requestBodyError(error);
+      return apiError(mapped.type, mapped.message, mapped.status);
     }
     if (error?.message === 'mailbox_auth_not_configured') {
       return apiError('mailbox_auth_not_configured', '访客信箱登录态尚未配置。', 503);
     }
-    const reference = crypto.randomUUID().slice(0, 8);
-    console.error(`[mailbox-api:${reference}]`, error);
-    return apiError('mailbox_failed', `海岸信箱操作失败（${reference}）。`, 500);
+    return unexpectedApiError('mailbox-api', error, 'mailbox_failed', '海岸信箱操作失败');
   }
 }

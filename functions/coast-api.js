@@ -1,4 +1,12 @@
-import { apiError, json, readJson } from './http.js';
+import {
+  apiError,
+  isRequestBodyError,
+  json,
+  methodNotAllowed,
+  readJson,
+  requestBodyError,
+  unexpectedApiError,
+} from './http.js';
 import { xiaohanIdentity } from './coast-identity.js';
 import { CoastStoreError } from './coast-records.js';
 import {
@@ -26,10 +34,6 @@ const RADIO_ASK = '/api/radio/ask-api-myri';
 const LIGHTHOUSE = '/api/lighthouse/letters';
 const RADIO_MEMORY = '/api/radio/memory';
 const LIGHTHOUSE_MEMORY = '/api/lighthouse/memory';
-
-function methodNotAllowed(allow) {
-  return apiError('method_not_allowed', 'Method not allowed.', 405, { allow });
-}
 
 export function isCoastRoomApiPath(pathname) {
   return pathname === RADIO_MESSAGES
@@ -203,11 +207,10 @@ export async function routeCoastRoomApi(request, env, session = null) {
       || error instanceof OwnerAccessError) {
       return apiError(error.type, error.message, error.status, error.details || {});
     }
-    if (error?.message === 'invalid_json' || error?.message === 'body_too_large') {
-      return apiError(error.message, error.message === 'invalid_json' ? '请求内容不是有效 JSON。' : '请求内容过长。', error.status || 400);
+    if (isRequestBodyError(error)) {
+      const mapped = requestBodyError(error);
+      return apiError(mapped.type, mapped.message, mapped.status);
     }
-    const reference = crypto.randomUUID().slice(0, 8);
-    console.error(`[coast-room-api:${reference}]`, error);
-    return apiError('coast_room_failed', `海岸房间操作失败（${reference}）。`, 500);
+    return unexpectedApiError('coast-room-api', error, 'coast_room_failed', '海岸房间操作失败');
   }
 }

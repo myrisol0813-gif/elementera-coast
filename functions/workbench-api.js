@@ -1,5 +1,13 @@
 import { getWindowSettings, updateWindowSettings } from './cross-window-touch.js';
-import { apiError, json, readJson, sameOrigin } from './http.js';
+import {
+  apiError,
+  json,
+  methodNotAllowed,
+  readJson,
+  requestBodyError,
+  sameOrigin,
+  unexpectedApiError,
+} from './http.js';
 import { OwnerAccessError, requireOwnerSession } from './owner-access.js';
 import { RoomAccessError } from './surface-access-rules.js';
 import { listRegisteredTools } from './tool-registry.js';
@@ -19,17 +27,9 @@ async function body(request) {
   try {
     return await readJson(request, BODY_LIMIT);
   } catch (error) {
-    const tooLarge = error?.message === 'body_too_large';
-    throw new WorldbookError(
-      tooLarge ? 'body_too_large' : 'invalid_json',
-      tooLarge ? '请求内容过长。' : '请求不是有效 JSON。',
-      tooLarge ? 413 : 400,
-    );
+    const mapped = requestBodyError(error, { invalidMessage: '请求不是有效 JSON。' });
+    throw new WorldbookError(mapped.type, mapped.message, mapped.status);
   }
-}
-
-function methodNotAllowed(allow) {
-  return apiError('method_not_allowed', 'Method not allowed.', 405, { allow });
 }
 
 function decoded(value) { return decodeURIComponent(value); }
@@ -105,8 +105,6 @@ export async function routeWorkbenchApi(request, env, session = null) {
     if (error instanceof WorldbookError || error instanceof OwnerAccessError || error instanceof RoomAccessError) {
       return apiError(error.type, error.message, error.status);
     }
-    const reference = crypto.randomUUID().slice(0, 8);
-    console.error(`[workbench-api:${reference}]`, error);
-    return apiError('workbench_failed', `工作台暂时不可用（${reference}）。`, 500);
+    return unexpectedApiError('workbench-api', error, 'workbench_failed', '工作台暂时不可用');
   }
 }

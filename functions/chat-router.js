@@ -1,4 +1,12 @@
-import { apiError, json, readJson, sameOrigin } from './http.js';
+import {
+  apiError,
+  json,
+  methodNotAllowed,
+  readJson,
+  requestBodyError,
+  sameOrigin,
+  unexpectedApiError,
+} from './http.js';
 import {
   DogtalkStoreError,
 } from './dogtalk-store.js';
@@ -40,16 +48,16 @@ const CONVERSATIONS_PATH = '/api/chat/conversations';
 const FORMAL_CHAT_PATH = '/api/chat';
 const LANDING_LETTER_PATH = '/api/chat/landing-letter';
 
-function methodNotAllowed(allow) {
-  return apiError('method_not_allowed', 'Method not allowed.', 405, { allow });
-}
-
 async function body(request) {
   try {
     return await readJson(request, BODY_LIMIT);
   } catch (error) {
-    if (error.message === 'body_too_large') throw new ChatStoreError('body_too_large', '请求体过大。', 413);
-    throw new ChatStoreError('invalid_request', '请求体不是有效的 JSON。', 400);
+    const mapped = requestBodyError(error, {
+      invalidType: 'invalid_request',
+      invalidMessage: '请求体不是有效的 JSON。',
+      tooLargeMessage: '请求体过大。',
+    });
+    throw new ChatStoreError(mapped.type, mapped.message, mapped.status);
   }
 }
 
@@ -416,8 +424,6 @@ export async function routeChatApi(request, env) {
     if (error instanceof ModelRequestError) return modelErrorResponse(error);
     if (error instanceof DogtalkStoreError) return apiError(error.type, error.message, error.status);
     if (error instanceof ChatStoreError) return apiError(error.type, error.message, error.status);
-    const reference = crypto.randomUUID().slice(0, 8);
-    console.error(`[chat-api:${reference}]`, error);
-    return apiError('chat_store_failed', `主聊天存储操作失败（${reference}）。`, 500);
+    return unexpectedApiError('chat-api', error, 'chat_store_failed', '主聊天存储操作失败');
   }
 }

@@ -21,7 +21,14 @@ import {
 import { dailySummaryRangeOptions, runDailySummary } from './daily-summary.js';
 import { createMyriMomentComment } from './daily-moment-comment.js';
 import { apiMyriIdentity, xiaohanIdentity } from './coast-identity.js';
-import { apiError, json, readJson } from './http.js';
+import {
+  apiError,
+  json,
+  methodNotAllowed,
+  readJson,
+  requestBodyError,
+  unexpectedApiError,
+} from './http.js';
 import { MemoryStoreError } from './memory-store.js';
 import { ModelRequestError } from './models.js';
 import { OwnerAccessError, requireOwnerSession } from './owner-access.js';
@@ -29,16 +36,16 @@ import { OwnerAccessError, requireOwnerSession } from './owner-access.js';
 const DAILY_PATH = '/api/daily';
 const BODY_LIMIT = 256 * 1024;
 
-function methodNotAllowed(allow) {
-  return apiError('method_not_allowed', 'Method not allowed.', 405, { allow });
-}
-
 async function body(request) {
   try {
     return await readJson(request, BODY_LIMIT);
   } catch (error) {
-    if (error.message === 'body_too_large') throw new DailyStoreError('body_too_large', '日报请求体过大。', 413);
-    throw new DailyStoreError('invalid_request', '日报请求体不是有效的 JSON。', 400);
+    const mapped = requestBodyError(error, {
+      invalidType: 'invalid_request',
+      invalidMessage: '日报请求体不是有效的 JSON。',
+      tooLargeMessage: '日报请求体过大。',
+    });
+    throw new DailyStoreError(mapped.type, mapped.message, mapped.status);
   }
 }
 
@@ -270,8 +277,6 @@ export async function routeDailyApi(request, env, session = null) {
       || error instanceof OwnerAccessError) {
       return apiError(error.type, error.message, error.status, error.details || {});
     }
-    const reference = crypto.randomUUID().slice(0, 8);
-    console.error(`[daily-api:${reference}]`, error);
-    return apiError('daily_store_failed', `海岸日报操作失败（${reference}）。`, 500);
+    return unexpectedApiError('daily-api', error, 'daily_store_failed', '海岸日报操作失败');
   }
 }

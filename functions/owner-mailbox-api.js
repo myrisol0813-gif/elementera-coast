@@ -1,12 +1,8 @@
-import { apiError, json } from './http.js';
+import { apiError, json, methodNotAllowed, unexpectedApiError } from './http.js';
 import { requireOwnerSession, OwnerAccessError } from './owner-access.js';
 import { mailboxOwnerSummary, ownerMailboxVisitors } from './mailbox-service.js';
 
 const ROOT = '/api/owner/mailbox';
-
-function methodNotAllowed(allow) {
-  return apiError('method_not_allowed', 'Method not allowed.', 405, { allow });
-}
 
 export function isOwnerMailboxApiPath(pathname) {
   return pathname === `${ROOT}/visitors` || pathname === `${ROOT}/summary`;
@@ -38,8 +34,6 @@ export async function routeOwnerMailboxApi(request, env, session) {
     if (error instanceof OwnerAccessError) {
       return apiError(error.type, error.message, error.status);
     }
-    const reference = crypto.randomUUID().slice(0, 8);
-    console.error(`[owner-mailbox-api:${reference}]`, error);
-    return apiError('owner_mailbox_failed', `信箱状态读取失败（${reference}）。`, 500);
+    return unexpectedApiError('owner-mailbox-api', error, 'owner_mailbox_failed', '信箱状态读取失败');
   }
 }

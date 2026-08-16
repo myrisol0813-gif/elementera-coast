@@ -27,6 +27,68 @@ export function apiError(type, message, status = 400, details = {}) {
   return json({ ok: false, error: { type, message, ...details } }, status);
 }
 
+export function methodNotAllowed(allow) {
+  return apiError('method_not_allowed', 'Method not allowed.', 405, { allow });
+}
+
+export function isRequestBodyError(error) {
+  return error?.message === 'invalid_json' || error?.message === 'body_too_large';
+}
+
+export function requestBodyError(error, {
+  invalidType = 'invalid_json',
+  invalidMessage = '请求内容不是有效 JSON。',
+  tooLargeType = 'body_too_large',
+  tooLargeMessage = '请求内容过长。',
+} = {}) {
+  const tooLarge = error?.message === 'body_too_large';
+  return {
+    type: tooLarge ? tooLargeType : invalidType,
+    message: tooLarge ? tooLargeMessage : invalidMessage,
+    status: tooLarge ? 413 : 400,
+  };
+}
+
+function safeLogToken(value, maxLength = 120) {
+  const text = String(value || '').trim();
+  return /^[a-z0-9_.:-]+$/i.test(text) ? text.slice(0, maxLength) : '';
+}
+
+export function safeErrorSummary(error, operation = '') {
+  const summary = {
+    name: safeLogToken(error?.name) || (error instanceof Error ? 'Error' : 'NonError'),
+  };
+  for (const [source, target] of [
+    ['type', 'type'],
+    ['code', 'code'],
+    ['failureCode', 'failure_code'],
+  ]) {
+    const value = safeLogToken(error?.[source]);
+    if (value) summary[target] = value;
+  }
+  const status = Number(error?.status);
+  if (Number.isInteger(status) && status >= 100 && status <= 599) summary.status = status;
+  const messageCode = safeLogToken(error?.message, 80);
+  if (messageCode) summary.message_code = messageCode;
+  const safeOperation = safeLogToken(operation);
+  if (safeOperation) summary.operation = safeOperation;
+  return summary;
+}
+
+export function safeLogError(scope, error, { reference = '', operation = '', level = 'error' } = {}) {
+  const safeScope = safeLogToken(scope) || 'coast-error';
+  const safeReference = safeLogToken(reference, 32);
+  const tag = `[${safeScope}${safeReference ? `:${safeReference}` : ''}]`;
+  const log = level === 'warn' ? console.warn : console.error;
+  log(tag, JSON.stringify(safeErrorSummary(error, operation)));
+}
+
+export function unexpectedApiError(scope, error, type, message) {
+  const reference = crypto.randomUUID().slice(0, 8);
+  safeLogError(scope, error, { reference });
+  return apiError(type, `${message}（${reference}）。`, 500);
+}
+
 export function redirect(location, headers = {}) {
   return new Response(null, {
     status: 302,
@@ -96,4 +158,3 @@ export function protectedResponse(response) {
     headers,
   });
 }
-

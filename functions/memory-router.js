@@ -7,7 +7,15 @@ import {
   syncPocketVectors,
   vectorStatus,
 } from './embedding.js';
-import { apiError, json, readJson } from './http.js';
+import {
+  apiError,
+  json,
+  methodNotAllowed,
+  readJson,
+  requestBodyError,
+  safeLogError,
+  unexpectedApiError,
+} from './http.js';
 import { buildMemoryContext, searchMemory } from './memory-recall.js';
 import { soilSettings } from './memory-config.js';
 import {
@@ -121,16 +129,16 @@ const SOIL_RESPONSE_FORMAT = Object.freeze({
   }),
 });
 
-function methodNotAllowed(allow) {
-  return apiError('method_not_allowed', 'Method not allowed.', 405, { allow });
-}
-
 async function body(request) {
   try {
     return await readJson(request, BODY_LIMIT);
   } catch (error) {
-    if (error.message === 'body_too_large') throw new MemoryStoreError('body_too_large', '请求体过大。', 413);
-    throw new MemoryStoreError('invalid_request', '请求体不是有效的 JSON。', 400);
+    const mapped = requestBodyError(error, {
+      invalidType: 'invalid_request',
+      invalidMessage: '请求体不是有效的 JSON。',
+      tooLargeMessage: '请求体过大。',
+    });
+    throw new MemoryStoreError(mapped.type, mapped.message, mapped.status);
   }
 }
 
@@ -449,7 +457,7 @@ async function organizeSoil(request, env) {
   } catch (error) {
     if (!(error instanceof ModelRequestError)
       && !(error instanceof MemoryStoreError && String(error.type || '').startsWith('soil_organize_'))) throw error;
-    console.error('[memory:soil-organize]', error);
+    safeLogError('memory:soil-organize', error);
     degradedReason = error.type || 'soil_organize_failed';
     const degradedSoil = await writeSoil(env.COAST_CHAT_DB, conversationId, {
       current_text: fallback,
@@ -721,8 +729,6 @@ export async function routeMemoryApi(request, env, session = null) {
       || error instanceof OwnerAccessError) {
       return apiError(error.type, error.message, error.status, error.details || {});
     }
-    const reference = crypto.randomUUID().slice(0, 8);
-    console.error(`[memory-api:${reference}]`, error);
-    return apiError('memory_store_failed', `记忆操作失败（${reference}）。`, 500);
+    return unexpectedApiError('memory-api', error, 'memory_store_failed', '记忆操作失败');
   }
 }

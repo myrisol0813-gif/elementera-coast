@@ -1,4 +1,5 @@
 import { MEMORY_CONFIG } from './memory-config.js';
+import { safeLogError } from './http.js';
 import {
   embeddingCounts,
   pendingEmbeddingEntries,
@@ -108,7 +109,7 @@ export async function deleteEntryVector(env, entry) {
     await env.COAST_MEMORY_VECTOR.deleteByIds([entry.vector_id]);
     return { deleted: true };
   } catch (error) {
-    console.error('[memory-vector:delete]', error);
+    safeLogError('memory-vector:delete', error);
     return { deleted: false, reason: 'vector_delete_failed' };
   }
 }
@@ -123,7 +124,7 @@ export async function deletePocketVectors(env, pocket) {
     await env.COAST_MEMORY_VECTOR.deleteByIds(ids);
     return { deleted: true, ids };
   } catch (error) {
-    console.error('[pocket-vector:delete]', error);
+    safeLogError('pocket-vector:delete', error);
     return { deleted: false, ids, reason: 'vector_delete_failed' };
   }
 }
@@ -157,7 +158,7 @@ export async function syncEntryVector(env, db, entry) {
     });
     return { entry: updated, indexed: true, dimensions: values.length };
   } catch (error) {
-    console.error('[memory-vector:upsert]', error);
+    safeLogError('memory-vector:upsert', error);
     const updated = await updateEmbeddingState(db, entry.id, {
       embedding_model: MEMORY_CONFIG.vector.model,
       embedding_version: MEMORY_CONFIG.vector.version,
@@ -195,7 +196,7 @@ export async function syncPocketVectors(env, db, pocket) {
     });
     return { pocket: updated, indexed: true, dimensions: values.length, vector_ids: ids };
   } catch (error) {
-    console.error('[pocket-vector:upsert]', error);
+    safeLogError('pocket-vector:upsert', error);
     const updated = await updatePocketEmbeddingState(db, pocket.id, {
       embedding_model: MEMORY_CONFIG.vector.model,
       embedding_version: MEMORY_CONFIG.vector.version,

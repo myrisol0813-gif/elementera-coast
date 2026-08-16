@@ -2,6 +2,7 @@ import { assembleCleanContext } from './context-assemble-clean.js';
 import { apiMyriIdentity } from './coast-identity.js';
 import { readProfile } from './chat-store.js';
 import { CoastStoreError } from './coast-records.js';
+import { safeLogError } from './http.js';
 import { performFormalChatWithTools } from './models.js';
 import { organizeRadioMemoryAfterReply } from './radio-memory-organizer.js';
 import { listRadioMessages, sendRadioMessage } from './radio-store.js';
@@ -89,7 +90,7 @@ export async function askApiMyriInRadio(env, value = {}) {
     });
     roomMemoryUpdated = true;
   } catch (error) {
-    console.warn('[radio-memory:organize]', String(error?.message || error).slice(0, 160));
+    safeLogError('radio-memory:organize', error, { level: 'warn' });
   }
   return {
     message,

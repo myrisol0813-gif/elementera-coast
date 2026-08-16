@@ -1,4 +1,11 @@
-import { apiError, json, readJson } from './http.js';
+import {
+  apiError,
+  json,
+  methodNotAllowed,
+  readJson,
+  requestBodyError,
+  unexpectedApiError,
+} from './http.js';
 import { OwnerAccessError, requireOwnerSession } from './owner-access.js';
 import {
   CalendarStoreError,
@@ -19,18 +26,15 @@ import {
 const ROOT = '/api/calendar';
 const BODY_LIMIT = 48 * 1024;
 
-function methodNotAllowed(allow) {
-  return apiError('method_not_allowed', 'Method not allowed.', 405, { allow });
-}
-
 async function body(request) {
   try {
     return await readJson(request, BODY_LIMIT);
   } catch (error) {
-    if (error?.message === 'body_too_large') {
-      throw new CalendarStoreError('body_too_large', '日历请求内容过长。', 413);
-    }
-    throw new CalendarStoreError('invalid_json', '日历请求不是有效 JSON。', 400);
+    const mapped = requestBodyError(error, {
+      invalidMessage: '日历请求不是有效 JSON。',
+      tooLargeMessage: '日历请求内容过长。',
+    });
+    throw new CalendarStoreError(mapped.type, mapped.message, mapped.status);
   }
 }
 
@@ -136,8 +140,6 @@ export async function routeCalendarApi(request, env, session = null) {
     if (error instanceof CalendarStoreError || error instanceof OwnerAccessError) {
       return apiError(error.type, error.message, error.status);
     }
-    const reference = crypto.randomUUID().slice(0, 8);
-    console.error(`[calendar-api:${reference}]`, error);
-    return apiError('calendar_failed', `海岸日历暂时没有翻到那一页（${reference}）。`, 500);
+    return unexpectedApiError('calendar-api', error, 'calendar_failed', '海岸日历暂时没有翻到那一页');
   }
 }

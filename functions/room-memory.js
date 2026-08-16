@@ -5,6 +5,7 @@ import {
   validateCoastIdentity,
 } from './coast-identity.js';
 import { dogtalkContext } from './dogtalk-store.js';
+import { safeLogError } from './http.js';
 import { buildMemoryContext } from './memory-recall.js';
 import {
   MEMORY_OWNER_ID,
@@ -438,7 +439,7 @@ export async function buildRoomMemoryContext(env, roomValue, surfaceValue, query
       { consume_direct: options.consume_dogtalk !== false },
     );
   } catch (error) {
-    console.warn('[room-dogtalk:recall]', String(error?.message || error).slice(0, 160));
+    safeLogError('room-dogtalk:recall', error, { level: 'warn' });
   }
   return {
     room_scope: roomId,

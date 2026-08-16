@@ -2,6 +2,13 @@ import assert from 'node:assert/strict';
 import { handleLogin, unauthorized, verifySession } from '../functions/auth.js';
 import { onRequest } from '../functions/_middleware.js';
 import {
+  isRequestBodyError,
+  methodNotAllowed,
+  requestBodyError,
+  safeLogError,
+  unexpectedApiError,
+} from '../functions/http.js';
+import {
   ModelRequestError,
   buildModelCatalog,
   normalizeUsage,
@@ -17,6 +24,46 @@ const env = {
   COAST_PASSWORD_HASH: passwordHash,
   COAST_SESSION_SECRET: '0123456789abcdef0123456789abcdef',
 };
+
+const disallowed = methodNotAllowed('GET, POST');
+assert.equal(disallowed.status, 405);
+assert.deepEqual(await disallowed.json(), {
+  ok: false,
+  error: { type: 'method_not_allowed', message: 'Method not allowed.', allow: 'GET, POST' },
+});
+const oversizedBodyError = Object.assign(new Error('body_too_large'), { status: 413 });
+assert.equal(isRequestBodyError(oversizedBodyError), true);
+assert.deepEqual(requestBodyError(oversizedBodyError), {
+  type: 'body_too_large',
+  message: '请求内容过长。',
+  status: 413,
+});
+assert.deepEqual(requestBodyError(new Error('invalid_json'), {
+  invalidType: 'invalid_request',
+  invalidMessage: '请求体不是有效的 JSON。',
+}), {
+  type: 'invalid_request',
+  message: '请求体不是有效的 JSON。',
+  status: 400,
+});
+
+const originalConsoleError = console.error;
+const safeLogLines = [];
+console.error = (...values) => safeLogLines.push(values.join(' '));
+const sensitiveError = Object.assign(new Error('访客正文绝不能进入日志'), {
+  type: 'mailbox_failed',
+  status: 500,
+  details: { visitor_body: 'sealed' },
+});
+safeLogError('mailbox-api', sensitiveError, { reference: 'ref12345' });
+const unexpected = unexpectedApiError('mailbox-api', sensitiveError, 'mailbox_failed', '海岸信箱操作失败');
+console.error = originalConsoleError;
+assert.equal(safeLogLines.length, 2);
+assert.ok(safeLogLines.every((line) => line.includes('mailbox_failed')));
+assert.ok(safeLogLines.every((line) => !line.includes('访客正文')));
+assert.ok(safeLogLines.every((line) => !line.includes('sealed')));
+assert.equal(unexpected.status, 500);
+assert.match((await unexpected.json()).error.message, /^海岸信箱操作失败（[a-f0-9]{8}）。$/);
 
 const login = await handleLogin(new Request('https://coast.test/login', {
   method: 'POST',

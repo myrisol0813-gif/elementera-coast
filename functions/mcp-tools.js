@@ -6,6 +6,7 @@ import {
   FRIEND_MYRISOL_PROMPT_ID,
   FRIEND_MYRISOL_PROMPT_V1,
 } from './friend-myrisol-prompt.js';
+import { safeLogError } from './http.js';
 import { McpAuthError, mcpAuthChallenge, requireMcpAuth } from './mcp-auth.js';
 
 const VERSION = '1.9.2';
@@ -602,7 +603,7 @@ function resultContent(value, text) {
 }
 
 function errorResult(error) {
-  console.error('[mcp-tool]', error);
+  safeLogError('mcp-tool', error);
   const errorType = error?.type || 'mcp_tool_failed';
   return {
     isError: true,
