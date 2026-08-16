@@ -54,6 +54,12 @@ jobs:
           let test = fs.readFileSync(testPath, 'utf8');
           test = replaceOnce(
             test,
+            "assert.equal(initialize.result.serverInfo.version, '1.9.0');",
+            "assert.equal(initialize.result.serverInfo.version, '1.9.1');",
+            'catalog version assertion',
+          );
+          test = replaceOnce(
+            test,
             "assert.ok(thinkingTool);\nassert.equal(thinkingTool.title, '官端 APP · 手写思维壤外显');",
             "assert.ok(thinkingTool);\nassert.equal(toolList.result.tools.some((tool) => tool.name === 'render_thinking_block'), false);\nassert.equal(thinkingTool.title, '官端 APP · 手写思维壤外显');",
             'legacy alias hidden from list',
