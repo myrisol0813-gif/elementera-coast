@@ -14,6 +14,8 @@ import {
   readThinkingBlockResource,
 } from './thinking-block-mcp.js';
 
+const LEGACY_THINKING_BLOCK_TOOL_NAME = 'render_thinking_block';
+
 const PUBLIC_PATHS = new Set([
   '/.well-known/oauth-protected-resource',
   '/mcp',
@@ -115,7 +117,7 @@ async function handleRpcMessage(message, request, env) {
     if (!params || typeof params !== 'object' || Array.isArray(params) || typeof params.name !== 'string') {
       return rpcError(message.id, -32602, 'Invalid tools/call parameters');
     }
-    const result = params.name === THINKING_BLOCK_TOOL_NAME
+    const result = (params.name === THINKING_BLOCK_TOOL_NAME || params.name === LEGACY_THINKING_BLOCK_TOOL_NAME)
       ? await callThinkingBlockTool(params.arguments, request, env)
       : await callCoastMcpTool(
         params.name,
