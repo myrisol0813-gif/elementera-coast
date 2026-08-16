@@ -52,12 +52,7 @@ jobs:
 
           const testPath = 'tests/mcp-porch.test.mjs';
           let test = fs.readFileSync(testPath, 'utf8');
-          test = replaceOnce(
-            test,
-            "assert.equal(initialize.result.serverInfo.version, '1.9.0');",
-            "assert.equal(initialize.result.serverInfo.version, '1.9.1');",
-            'catalog version assertion',
-          );
+          test = test.split("'1.9.0'").join("'1.9.1'");
           test = replaceOnce(
             test,
             "assert.ok(thinkingTool);\nassert.equal(thinkingTool.title, '官端 APP · 手写思维壤外显');",
@@ -77,6 +72,10 @@ jobs:
           grep -q "const VERSION = '1.9.1'" functions/mcp-tools.js
           grep -q "LEGACY_THINKING_BLOCK_TOOL_NAME = 'render_thinking_block'" functions/mcp-router.js
           grep -q "render_official_app_thinking_soil" functions/thinking-block-mcp.js
+          if grep -q "'1.9.0'" tests/mcp-porch.test.mjs; then
+            echo 'stale MCP catalog version assertion remains' >&2
+            exit 1
+          fi
       - run: npm install --no-audit --no-fund
       - run: npm test
       - name: Commit validated compatibility fix
