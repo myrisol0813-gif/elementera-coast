@@ -82,7 +82,7 @@ jobs:
           test = test.replace(securityNeedle, securityNeedle + thinkingTests);
           fs.writeFileSync(testPath, test);
           NODE
-      - run: npm ci
+      - run: npm install --no-audit --no-fund
       - run: npm test
       - name: Commit validated patch
         run: |
