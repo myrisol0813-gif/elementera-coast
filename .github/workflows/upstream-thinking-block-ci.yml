@@ -22,7 +22,6 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re
 
           p = Path('functions/mcp-tools.js')
           s = p.read_text()
@@ -36,11 +35,7 @@ jobs:
 
           p = Path('tests/mcp-porch.test.mjs')
           s = p.read_text()
-          s = s.replace("assert.equal(initialize.result.serverInfo.version, '1.9.1');", "assert.equal(initialize.result.serverInfo.version, '1.9.2');")
-          s = s.replace("assert.equal(healthPayload.version, '1.9.1');", "assert.equal(healthPayload.version, '1.9.2');")
-          s = s.replace("assert.equal(manifestPayload.version, '1.9.1');", "assert.equal(manifestPayload.version, '1.9.2');")
-          s = s.replace("assert.equal(manifestPayload.tool_catalog_version, '1.9.1');", "assert.equal(manifestPayload.tool_catalog_version, '1.9.2');")
-
+          s = s.replace("'1.9.1'", "'1.9.2'")
           start = s.index("const thinkingTool = toolList.result.tools.find((tool) => tool.name === 'render_thinking_block');")
           end = s.index("assert.match(initialize.result.instructions, /海岸日历/);", start)
           block = r'''const thinkingTool = toolList.result.tools.find((tool) => tool.name === 'render_thinking_block');
