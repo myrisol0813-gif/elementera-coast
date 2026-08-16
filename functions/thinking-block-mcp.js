@@ -166,8 +166,8 @@ export function readThinkingBlockResource(uri) {
       mimeType: WIDGET_MIME,
       text: WIDGET_HTML,
       _meta: {
-        ui: { prefersBorder: true },
-        'openai/widgetPrefersBorder': true,
+        ui: { prefersBorder: false },
+        'openai/widgetPrefersBorder': false,
         'openai/widgetDescription': "A readable themed card showing this turn's thinking, style, effort, and skin.",
       },
     }],
@@ -183,75 +183,48 @@ const WIDGET_HTML = `<!doctype html>
     :root {
       color-scheme: light dark;
       font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      --ink: #282828;
-      --muted: #737373;
-      --line: rgba(110, 110, 110, .34);
-      --line-soft: rgba(110, 110, 110, .16);
-      --paper: rgba(248, 248, 248, .99);
-      --wash: rgba(229, 229, 229, .86);
-      --shadow: rgba(0, 0, 0, .08);
-      --badge-bg: rgba(214, 214, 214, .9);
-      --badge-fg: #4a4a4a;
-      --badge-line: rgba(105, 105, 105, .24);
+      --ink: rgba(24, 24, 24, .88);
+      --muted: rgba(24, 24, 24, .46);
+      --faint: rgba(24, 24, 24, .30);
+      --surface: rgba(127, 127, 127, .055);
     }
     :root[data-theme="dark"] {
-      --ink: #f0f0f0;
-      --muted: #b7b7b7;
-      --line: rgba(220, 220, 220, .22);
-      --line-soft: rgba(220, 220, 220, .10);
-      --paper: rgba(47, 47, 47, .99);
-      --wash: rgba(58, 58, 58, .96);
-      --shadow: rgba(0, 0, 0, .24);
-      --badge-bg: rgba(76, 76, 76, .95);
-      --badge-fg: #e3e3e3;
-      --badge-line: rgba(220, 220, 220, .16);
+      --ink: rgba(245, 245, 245, .88);
+      --muted: rgba(245, 245, 245, .48);
+      --faint: rgba(245, 245, 245, .30);
+      --surface: rgba(255, 255, 255, .038);
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
-        --ink: #f0f0f0;
-        --muted: #b7b7b7;
-        --line: rgba(220, 220, 220, .22);
-        --line-soft: rgba(220, 220, 220, .10);
-        --paper: rgba(47, 47, 47, .99);
-        --wash: rgba(58, 58, 58, .96);
-        --shadow: rgba(0, 0, 0, .24);
-        --badge-bg: rgba(76, 76, 76, .95);
-        --badge-fg: #e3e3e3;
-        --badge-line: rgba(220, 220, 220, .16);
+        --ink: rgba(245, 245, 245, .88);
+        --muted: rgba(245, 245, 245, .48);
+        --faint: rgba(245, 245, 245, .30);
+        --surface: rgba(255, 255, 255, .038);
       }
     }
     * { box-sizing: border-box; }
-    body { margin: 0; padding: 2px; background: transparent; color: var(--ink); }
-    .card {
-      position: relative;
-      isolation: isolate;
-      overflow: hidden;
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      background: linear-gradient(145deg, var(--paper), var(--wash));
-      box-shadow: 0 8px 24px var(--shadow);
-      padding: 18px 19px 18px;
+    body {
+      margin: 0;
+      padding: 0;
+      background: transparent;
+      color: var(--ink);
+      font-family: inherit;
     }
-    .card::before {
-      content: "";
-      position: absolute;
-      z-index: -1;
-      inset: 5px;
-      border: 1px solid var(--line-soft);
+    .card {
+      border: 0;
       border-radius: 11px;
-      pointer-events: none;
+      background: var(--surface);
+      box-shadow: none;
+      padding: 13px 15px 14px;
     }
     .header {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      gap: 12px;
+      gap: 8px;
       width: 100%;
-      flex-wrap: wrap;
-      margin-bottom: 11px;
-      padding: 0 0 9px;
+      margin: 0 0 8px;
+      padding: 0;
       border: 0;
-      border-bottom: 1px solid var(--line-soft);
       background: transparent;
       color: inherit;
       font: inherit;
@@ -264,65 +237,40 @@ const WIDGET_HTML = `<!doctype html>
     }
     .header:hover, .header:active { background: transparent; color: inherit; }
     .header:focus:not(:focus-visible) { outline: none; }
-    .header:focus-visible { outline: 2px solid var(--line); outline-offset: 4px; border-radius: 7px; }
-    .identity, .meta, .badges { display: flex; align-items: center; }
-    .identity { gap: 9px; }
-    .meta { gap: 9px; margin-left: auto; }
-    .badges { gap: 6px; flex-wrap: wrap; }
-    .mark {
-      width: 10px;
-      height: 10px;
-      border: 1px solid var(--line);
-      border-radius: 50%;
-      background: #b8b8b8;
-      box-shadow: 5px 0 0 -2px #8f8f8f;
+    .header:focus-visible {
+      outline: 1px solid var(--faint);
+      outline-offset: 4px;
+      border-radius: 5px;
     }
     .title {
-      color: var(--ink);
-      font-size: 12px;
-      font-weight: 760;
-      letter-spacing: .12em;
-      text-transform: uppercase;
+      color: var(--muted);
+      font: 500 12px/1.4 inherit;
+      letter-spacing: 0;
     }
-    .badge {
-      border: 1px solid var(--badge-line);
-      border-radius: 999px;
-      background: var(--badge-bg);
-      color: var(--badge-fg);
-      font-size: 10px;
-      font-weight: 780;
-      letter-spacing: .07em;
-      line-height: 1.2;
-      padding: 4px 9px;
-      text-transform: uppercase;
+    .meta {
+      margin-left: auto;
+      color: var(--faint);
+      font: 400 11px/1.4 inherit;
+      letter-spacing: 0;
+      white-space: nowrap;
     }
-    .badge:empty { display: none; }
     .chevron {
-      width: 8px;
-      height: 8px;
-      margin: 0 3px 0 1px;
-      border-right: 2px solid var(--muted);
-      border-bottom: 2px solid var(--muted);
-      transform: rotate(-135deg);
+      color: var(--faint);
+      font: 400 12px/1 inherit;
+      transform: translateY(-1px) rotate(180deg);
+      transform-origin: center;
     }
-    .card[data-collapsed="true"] { padding-bottom: 14px; }
-    .card[data-collapsed="true"] .header {
-      margin-bottom: 0;
-      padding-bottom: 0;
-      border-bottom-color: transparent;
-    }
+    .card[data-collapsed="true"] { padding-bottom: 13px; }
+    .card[data-collapsed="true"] .header { margin-bottom: 0; }
     .card[data-collapsed="true"] .content { display: none; }
-    .card[data-collapsed="true"] .chevron { transform: rotate(45deg); }
-    @media (prefers-reduced-motion: no-preference) {
-      .chevron { transition: transform 140ms ease; }
-    }
+    .card[data-collapsed="true"] .chevron { transform: translateY(1px) rotate(0deg); }
     .thinking {
       margin: 0;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
       color: var(--ink);
-      font: 14px/1.72 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      letter-spacing: .003em;
+      font: 400 14px/1.68 inherit;
+      letter-spacing: 0;
     }
   </style>
 </head>
@@ -330,21 +278,12 @@ const WIDGET_HTML = `<!doctype html>
   <section class="card" id="card" data-collapsed="false" aria-label="Thinking block">
     <button class="header" id="toggle" type="button" aria-expanded="true"
             aria-controls="thinking-content" title="Collapse thinking">
-      <span class="identity">
-        <span class="mark" aria-hidden="true"></span>
-        <span class="title">Thinking</span>
-      </span>
-      <span class="meta">
-        <span class="badges" aria-label="Thinking metadata">
-          <span class="badge style" id="style"></span>
-          <span class="badge effort" id="effort"></span>
-          <span class="badge skin" id="skin"></span>
-        </span>
-        <span class="chevron" aria-hidden="true"></span>
-      </span>
+      <span class="title">Thinking</span>
+      <span class="meta" id="meta"></span>
+      <span class="chevron" aria-hidden="true">⌄</span>
     </button>
     <div class="content" id="thinking-content">
-      <pre class="thinking" id="thinking"></pre>
+      <div class="thinking" id="thinking"></div>
     </div>
   </section>
   <script>
@@ -373,13 +312,8 @@ const WIDGET_HTML = `<!doctype html>
         || responseMeta;
       const style = resultMeta.style || input.style || output.style || "deep_think";
       const effort = resultMeta.effort || input.effort || output.effort || "";
-      const skin = resultMeta.skin || input.skin || output.skin || "botanical";
-      document.documentElement.dataset.style = style;
-      document.documentElement.dataset.effort = effort;
-      document.documentElement.dataset.skin = skin;
-      document.getElementById("style").textContent = "STYLE · " + (style === "relational" ? "RELATIONAL" : "DEEP THINK");
-      document.getElementById("effort").textContent = effort ? "EFFORT · " + effort.toUpperCase() : "";
-      document.getElementById("skin").textContent = "SKIN · " + skin.toUpperCase();
+      const styleLabel = style === "relational" ? "relational" : "deep think";
+      document.getElementById("meta").textContent = effort ? styleLabel + " · " + effort : styleLabel;
       document.getElementById("thinking").textContent = resultMeta.thinking || input.thinking || output.thinking || "Thinking block captured.";
     }
     window.addEventListener("openai:set_globals", render);
