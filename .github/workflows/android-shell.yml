@@ -2,6 +2,11 @@ name: Android shell
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "android-app/**"
+      - "elementera-mcp/deploy-pages/public/app-update.json"
+      - ".github/workflows/android-shell.yml"
   push:
     paths:
       - "android-app/**"
