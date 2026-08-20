@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/app_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/coast_navy_dark"
+    android:orientation="vertical">
+
+    <FrameLayout
+        android:id="@+id/native_toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:background="@color/coast_navy_dark">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="start|center_vertical"
+            android:gravity="center_vertical"
+            android:orientation="vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/shell_title"
+                android:textColor="@color/coast_white"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="-1dp"
+                android:text="@string/shell_subtitle"
+                android:textColor="@color/coast_text_muted"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/shell_menu_button"
+            android:layout_width="46dp"
+            android:layout_height="46dp"
+            android:layout_gravity="end|center_vertical"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/shell_menu"
+            android:padding="11dp"
+            android:src="@drawable/ic_more_vert" />
+    </FrameLayout>
+
+    <ProgressBar
+        android:id="@+id/page_progress"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="2dp"
+        android:max="100"
+        android:progressBackgroundTint="@color/coast_navy"
+        android:progressTint="@color/coast_gold"
+        android:visibility="gone" />
+
+    <FrameLayout
+        android:id="@+id/coast_content"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@color/coast_navy">
+
+        <WebView
+            android:id="@+id/coast_webview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/coast_navy"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:overScrollMode="ifContentScrolls"
+            android:scrollbars="vertical" />
+
+        <ScrollView
+            android:id="@+id/error_panel"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/coast_navy"
+            android:fillViewport="true"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:paddingStart="28dp"
+                android:paddingTop="36dp"
+                android:paddingEnd="28dp"
+                android:paddingBottom="36dp">
+
+                <ImageView
+                    android:layout_width="88dp"
+                    android:layout_height="88dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/coast_icon" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:gravity="center"
+                    android:text="@string/network_error_title"
+                    android:textColor="@color/coast_white"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/error_message"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:gravity="center"
+                    android:lineSpacingExtra="3dp"
+                    android:text="@string/network_error_message"
+                    android:textColor="@color/coast_text_muted"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/retry_button"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp"
+                    android:background="@drawable/bg_button_primary"
+                    android:minHeight="48dp"
+                    android:text="@string/retry"
+                    android:textAllCaps="false"
+                    android:textColor="@color/coast_navy_dark"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/open_browser_button"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/bg_button_secondary"
+                    android:minHeight="48dp"
+                    android:text="@string/open_browser"
+                    android:textAllCaps="false"
+                    android:textColor="@color/coast_white" />
+
+                <Button
+                    android:id="@+id/clear_cache_button"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/bg_button_secondary"
+                    android:minHeight="48dp"
+                    android:text="@string/clear_cache_reload"
+                    android:textAllCaps="false"
+                    android:textColor="@color/coast_white" />
+            </LinearLayout>
+        </ScrollView>
+    </FrameLayout>
+
+</LinearLayout>

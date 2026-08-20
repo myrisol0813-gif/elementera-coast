@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/coast_navy" />
+    <item
+        android:bottom="112dp"
+        android:drawable="@drawable/coast_icon"
+        android:gravity="center"
+        android:left="112dp"
+        android:right="112dp"
+        android:top="112dp" />
+</layer-list>

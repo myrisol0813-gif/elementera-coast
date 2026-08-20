@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="coast_navy">#16204A</color>
+    <color name="coast_navy_dark">#0E1634</color>
+    <color name="coast_gold">#F2B84B</color>
+    <color name="coast_gold_soft">#FFD477</color>
+    <color name="coast_cream">#FFF3DD</color>
+    <color name="coast_white">#FFFDF8</color>
+    <color name="coast_text_muted">#BAC3DF</color>
+    <color name="coast_transparent">#00000000</color>
+</resources>

@@ -1,0 +1,23 @@
+{
+  "appName": "元素海岸",
+  "android": {
+    "latestVersionCode": 1,
+    "latestVersionName": "1.0.0-a1",
+    "releaseName": "A1.0",
+    "apkUrl": "",
+    "sha256": "",
+    "publishedAt": "",
+    "releaseNotes": [
+      "第一版 Android WebView 海岸外壳",
+      "支持刷新、资源缓存清理与轻量更新检查",
+      "适配 Android 返回键、软键盘、系统栏安全区与基础滚动"
+    ]
+  },
+  "web": {
+    "label": "P6.4",
+    "commit": "c8cc53b"
+  },
+  "mcp": {
+    "expectedVersion": "1.9.2"
+  }
+}

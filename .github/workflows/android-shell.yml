@@ -1,0 +1,72 @@
+name: Android shell
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "android-app/**"
+      - "elementera-mcp/deploy-pages/public/app-update.json"
+      - ".github/workflows/android-shell.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-shell-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build A1 APKs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Web regression dependency
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Run root regression suite
+        run: npm test
+
+      - name: Build Cloudflare Pages Functions
+        run: npx --yes wrangler@4 pages functions build functions --outdir .tmp/pages-functions-build --project-directory . --build-output-directory elementera-mcp/deploy-pages
+
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v4
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Lint and build debug and unsigned release
+        working-directory: android-app
+        run: ./gradlew lintDebug lintRelease assembleDebug assembleRelease --stacktrace
+
+      - name: Create APK checksum list
+        working-directory: android-app
+        run: |
+          mkdir -p build/artifacts
+          find app/build/outputs/apk -type f -name "*.apk" -print0 | sort -z | xargs -0 sha256sum > build/artifacts/SHA256SUMS.txt
+
+      - name: Upload A1 APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: elementera-coast-android-a1
+          path: |
+            android-app/app/build/outputs/apk/**/*.apk
+            android-app/build/artifacts/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
