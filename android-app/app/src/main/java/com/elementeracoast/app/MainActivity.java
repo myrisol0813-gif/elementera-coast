@@ -453,6 +453,7 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
     }
 
     @Override
+    @SuppressLint("GestureBackNavigation")
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
