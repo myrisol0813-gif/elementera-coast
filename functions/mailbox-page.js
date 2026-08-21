@@ -9,10 +9,10 @@ const PAGE = `<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#ffffff">
   <title>海岸信箱 · Elementera Coast</title>
-  <link rel="stylesheet" href="/public/styles/tokens.css?v=coast-app-28">
-  <link rel="stylesheet" href="/public/styles/shell.css?v=coast-app-28">
-  <link rel="stylesheet" href="/public/styles/chat.css?v=coast-app-28">
-  <link rel="stylesheet" href="/public/styles/features.css?v=coast-app-28">
+  <link rel="stylesheet" href="/public/styles/tokens.css?v=coast-app-29">
+  <link rel="stylesheet" href="/public/styles/shell.css?v=coast-app-29">
+  <link rel="stylesheet" href="/public/styles/chat.css?v=coast-app-29">
+  <link rel="stylesheet" href="/public/styles/features.css?v=coast-app-29">
   <link rel="stylesheet" href="/public/styles/mailbox.css?v=coast-mailbox-04">
 </head>
 <body class="mailbox-body">
