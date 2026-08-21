@@ -55,14 +55,6 @@
   --shadow: 0 18px 48px rgba(0, 0, 0, 0.54);
 }
 
-:root[data-coast-native-shell="hybrid"] {
-  /* Android has already consumed system-bar insets around the content island. */
-  --safe-top: 0px;
-  --safe-right: 0px;
-  --safe-bottom: 0px;
-  --safe-left: 0px;
-}
-
 *,
 *::before,
 *::after {

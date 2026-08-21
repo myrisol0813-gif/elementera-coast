@@ -3,6 +3,12 @@ Elementera Coast Changelog
 
 All notable changes to Elementera Coast are recorded here.
 
+Retirement - Android shell experiment
+
+Date: 2026-08-21
+
+- Android APP A1-A4 experimental shell retired; Web/PWA remains canonical.
+
 P6.4 - Node/Codespaces construction island retired
 
 Date: 2026-08-17

@@ -121,7 +121,6 @@ const redirects = await read(resolve(pages, '_redirects'));
 const headers = await read(resolve(pages, '_headers'));
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
-assert.equal(redirects.includes('/updates'), false, 'updates directory must use Pages canonical routing');
 
 const manifest = JSON.parse(await read(resolve(pages, 'manifest.json')));
 assert.deepEqual({
@@ -187,7 +186,6 @@ for (const id of [
 for (const label of ['同轨第', '距 8.12', '距 8.13', '无线电波的两端', '灯塔来信', '轨迹 / 记忆', '海岸日报', '今日一瞥', '主聊天窗口']) {
   assert.ok(index.includes(label), `missing UI contract: ${label}`);
 }
-for (const label of ['海岸更新', '关于海岸']) assert.ok(index.includes(label), `missing APP utility entry: ${label}`);
 assert.equal(/modules\/legacy|p3-chat-core|conversation-controller|shell-controller/.test(index), false);
 assert.match(index, /data-action="memory:open"[^>]*>[\s\S]*?轨迹 \/ 记忆/);
 assert.equal(index.includes('data-action="rooms:memory"'), false, 'memory sidebar action must have one owner');
@@ -197,7 +195,6 @@ assert.ok(worker.includes(`const CACHE_NAME = '${APP_CACHE_NAME}';`));
 for (const excluded of ["url.pathname.startsWith('/api/')", "url.pathname.startsWith('/mcp')", "url.pathname.startsWith('/.well-known/')", "['/login', '/logout', '/mailbox']"]) {
   assert.ok(worker.includes(excluded), `service worker misses network-only route: ${excluded}`);
 }
-assert.ok(worker.includes("url.pathname === '/public/app-update.json'"), 'update manifest must remain network-only');
 const coreBlock = worker.slice(worker.indexOf('const CORE'), worker.indexOf(']);', worker.indexOf('const CORE')) + 2);
 const coreUrls = [...coreBlock.matchAll(/'([^']+)'/g)].map((match) => match[1]);
 for (const url of coreUrls) {
@@ -205,8 +202,6 @@ for (const url of coreUrls) {
   if (pathname !== '/') await access(resolve(pages, pathname.replace(/^\//, '')));
 }
 assert.ok(coreUrls.includes('/public/features/desk.js'));
-assert.ok(coreUrls.includes('/public/features/updates.js'));
-assert.ok(coreUrls.includes('/updates/index.html'));
 assert.ok(coreUrls.includes('/public/media/myri-default-avatar.jpg'));
 assert.match(await read(resolve(pages, 'public/app.js')), /navigator\.serviceWorker\.register\('\/service-worker\.js', \{ scope: '\/' \}\)/);
 
@@ -222,7 +217,7 @@ const moduleFiles = [
   'features/daily-client.js', 'features/daily.js', 'features/dogtalk.js',
   'features/letters.js', 'features/memory.js', 'features/models.js', 'features/rooms.js',
   'features/settings.js', 'features/shell.js', 'features/tools.js', 'features/calendar.js',
-  'features/desk.js', 'features/toolroom.js', 'features/updates.js', 'updates-page.js',
+  'features/desk.js', 'features/toolroom.js',
 ].map((path) => resolve(pages, 'public', path));
 for (const file of moduleFiles) {
   const source = await read(file);
