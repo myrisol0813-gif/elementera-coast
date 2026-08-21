@@ -95,7 +95,7 @@ sha256sum app/build/outputs/apk/release/app-release.apk
 - [ ] `git diff --check` 通过。
 - [ ] 合并并部署 Cloudflare production。
 - [ ] `/public/app-update.json` 匿名返回 HTTP 200、JSON 字段正确。
-- [ ] `/updates` 返回 HTTP 200，下载按钮与 SHA-256 指向同一个 APK。
+- [ ] `/updates/` 返回 HTTP 200，下载按钮与 SHA-256 指向同一个 APK。
 - [ ] APP 内“检查更新”能识别新 versionCode 并打开下载页。
 - [ ] PWA、MCP health / manifest、30 个业务工具 + 1 个 thinking block 与 `calendar.env` 无退化。
 - [ ] P6.3 cleanroom、P6.4 滚动护栏与隐私日志 redaction 测试仍通过。

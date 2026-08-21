@@ -120,14 +120,15 @@ const middleware = await read('functions/_middleware.js');
 assert.match(middleware, /'\/public\/app-update\.json'/);
 for (const publicUpdatePath of [
   "'/updates'",
-  "'/updates.html'",
+  "'/updates/'",
+  "'/updates/index.html'",
   "'/public/updates-page.js'",
   "'/public/styles/updates.css'",
 ]) assert.ok(middleware.includes(publicUpdatePath), `public updates route missing: ${publicUpdatePath}`);
 const headers = await read('elementera-mcp/deploy-pages/_headers');
 assert.match(headers, /^\/public\/app-update\.json\n[\s\S]*?Content-Type: application\/json; charset=utf-8[\s\S]*?Access-Control-Allow-Origin: \*$/m);
 
-const updatesHtml = await read('elementera-mcp/deploy-pages/updates.html');
+const updatesHtml = await read('elementera-mcp/deploy-pages/updates/index.html');
 for (const expected of [
   '<title>海岸更新 · Elementera Coast</title>',
   'id="androidVersion"',

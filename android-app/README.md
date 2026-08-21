@@ -15,7 +15,7 @@
 - 技术栈：Java 17、原生 Android View、单 Activity、WebView
 - WebView 地址：`https://app.elementeracoast.com`
 - 更新清单：`https://app.elementeracoast.com/public/app-update.json`
-- 公开更新页：`https://app.elementeracoast.com/updates`
+- 公开更新页：`https://app.elementeracoast.com/updates/`
 - Web 标签：A2 / P6.4+A1
 - MCP expectedVersion：1.9.2
 
@@ -180,7 +180,7 @@ https://app.elementeracoast.com/public/app-update.json
 公开页面：
 
 ```text
-https://app.elementeracoast.com/updates
+https://app.elementeracoast.com/updates/
 ```
 
 原生“检查 APP 更新”只在用户点按时读取清单：
@@ -261,7 +261,7 @@ android.permission.INTERNET
 - [ ] 16. “清缓存重载”可恢复页面，且不会主动删除 Cookie。
 - [ ] 17. “关于元素海岸”显示 A2.0、1.0.1-a2、versionCode 2、packageName、Web、MCP 与入口地址。
 - [ ] 18. “检查 APP 更新”能读取 production 清单；当前显示已是最新版，且说明暂无公开 APK 链接。
-- [ ] 19. Web 侧“海岸更新”与 `/updates` 页面可打开，版本一致。
+- [ ] 19. Web 侧“海岸更新”与 `/updates/` 页面可打开，版本一致。
 - [ ] 20. 站内链接留在 APP；外部链接、下载链接交给默认 Chrome / 系统下载能力。
 - [ ] 21. 断网启动或加载失败出现原生错误页；恢复网络后重试可恢复。
 - [ ] 22. 切到后台 30 秒与 5 分钟后回来不白屏、不重置当前输入场景。

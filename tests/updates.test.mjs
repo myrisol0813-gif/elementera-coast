@@ -58,7 +58,7 @@ const aboutView = await updates.handleAction('about');
 assert.equal(aboutView.title, '关于海岸');
 assert.match(aboutView.body, /不会写入思维壤、不会进入模型上下文/);
 
-for (const path of ['/public/app-update.json', '/updates', '/updates.html']) {
+for (const path of ['/public/app-update.json', '/updates', '/updates/', '/updates/index.html']) {
   let nextCalled = false;
   const response = await onRequest({
     request: new Request(`https://app.elementeracoast.com${path}`),

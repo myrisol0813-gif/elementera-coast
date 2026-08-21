@@ -55,7 +55,7 @@ function detailRows(manifest, runtime) {
       ${httpsUrl(android.apkUrl)
         ? `<p class="feature-note">已提供公开 HTTPS 下载地址。安装前请核对版本与 SHA-256。</p><a class="updates-link" href="${escapeAttribute(httpsUrl(android.apkUrl))}">打开 APK 下载页</a>`
         : '<p class="feature-note">APK 下载链接待发布。不会显示假链接，也不会把临时 CI artifact 当作长期下载地址。</p>'}
-      <a class="updates-link" href="/updates">打开独立更新页</a>
+      <a class="updates-link" href="/updates/">打开独立更新页</a>
     </article>
     <article class="updates-card">
       <h2>更新说明</h2>
@@ -107,7 +107,7 @@ export function createUpdates({ router, toast }) {
           <p class="feature-note">海岸其他功能仍可正常使用。确认网络后可以重试，或打开独立更新页。</p>
           <div class="button-row">
             <button class="primary" type="button" data-action="updates:refresh">重新读取</button>
-            <a class="updates-link" href="/updates">打开独立更新页</a>
+            <a class="updates-link" href="/updates/">打开独立更新页</a>
           </div>
         </section>`,
       };

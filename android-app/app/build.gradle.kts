@@ -26,7 +26,7 @@ android {
 
         buildConfigField("String", "COAST_URL", "\"https://app.elementeracoast.com\"")
         buildConfigField("String", "UPDATE_MANIFEST_URL", "\"https://app.elementeracoast.com/public/app-update.json\"")
-        buildConfigField("String", "UPDATE_PAGE_URL", "\"https://app.elementeracoast.com/updates\"")
+        buildConfigField("String", "UPDATE_PAGE_URL", "\"https://app.elementeracoast.com/updates/\"")
         buildConfigField("String", "RELEASE_NAME", "\"A2.0\"")
         buildConfigField("String", "EXPECTED_WEB_LABEL", "\"A2 / P6.4+A1\"")
         buildConfigField("String", "EXPECTED_WEB_COMMIT", "\"f3f3acd\"")

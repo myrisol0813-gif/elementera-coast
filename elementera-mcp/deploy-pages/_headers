@@ -14,9 +14,9 @@
   Content-Type: application/json; charset=utf-8
   Access-Control-Allow-Origin: *
   X-Content-Type-Options: nosniff
-/updates
+/updates/
   Cache-Control: no-store, no-cache, must-revalidate, max-age=0
-/updates.html
+/updates/index.html
   Cache-Control: no-store, no-cache, must-revalidate, max-age=0
 /public/*
   Cache-Control: no-cache, must-revalidate, max-age=0

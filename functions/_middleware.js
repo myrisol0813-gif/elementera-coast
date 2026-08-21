@@ -19,7 +19,7 @@ const PUBLIC_PWA_ASSETS = new Set([
   '/public/styles/updates.css',
   '/updates',
   '/updates/',
-  '/updates.html',
+  '/updates/index.html',
 ]);
 
 const PUBLIC_MAILBOX_ASSETS = new Set([
