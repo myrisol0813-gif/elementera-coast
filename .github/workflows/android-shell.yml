@@ -112,15 +112,4 @@ jobs:
           profile: pixel_6
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: |
-            ./android-app/gradlew -p android-app assembleDebug --stacktrace
-            adb install -r android-app/app/build/outputs/apk/debug/app-debug.apk
-            adb logcat -c
-            adb shell am start -W -n com.elementeracoast.app/.MainActivity
-            sleep 10
-            adb shell pidof com.elementeracoast.app
-            adb shell dumpsys activity activities | grep -F 'mResumedActivity' | grep -F 'com.elementeracoast.app'
-            if adb logcat -d -v brief AndroidRuntime:E '*:S' | grep -F 'FATAL EXCEPTION'; then
-              adb logcat -d -v threadtime AndroidRuntime:E '*:S'
-              exit 1
-            fi
+          script: bash android-app/scripts/launch-smoke.sh
