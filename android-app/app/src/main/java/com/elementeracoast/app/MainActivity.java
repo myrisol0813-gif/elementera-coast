@@ -379,7 +379,7 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
     }
 
     private void showAboutDialog() {
-        AlertDialog dialog = new AlertDialog.Builder(this)
+        AlertDialog aboutDialog = new AlertDialog.Builder(this)
                 .setTitle(R.string.about_coast)
                 .setMessage(buildAboutMessage(null))
                 .setNeutralButton("检查更新", (dialog, which) -> checkForAppUpdate())
@@ -389,13 +389,13 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
                 )
                 .setPositiveButton("关闭", null)
                 .create();
-        dialog.show();
+        aboutDialog.show();
 
         updateChecker.check(BuildConfig.UPDATE_MANIFEST_URL, new CoastUpdateChecker.Callback() {
             @Override
             public void onSuccess(CoastUpdateChecker.UpdateInfo updateInfo) {
-                if (dialog.isShowing()) {
-                    dialog.setMessage(buildAboutMessage(updateInfo));
+                if (aboutDialog.isShowing()) {
+                    aboutDialog.setMessage(buildAboutMessage(updateInfo));
                 }
             }
 
