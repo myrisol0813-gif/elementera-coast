@@ -34,7 +34,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build A2 APKs
+    name: Build A3 APKs
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -78,10 +78,10 @@ jobs:
           mkdir -p build/artifacts
           find app/build/outputs/apk -type f -name "*.apk" -print0 | sort -z | xargs -0 sha256sum > build/artifacts/SHA256SUMS.txt
 
-      - name: Upload A2 APKs
+      - name: Upload A3 APKs
         uses: actions/upload-artifact@v4
         with:
-          name: elementera-coast-android-a2
+          name: coastgpt-android-a3
           path: |
             android-app/app/build/outputs/apk/**/*.apk
             android-app/build/artifacts/SHA256SUMS.txt

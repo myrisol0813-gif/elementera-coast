@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="shell_surface">#10131B</color>
+    <color name="shell_surface_elevated">#191D28</color>
+    <color name="shell_text_primary">#F5F2EC</color>
+    <color name="shell_text_secondary">#B9BECA</color>
+    <color name="shell_divider">#3D4351</color>
+    <color name="shell_menu_surface">#E6212632</color>
+    <color name="shell_menu_pressed">#333A49</color>
+</resources>

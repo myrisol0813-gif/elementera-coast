@@ -1,27 +1,27 @@
-# Elementera Coast Android APP A2
+# CoastGPT Android APP A3
 
-元素海岸 Android APP A2 是现有线上海岸的稳定原生入口。它整理已有 Web 功能在 Android WebView 中的导航、更新、恢复与发布体验，不重写聊天，也不改变 Cloudflare、MCP、记忆或 P6.3 clean-context contract。
+CoastGPT Android APP A3 是现有线上海岸的本地原生入口。手机桌面与壳层名称为 CoastGPT；Web 内仍保留“元素海岸 / Elementera Coast”的世界观名称。A3 把启动、菜单、关于、更新骨架和断网恢复留在 APK 内，不重写聊天，也不改变 Cloudflare、MCP、记忆或 P6.3 clean-context contract。
 
 ## 当前版本
 
-- APP 名称：元素海岸
+- APP 显示名称：CoastGPT
 - 项目名：Elementera Coast
 - packageName：`com.elementeracoast.app`
-- releaseName：A2.0
-- versionName：`1.0.1-a2`
-- versionCode：`2`
+- releaseName：A3.0
+- versionName：`1.0.2-a3`
+- versionCode：`3`
 - minSdk：26
 - targetSdk / compileSdk：36
 - 技术栈：Java 17、原生 Android View、单 Activity、WebView
 - WebView 地址：`https://app.elementeracoast.com`
 - 更新清单：`https://app.elementeracoast.com/public/app-update.json`
 - 公开更新页：`https://app.elementeracoast.com/updates/`
-- Web 标签：A2 / P6.4+A1
+- Web 标签：A3 / P6.4+A1+A2
 - MCP expectedVersion：1.9.2
 
 工程没有 Compose、AndroidX、Google Play Services 或第三方运行时依赖。
 
-## A2 已实现
+## A3 已实现
 
 - JavaScript、DOM storage、数据库存储、第一方 Cookie 与 WebView 缓存已启用。
 - 同域导航留在 APP；外部 HTTP(S)、mailto、tel 与下载链接交给系统应用。
@@ -30,10 +30,16 @@
 - Android 13+ predictive back 覆盖 ColorOS 手势返回路径。
 - `adjustResize` 配合 system bar、cutout 与 IME insets 处理键盘和安全区。
 - WebView 没有 SwipeRefresh 或拦截触控的父容器；滚动仍由 PWA 自己管理。
-- 原生菜单包含刷新、首页、清缓存重载、检查更新、系统浏览器和关于入口。
-- “检查更新”和“关于元素海岸”读取同一份 production update manifest；失败不影响海岸使用。
-- User-Agent 后缀为 `ElementeraCoastApp/1.0.1-a2 Android`，只供 Web UI 与更新诊断识别。
-- 主框架网络错误、HTTP 5xx 与 SSL 校验失败显示原生错误页，提供重试、清缓存重载和系统浏览器入口。
+- 固定 46dp 原生顶栏已移除；WebView 占满壳层内容区，仅保留贴边低干扰的本地悬浮菜单按钮。
+- 启动骨架只在首屏显示并平滑淡出；普通站内导航不隐藏当前 WebView，也不会重新创建 Activity。
+- 原生菜单包含刷新、首页、清缓存重载、检查更新、系统浏览器和关于入口，断网时仍可打开。
+- “检查更新”和“关于 CoastGPT”先显示 APK 内基础信息，再异步读取 production update manifest；断网不白屏、不崩溃。
+- 原生更新中心与关于页不再通过 `WebView.loadUrl()` 打开线上页面；需要网页版时明确交给系统浏览器。
+- User-Agent 后缀为 `ElementeraCoastApp/1.0.2-a3 Android`，只供 Web UI 与更新诊断识别。
+- WebView 使用系统 HTTP cache 与 PWA Service Worker 的 CORE 预缓存；主框架网络失败时自动尝试一次 `LOAD_CACHE_ONLY`，再回退到本地错误页。
+- 主框架网络错误、HTTP 5xx 与 SSL 校验失败显示本地错误页，提供重试、清缓存重载和系统浏览器入口。
+- light/dark 原生颜色来自系统模式；页面成功载入后，状态栏与导航栏可跟随页面 `theme-color`，图标明暗按对比度切换。
+- launcher、roundIcon、启动页和本地骨架均使用仓库原有深蓝旧金花结图；adaptive icon 用完整底图，避免 foreground 安全区造成二次缩小。
 - 系统文档选择器支持 Web 文件输入，不申请存储、相机或麦克风权限。
 - 固定竖屏，与现有 PWA `orientation: portrait` 保持一致。
 
@@ -51,7 +57,19 @@
 - Google Play 发布或 Play 服务
 - 新的模型上下文包装或旧 Context Manifest / Mode / Ambient / Facets / Inspector
 
-未来可以评估通知、本地状态、手机小纸条和 LoverConnect bridge，但它们均不在 A2 权限与代码路径中。
+未来可以评估通知、本地状态、手机小纸条和 LoverConnect bridge，但它们均不在 A3 权限与代码路径中。
+
+## APK 内本地内容与离线边界
+
+以下内容不依赖线上海岸即可显示：
+
+- launcher / round icon、Android 12+ splash 与首屏本地 loading skeleton；
+- 悬浮菜单及全部菜单文案；
+- 关于 CoastGPT 的 APP 版本、packageName、WebView 地址、预期 Web / MCP 基础信息；
+- APP 更新中心骨架、空 APK URL 提示、debug / release 签名说明；
+- 网络 / SSL 错误页及重试、清缓存重载、系统浏览器按钮。
+
+离线不承诺聊天、MCP、登录、数据写入或最新版本清单。已访问资源由 WebView cache 与现有 PWA Service Worker 尽力恢复；没有可用缓存时显示本地错误页。A3 不打包线上海岸业务代码副本，避免与 canonical Web / Cloudflare runtime 形成两套前端。
 
 ## 工程结构
 
@@ -164,10 +182,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 覆盖安装必须同时满足：
 
 1. packageName 仍为 `com.elementeracoast.app`；
-2. versionCode 高于已安装版本；A2 的 versionCode 为 2；
+2. versionCode 高于已安装版本；A3 的 versionCode 为 3；
 3. 新旧 APK 使用同一签名 key。
 
-A1 到 A2 的 versionCode 已递增，使用同一签名时可覆盖安装。若 A1 与 A2 debug APK 来自不同签名环境，ColorOS 会拒绝覆盖；需要卸载旧版后安装。卸载会清除 APP 的 WebView Cookie、本地存储与登录态。
+A1、A2、A3 的 versionCode 已递增，只有使用同一签名时才能覆盖安装。此前 A1 与 A2 debug APK 已确认来自不同 debug key；A3 CI debug 也可能使用新的 ephemeral debug key，因此 ColorOS 可能拒绝覆盖。需要卸载旧 debug 版时，卸载会清除 APP 的 WebView Cookie、本地存储与登录态。长期更新必须建立并保管同一个 release keystore。
 
 ## 更新中心
 
@@ -183,15 +201,15 @@ https://app.elementeracoast.com/public/app-update.json
 https://app.elementeracoast.com/updates/
 ```
 
-原生“检查 APP 更新”只在用户点按时读取清单：
+本地“CoastGPT 更新中心”打开时先显示 APK 内版本与签名说明，再尝试读取清单：
 
 - 本机 versionCode 小于 latestVersionCode：提示有新版；
 - 本机 versionCode 等于或高于 latestVersionCode：提示当前已是最新；
 - `apkUrl` 为空：明确提示暂无公开 APK 下载链接；
-- 读取失败：显示可理解的恢复提示，不白屏、不崩溃；
+- 读取失败：显示“离线，暂未读取线上清单”，本地内容和按钮继续存在；
 - 不后台轮询、不强弹窗、不自动下载、不自动安装。
 
-“关于元素海岸”显示 APP 名称、versionName、versionCode、releaseName、packageName、WebView 地址，并在能读取清单时显示当前 Web label / commit 与 MCP expectedVersion。
+“关于 CoastGPT”显示 APP 名称、世界观名称、versionName、versionCode、releaseName、packageName、WebView 地址，并在能读取清单时显示当前 Web label / commit 与 MCP expectedVersion。
 
 Web 侧“海岸更新 / 关于海岸”只读取公开清单并渲染 UI。APP 模式来自 User-Agent，不写入 localStorage，不进入聊天请求、思维壤、模型上下文或 MCP，也不能作为认证依据。
 
@@ -200,6 +218,8 @@ Web 侧“海岸更新 / 关于海岸”只读取公开清单并渲染 UI。APP 
 - “刷新海岸”：普通 `WebView.reload()`。
 - “重新打开首页”：载入 `https://app.elementeracoast.com` 后清掉旧 WebView 导航历史。
 - “清缓存重载”：清 WebView HTTP 资源缓存和当前站点 Cache Storage，再重载首页。
+- 默认导航：保持 `LOAD_DEFAULT` 缓存策略；网络主框架失败时只自动尝试一次 `LOAD_CACHE_ONLY`。
+- PWA Service Worker：现有 CORE 清单继续预缓存首页、主 CSS / JS、updates 页面与 icon 资源；APP 不创建第二个隐藏 WebView 抢登录态或增加首屏负担。
 
 清缓存重载不会删除 Cookie、localStorage、sessionStorage 或 IndexedDB。若服务端会话已经过期，重新载入仍会回到海岸密码门。
 
@@ -225,7 +245,7 @@ android.permission.INTERNET
 
 ### 键盘遮挡输入框
 
-确认使用 A2 APK，并记录输入法名称、横竖屏状态和 ColorOS 导航方式。A2 使用 `adjustResize` 与 IME insets；不要在 Web 侧添加全局 `overflow:hidden` 或壳层 CSS 补丁。
+确认使用 A3 APK，并记录输入法名称、横竖屏状态和 ColorOS 导航方式。A3 继续使用 `adjustResize` 与 IME insets；不要在 Web 侧添加全局 `overflow:hidden` 或壳层 CSS 补丁。
 
 ### 无法检查更新
 
@@ -243,37 +263,38 @@ android.permission.INTERNET
 
 目标机：PLA110，ColorOS 16.0.7，Android 16。
 
-- [ ] 1. A2 APK 可从文件管理器或 ADB 安装。
-- [ ] 2. 同签名 A1 可用 `adb install -r` 或系统安装器覆盖到 A2。
-- [ ] 3. 冷启动后深蓝启动页正常消失，不闪退。
-- [ ] 4. 线上海岸或密码门成功出现。
-- [ ] 5. 登录成功；服务端有效期内退出到桌面再回来仍保持登录态。
-- [ ] 6. 主聊天可输入、长文本换行并发送。
-- [ ] 7. 键盘弹起时输入框、光标与发送按钮不被遮挡，收起后布局恢复。
-- [ ] 8. 主聊天消息区可连续纵向滚动。
-- [ ] 9. 思维壤面板可滚动。
-- [ ] 10. 侧边栏内容可滚动，底部“海岸更新 / 关于海岸”可见且不挤压主入口。
-- [ ] 11. feature panel、modal、overlay 与长页面可滚动。
-- [ ] 12. 返回键先走 WebView 历史；无历史时第一次提示、第二次退出。
-- [ ] 13. 左右边缘手势返回行为与返回键一致。
-- [ ] 14. 原生右上角菜单六项均可点按。
-- [ ] 15. “刷新海岸”保留当前路由并正常重载。
-- [ ] 16. “清缓存重载”可恢复页面，且不会主动删除 Cookie。
-- [ ] 17. “关于元素海岸”显示 A2.0、1.0.1-a2、versionCode 2、packageName、Web、MCP 与入口地址。
-- [ ] 18. “检查 APP 更新”能读取 production 清单；当前显示已是最新版，且说明暂无公开 APK 链接。
-- [ ] 19. Web 侧“海岸更新”与 `/updates/` 页面可打开，版本一致。
-- [ ] 20. 站内链接留在 APP；外部链接、下载链接交给默认 Chrome / 系统下载能力。
-- [ ] 21. 断网启动或加载失败出现原生错误页；恢复网络后重试可恢复。
-- [ ] 22. 切到后台 30 秒与 5 分钟后回来不白屏、不重置当前输入场景。
-- [ ] 23. APP 保持竖屏；状态栏、刘海、手势条和三键导航不遮挡内容。
-- [ ] 24. 卸载 / 重装前明确会清除 APP Cookie、本地存储与登录态。
-- [ ] 25. 安装前将 APK SHA-256 与交付报告或正式更新清单逐字对照。
+- [ ] 1. A3 APK 可从文件管理器或 ADB 安装；桌面名称显示 CoastGPT。
+- [ ] 2. 仅在签名一致时用 `adb install -r` 覆盖；签名不一致时明确卸载会清登录态。
+- [ ] 3. 桌面 adaptive / round icon 使用原有深蓝旧金花结图，主体不被二次缩小或异常裁切。
+- [ ] 4. 冷启动使用同一图标，随后本地骨架平滑淡出，不闪白、不闪退。
+- [ ] 5. 正常海岸页面没有固定顶部 46dp 深蓝原生栏，也没有额外底部深蓝壳区。
+- [ ] 6. 线上海岸或密码门成功出现。
+- [ ] 7. 登录成功；服务端有效期内退出到桌面再回来仍保持登录态。
+- [ ] 8. 主聊天可输入、长文本换行并发送。
+- [ ] 9. 键盘弹起时输入框、光标与发送按钮不被遮挡，收起后布局恢复。
+- [ ] 10. 主聊天消息区可连续纵向滚动。
+- [ ] 11. 思维壤面板可滚动。
+- [ ] 12. 侧边栏、feature panel、modal、overlay 与长页面可滚动。
+- [ ] 13. 普通站内入口切换保留当前 WebView，不出现明显整页壳层重开。
+- [ ] 14. 返回键与边缘手势先走 WebView 历史；无历史时双击退出。
+- [ ] 15. 悬浮原生菜单六项均可点按，且不拦截页面纵向滚动。
+- [ ] 16. “刷新海岸”保留当前路由并正常重载。
+- [ ] 17. “清缓存重载”可恢复页面，且不删除 Cookie、localStorage、sessionStorage 或 IndexedDB。
+- [ ] 18. “关于 CoastGPT”离线即可显示 A3.0、1.0.2-a3、versionCode 3、packageName、Web 与 MCP 基础信息。
+- [ ] 19. “检查 APP 更新”联网时读取 production 清单，断网时保留本地更新骨架并提示清楚。
+- [ ] 20. Web 侧“海岸更新”与 `/updates/` 页面可打开，版本一致。
+- [ ] 21. 站内链接留在 APP；外部链接、下载链接交给默认 Chrome / 系统能力。
+- [ ] 22. 有可用缓存时断网尽量显示最近海岸；无缓存时显示本地错误页，菜单与三个恢复按钮仍在。
+- [ ] 23. 恢复网络后“重试”可进入海岸；SSL 错误不被绕过。
+- [ ] 24. 切到后台 30 秒与 5 分钟后回来不白屏、不重置当前输入场景。
+- [ ] 25. APP 保持竖屏；light/dark 与页面主题色切换后状态栏、刘海、手势条和三键导航不遮挡内容。
+- [ ] 26. 安装前将 APK SHA-256 与交付报告逐字对照。
 
 还应逐项打开主聊天、思维壤、记忆、日历、灯塔、信箱、Radio、Dogtalk、Daily、工作台 / 工具入口，确认内部导航不误跳系统浏览器，页面状态与滚动均可恢复。
 
 ## CI
 
-`.github/workflows/android-shell.yml` 在 A2 Android 或更新中心文件变化时执行：
+`.github/workflows/android-shell.yml` 在 A3 Android 或更新中心文件变化时执行：
 
 - Gradle wrapper validation
 - 根 `npm test`

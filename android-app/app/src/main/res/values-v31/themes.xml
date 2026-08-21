@@ -1,21 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.ElementeraCoast" parent="@android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:windowNoTitle">true</item>
-        <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">@color/coast_gold</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">@color/coast_navy_dark</item>
-        <item name="android:windowLightNavigationBar">false</item>
-        <item name="android:navigationBarColor">@color/coast_navy_dark</item>
-        <item name="android:windowBackground">@color/coast_navy</item>
-        <item name="android:forceDarkAllowed">false</item>
-    </style>
-
     <style name="Theme.ElementeraCoast.Launch" parent="Theme.ElementeraCoast">
         <item name="android:windowSplashScreenBackground">@color/coast_navy</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/coast_icon</item>
-        <item name="android:windowSplashScreenIconBackgroundColor">@color/coast_navy</item>
         <item name="android:windowSplashScreenAnimationDuration">0</item>
     </style>
 </resources>

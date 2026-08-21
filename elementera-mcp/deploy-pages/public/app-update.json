@@ -1,21 +1,21 @@
 {
-  "appName": "元素海岸",
+  "appName": "CoastGPT",
   "android": {
-    "latestVersionCode": 2,
-    "latestVersionName": "1.0.1-a2",
-    "releaseName": "A2.0",
+    "latestVersionCode": 3,
+    "latestVersionName": "1.0.2-a3",
+    "releaseName": "A3.0",
     "apkUrl": "",
     "sha256": "",
     "publishedAt": "2026-08-21",
     "releaseNotes": [
-      "整理原生菜单、关于信息与海岸更新中心",
-      "使用公开更新清单判断版本，并明确 APK 下载状态",
-      "增加 Android APP 模式识别、公开更新页与完整发布说明"
+      "手机桌面名称更新为 CoastGPT，并恢复仓库原有深蓝旧金图标",
+      "移除固定原生顶栏，使用轻量悬浮菜单与系统/页面主题色",
+      "加入本地启动骨架、离线菜单、关于、更新说明与缓存优先恢复"
     ]
   },
   "web": {
-    "label": "A2 / P6.4+A1",
-    "commit": "f3f3acd"
+    "label": "A3 / P6.4+A1+A2",
+    "commit": "e70936d"
   },
   "mcp": {
     "expectedVersion": "1.9.2"

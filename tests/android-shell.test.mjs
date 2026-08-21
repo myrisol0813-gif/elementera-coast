@@ -9,7 +9,7 @@ const read = (path) => readFile(resolve(root, path), 'utf8');
 const updateManifest = JSON.parse(
   await read('elementera-mcp/deploy-pages/public/app-update.json'),
 );
-assert.equal(updateManifest.appName, '元素海岸');
+assert.equal(updateManifest.appName, 'CoastGPT');
 assert.deepEqual({
   latestVersionCode: updateManifest.android.latestVersionCode,
   latestVersionName: updateManifest.android.latestVersionName,
@@ -18,11 +18,11 @@ assert.deepEqual({
   webCommit: updateManifest.web.commit,
   mcpVersion: updateManifest.mcp.expectedVersion,
 }, {
-  latestVersionCode: 2,
-  latestVersionName: '1.0.1-a2',
-  releaseName: 'A2.0',
-  webLabel: 'A2 / P6.4+A1',
-  webCommit: 'f3f3acd',
+  latestVersionCode: 3,
+  latestVersionName: '1.0.2-a3',
+  releaseName: 'A3.0',
+  webLabel: 'A3 / P6.4+A1+A2',
+  webCommit: 'e70936d',
   mcpVersion: '1.9.2',
 });
 assert.equal(updateManifest.android.apkUrl, '');
@@ -41,14 +41,26 @@ for (const expected of [
   'compileSdk = 36',
   'minSdk = 26',
   'targetSdk = 36',
-  'versionCode = 2',
-  'versionName = "1.0.1-a2"',
-  'RELEASE_NAME", "\\"A2.0\\"',
+  'versionCode = 3',
+  'versionName = "1.0.2-a3"',
+  'RELEASE_NAME", "\\"A3.0\\"',
   'UPDATE_PAGE_URL',
   'https://app.elementeracoast.com',
 ]) assert.ok(appBuild.includes(expected), 'Android build contract missing: ' + expected);
 
 const androidManifest = await read('android-app/app/src/main/AndroidManifest.xml');
+const androidStrings = await read('android-app/app/src/main/res/values/strings.xml');
+const androidLayout = await read('android-app/app/src/main/res/layout/activity_main.xml');
+const adaptiveIcon = await read('android-app/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml');
+assert.match(androidStrings, /<string name="app_name">CoastGPT<\/string>/);
+assert.equal(androidLayout.includes('native_toolbar'), false);
+for (const expected of [
+  'android:id="@+id/loading_overlay"',
+  'android:id="@+id/shell_menu_button"',
+  'android:background="@color/shell_surface"',
+]) assert.ok(androidLayout.includes(expected), 'A3 local shell layout missing: ' + expected);
+assert.match(adaptiveIcon, /<background android:drawable="@drawable\/coast_icon"/);
+assert.match(adaptiveIcon, /<foreground android:drawable="@color\/coast_transparent"/);
 const permissions = [...androidManifest.matchAll(
   /<uses-permission\s+android:name="([^"]+)"\s*\/>/g,
 )].map((match) => match[1]);
@@ -92,13 +104,17 @@ for (const expected of [
   "caches.keys()",
   'FileChooserParams.parseResult',
   'ElementeraCoastApp/',
-  'BuildConfig.UPDATE_PAGE_URL',
-  'buildAboutMessage(updateInfo)',
+  'showLocalUpdateCenter()',
+  'buildAboutMessage(updateInfo, false)',
   '更新清单已存在，但暂无公开 APK 下载链接',
+  'WebSettings.LOAD_CACHE_ONLY',
+  'loadingOverlay.animate()',
+  "meta[name=theme-color]",
 ]) assert.ok(mainActivity.includes(expected), 'Android shell behavior missing: ' + expected);
 assert.equal(mainActivity.includes('addJavascriptInterface'), false);
 assert.equal(mainActivity.includes('removeAllCookies'), false);
 assert.equal(mainActivity.includes('deleteAllData'), false);
+assert.equal(mainActivity.includes('webView.loadUrl(BuildConfig.UPDATE_PAGE_URL)'), false);
 
 const webViewClient = await read(
   'android-app/app/src/main/java/com/elementeracoast/app/CoastWebViewClient.java',
@@ -162,7 +178,7 @@ for (const expected of [
   'gradle/actions/wrapper-validation@v4',
   './gradlew lintDebug lintRelease assembleDebug assembleRelease',
   'actions/upload-artifact@v4',
-  'elementera-coast-android-a2',
+  'coastgpt-android-a3',
 ]) assert.ok(workflow.includes(expected), 'Android CI missing: ' + expected);
 
 console.log('android shell contract tests passed');

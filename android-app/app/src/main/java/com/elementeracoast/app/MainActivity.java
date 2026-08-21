@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Insets;
 import android.net.Uri;
@@ -26,6 +27,7 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.Locale;
@@ -33,15 +35,26 @@ import java.util.Locale;
 public final class MainActivity extends Activity implements CoastWebViewClient.Delegate {
     private static final int FILE_CHOOSER_REQUEST_CODE = 4101;
     private static final long DOUBLE_BACK_EXIT_WINDOW_MS = 2_000L;
+    private static final long CONTENT_FADE_MS = 180L;
 
+    private View appRoot;
     private WebView webView;
     private ProgressBar pageProgress;
+    private View loadingOverlay;
     private View errorPanel;
     private TextView errorMessage;
     private ValueCallback<Uri[]> fileChooserCallback;
     private final CoastUpdateChecker updateChecker = new CoastUpdateChecker();
+    private final Runnable revealPageProgress = () -> {
+        if (pageProgress != null && pageProgress.getProgress() < 100 && firstPagePresented) {
+            pageProgress.setVisibility(View.VISIBLE);
+        }
+    };
     private long lastBackPressedAt;
     private boolean clearHistoryAfterHomeLoad;
+    private boolean firstPagePresented;
+    private boolean offlineCacheAttempted;
+    private boolean usingCacheOnly;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -50,16 +63,16 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
 
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         setContentView(R.layout.activity_main);
-        configureSystemBars();
 
-        View appRoot = findViewById(R.id.app_root);
-        configureInsets(appRoot);
-
+        appRoot = findViewById(R.id.app_root);
         webView = findViewById(R.id.coast_webview);
         pageProgress = findViewById(R.id.page_progress);
+        loadingOverlay = findViewById(R.id.loading_overlay);
         errorPanel = findViewById(R.id.error_panel);
         errorMessage = findViewById(R.id.error_message);
 
+        configureSystemBars();
+        configureInsets(appRoot);
         configureWebView();
         configureShellControls();
         configureBackHandler();
@@ -73,32 +86,53 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
         Window window = getWindow();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(false);
-            window.setStatusBarColor(Color.TRANSPARENT);
-            window.setNavigationBarColor(Color.TRANSPARENT);
-            WindowInsetsController controller = window.getInsetsController();
-            if (controller != null) {
-                int lightBarFlags = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                        | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
-                controller.setSystemBarsAppearance(0, lightBarFlags);
-            }
-        } else {
-            window.setStatusBarColor(getColor(R.color.coast_navy_dark));
-            window.setNavigationBarColor(getColor(R.color.coast_navy_dark));
-            int visibility = window.getDecorView().getSystemUiVisibility();
-            visibility &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            visibility &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
-            window.getDecorView().setSystemUiVisibility(visibility);
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.setNavigationBarContrastEnforced(false);
         }
+        applySystemSurfaceBars();
     }
 
-    private void configureInsets(View appRoot) {
+    private void applySystemSurfaceBars() {
+        applySystemBarColor(getColor(R.color.shell_surface), !isSystemDarkMode());
+    }
+
+    private boolean isSystemDarkMode() {
+        int nightMode = getResources().getConfiguration().uiMode
+                & Configuration.UI_MODE_NIGHT_MASK;
+        return nightMode == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    private void applySystemBarColor(int color, boolean useDarkIcons) {
+        Window window = getWindow();
+        window.setStatusBarColor(color);
+        window.setNavigationBarColor(color);
+        if (appRoot != null) {
+            appRoot.setBackgroundColor(color);
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowInsetsController controller = window.getInsetsController();
+            if (controller != null) {
+                int mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                        | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                controller.setSystemBarsAppearance(useDarkIcons ? mask : 0, mask);
+            }
+            return;
+        }
+
+        int visibility = window.getDecorView().getSystemUiVisibility();
+        int mask = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        visibility = useDarkIcons ? visibility | mask : visibility & ~mask;
+        window.getDecorView().setSystemUiVisibility(visibility);
+    }
+
+    private void configureInsets(View root) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
             return;
         }
-        appRoot.setOnApplyWindowInsetsListener((view, windowInsets) -> {
+        root.setOnApplyWindowInsetsListener((view, windowInsets) -> {
             Insets systemBars = windowInsets.getInsets(WindowInsets.Type.systemBars());
             Insets displayCutout = windowInsets.getInsets(WindowInsets.Type.displayCutout());
             Insets ime = windowInsets.getInsets(WindowInsets.Type.ime());
@@ -114,7 +148,7 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
             view.setPadding(left, top, right, bottom);
             return WindowInsets.CONSUMED;
         });
-        appRoot.requestApplyInsets();
+        root.requestApplyInsets();
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -150,7 +184,7 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
         cookieManager.setAcceptThirdPartyCookies(webView, false);
 
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG);
-        webView.setBackgroundColor(getColor(R.color.coast_navy));
+        webView.setBackgroundColor(getColor(R.color.shell_surface));
         webView.setVerticalScrollBarEnabled(true);
         webView.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         webView.setFocusableInTouchMode(true);
@@ -161,7 +195,12 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
             @Override
             public void onProgressChanged(WebView view, int newProgress) {
                 pageProgress.setProgress(newProgress, true);
-                pageProgress.setVisibility(newProgress >= 100 ? View.GONE : View.VISIBLE);
+                pageProgress.removeCallbacks(revealPageProgress);
+                if (newProgress >= 100 || !firstPagePresented) {
+                    pageProgress.setVisibility(View.GONE);
+                } else {
+                    pageProgress.postDelayed(revealPageProgress, 140L);
+                }
             }
 
             @Override
@@ -223,7 +262,7 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
                 return true;
             }
             if (id == R.id.menu_check_update) {
-                checkForAppUpdate();
+                showLocalUpdateCenter();
                 return true;
             }
             if (id == R.id.menu_open_browser) {
@@ -241,6 +280,8 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
 
     private void retryCurrentPage() {
         hideNetworkError();
+        resetNetworkLoadMode();
+        offlineCacheAttempted = false;
         String currentUrl = webView.getUrl();
         if (currentUrl == null || currentUrl.trim().isEmpty()) {
             loadCoastHome(false);
@@ -251,18 +292,19 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
 
     private void loadCoastHome(boolean resetHistory) {
         hideNetworkError();
+        resetNetworkLoadMode();
+        offlineCacheAttempted = false;
         clearHistoryAfterHomeLoad = resetHistory;
-        webView.stopLoading();
         webView.loadUrl(BuildConfig.COAST_URL);
     }
 
     private void clearResourceCacheAndReload() {
         hideNetworkError();
+        resetNetworkLoadMode();
+        offlineCacheAttempted = false;
         webView.clearCache(true);
         String currentUrl = webView.getUrl();
-        if (currentUrl != null
-                && currentUrl.toLowerCase(Locale.ROOT)
-                .startsWith(BuildConfig.COAST_URL.toLowerCase(Locale.ROOT))) {
+        if (isInternalUrl(currentUrl)) {
             String script = "(async function(){try{"
                     + "if('caches' in window){"
                     + "const keys=await caches.keys();"
@@ -278,114 +320,117 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
         toast(R.string.cache_cleared);
     }
 
-    private void checkForAppUpdate() {
-        toast(R.string.checking_update);
+    private void showLocalUpdateCenter() {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.open_update_center)
+                .setMessage(buildUpdateCenterMessage(null, false))
+                .setNegativeButton(R.string.retry_update_check, null)
+                .setNeutralButton(
+                        "网页版更新页",
+                        (ignored, which) -> launchExternal(Uri.parse(BuildConfig.UPDATE_PAGE_URL))
+                )
+                .setPositiveButton("关闭", null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(
+                    view -> refreshUpdateDialog(dialog)
+            );
+            refreshUpdateDialog(dialog);
+        });
+        dialog.show();
+    }
+
+    private void refreshUpdateDialog(AlertDialog dialog) {
+        if (!dialog.isShowing()) {
+            return;
+        }
+        dialog.setTitle(R.string.open_update_center);
+        dialog.setMessage(buildUpdateCenterMessage(null, true));
         updateChecker.check(BuildConfig.UPDATE_MANIFEST_URL, new CoastUpdateChecker.Callback() {
             @Override
             public void onSuccess(CoastUpdateChecker.UpdateInfo updateInfo) {
-                showUpdateResult(updateInfo);
+                if (dialog.isShowing()) {
+                    boolean newer = updateInfo.latestVersionCode > BuildConfig.VERSION_CODE;
+                    dialog.setTitle(newer ? "发现 CoastGPT 新版本" : "CoastGPT 已是最新版");
+                    dialog.setMessage(buildUpdateCenterMessage(updateInfo, false));
+                }
             }
 
             @Override
             public void onFailure() {
-                showUpdateCheckFailure();
+                if (dialog.isShowing()) {
+                    dialog.setTitle("CoastGPT 本地更新中心");
+                    dialog.setMessage(buildUpdateCenterMessage(null, false));
+                }
             }
         });
     }
 
-    private void showUpdateCheckFailure() {
-        if (isFinishing() || isDestroyed()) {
-            return;
-        }
-        new AlertDialog.Builder(this)
-                .setTitle("暂时没有读到更新清单")
-                .setMessage("海岸仍可正常使用。请确认网络后稍后重试，也可以打开公开更新中心查看。")
-                .setNegativeButton("重试", (dialog, which) -> checkForAppUpdate())
-                .setNeutralButton(
-                        R.string.open_update_center,
-                        (dialog, which) -> openUpdateCenter()
-                )
-                .setPositiveButton("关闭", null)
-                .show();
-    }
-
-    private void showUpdateResult(CoastUpdateChecker.UpdateInfo updateInfo) {
-        if (isFinishing() || isDestroyed()) {
-            return;
-        }
-
-        boolean newer = updateInfo.latestVersionCode > BuildConfig.VERSION_CODE;
+    private String buildUpdateCenterMessage(
+            CoastUpdateChecker.UpdateInfo updateInfo,
+            boolean loading
+    ) {
         StringBuilder message = new StringBuilder();
-        message.append("当前 APP：")
+        message.append("本机 APP：")
                 .append(BuildConfig.VERSION_NAME)
-                .append("（")
+                .append("（versionCode ")
                 .append(BuildConfig.VERSION_CODE)
-                .append("）\n")
-                .append("当前发布名：")
+                .append("）\n发布名：")
                 .append(BuildConfig.RELEASE_NAME)
-                .append("\n\n")
-                .append("更新清单：")
-                .append(emptyFallback(updateInfo.latestVersionName, "未标注"))
-                .append("（")
-                .append(updateInfo.latestVersionCode)
-                .append("）\n")
-                .append("清单发布名：")
-                .append(emptyFallback(updateInfo.releaseName, "未标注"));
+                .append("\npackageName：")
+                .append(BuildConfig.APPLICATION_ID);
 
-        if (!updateInfo.webLabel.isEmpty() || !updateInfo.webCommit.isEmpty()) {
-            message.append("\nWeb：")
-                    .append(emptyFallback(updateInfo.webLabel, "未标注"))
-                    .append(" · ")
-                    .append(emptyFallback(updateInfo.webCommit, "未标注"));
-        }
-        if (!updateInfo.expectedMcpVersion.isEmpty()) {
-            message.append("\nMCP 预期：").append(updateInfo.expectedMcpVersion);
-        }
-        if (!updateInfo.publishedAt.isEmpty()) {
-            message.append("\n发布时间：").append(updateInfo.publishedAt);
-        }
-
-        if (!updateInfo.releaseNotes.isEmpty()) {
-            message.append("\n\n");
-            for (String note : updateInfo.releaseNotes) {
-                message.append("• ").append(note).append('\n');
-            }
-            message.setLength(message.length() - 1);
-        }
-        if (!updateInfo.sha256.isEmpty()) {
-            message.append("\n\nSHA-256：").append(updateInfo.sha256);
-        }
-        if (!isHttps(updateInfo.apkUrl)) {
-            message.append("\n\n更新清单已存在，但暂无公开 APK 下载链接。");
-        }
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(this)
-                .setTitle(newer ? "发现新的海岸外壳" : "当前已是最新版")
-                .setMessage(message.toString())
-                .setNeutralButton(
-                        R.string.open_update_center,
-                        (dialog, which) -> openUpdateCenter()
-                );
-
-        if (newer && isHttps(updateInfo.apkUrl)) {
-            builder.setPositiveButton(
-                    "打开下载页",
-                    (dialog, which) -> launchExternal(Uri.parse(updateInfo.apkUrl))
-            );
+        if (updateInfo == null) {
+            message.append("\n\n")
+                    .append(loading ? "正在读取线上更新清单…" : "离线，暂未读取线上清单。")
+                    .append("\n本地菜单、关于、错误恢复与版本说明仍可使用。");
         } else {
-            builder.setPositiveButton("关闭", null);
+            message.append("\n\n线上版本：")
+                    .append(emptyFallback(updateInfo.latestVersionName, "未标注"))
+                    .append("（versionCode ")
+                    .append(updateInfo.latestVersionCode)
+                    .append("）\n线上发布名：")
+                    .append(emptyFallback(updateInfo.releaseName, "未标注"));
+            if (!updateInfo.webLabel.isEmpty() || !updateInfo.webCommit.isEmpty()) {
+                message.append("\nWeb：")
+                        .append(emptyFallback(updateInfo.webLabel, "未标注"))
+                        .append(" · ")
+                        .append(emptyFallback(updateInfo.webCommit, "未标注"));
+            }
+            if (!updateInfo.expectedMcpVersion.isEmpty()) {
+                message.append("\nMCP 预期：").append(updateInfo.expectedMcpVersion);
+            }
+            if (!updateInfo.releaseNotes.isEmpty()) {
+                message.append("\n\n更新说明：");
+                for (String note : updateInfo.releaseNotes) {
+                    message.append("\n• ").append(note);
+                }
+            }
+            if (isHttps(updateInfo.apkUrl)) {
+                message.append("\n\nAPK：已有公开 HTTPS 下载地址");
+            } else {
+                message.append("\n\n更新清单已存在，但暂无公开 APK 下载链接。");
+            }
+            if (!updateInfo.sha256.isEmpty()) {
+                message.append("\nSHA-256：").append(updateInfo.sha256);
+            }
         }
-        builder.show();
+
+        message.append("\n\n签名说明：debug APK 只用于测试；正式覆盖安装需保持 packageName 与长期 release 签名一致，并递增 versionCode。");
+        return message.toString();
     }
 
     private void showAboutDialog() {
         AlertDialog aboutDialog = new AlertDialog.Builder(this)
                 .setTitle(R.string.about_coast)
-                .setMessage(buildAboutMessage(null))
-                .setNeutralButton("检查更新", (dialog, which) -> checkForAppUpdate())
+                .setMessage(buildAboutMessage(null, false))
+                .setNeutralButton("检查更新", (dialog, which) -> showLocalUpdateCenter())
                 .setNegativeButton(
-                        R.string.open_update_center,
-                        (ignored, which) -> openUpdateCenter()
+                        "网页版更新页",
+                        (ignored, which) -> launchExternal(Uri.parse(BuildConfig.UPDATE_PAGE_URL))
                 )
                 .setPositiveButton("关闭", null)
                 .create();
@@ -395,18 +440,23 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
             @Override
             public void onSuccess(CoastUpdateChecker.UpdateInfo updateInfo) {
                 if (aboutDialog.isShowing()) {
-                    aboutDialog.setMessage(buildAboutMessage(updateInfo));
+                    aboutDialog.setMessage(buildAboutMessage(updateInfo, false));
                 }
             }
 
             @Override
             public void onFailure() {
-                // The static BuildConfig values remain visible; normal shell use is unaffected.
+                if (aboutDialog.isShowing()) {
+                    aboutDialog.setMessage(buildAboutMessage(null, true));
+                }
             }
         });
     }
 
-    private String buildAboutMessage(CoastUpdateChecker.UpdateInfo updateInfo) {
+    private String buildAboutMessage(
+            CoastUpdateChecker.UpdateInfo updateInfo,
+            boolean offline
+    ) {
         String webLabel = updateInfo == null
                 ? BuildConfig.EXPECTED_WEB_LABEL
                 : emptyFallback(updateInfo.webLabel, BuildConfig.EXPECTED_WEB_LABEL);
@@ -417,7 +467,8 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
                 ? BuildConfig.EXPECTED_MCP_VERSION
                 : emptyFallback(updateInfo.expectedMcpVersion, BuildConfig.EXPECTED_MCP_VERSION);
 
-        return "APP 名称：元素海岸\n"
+        return "APP 名称：CoastGPT\n"
+                + "世界观名称：元素海岸 / Elementera Coast\n"
                 + "发布名：" + BuildConfig.RELEASE_NAME + "\n"
                 + "APP versionName：" + BuildConfig.VERSION_NAME + "\n"
                 + "APP versionCode：" + BuildConfig.VERSION_CODE + "\n"
@@ -425,13 +476,9 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
                 + "WebView 加载地址：" + BuildConfig.COAST_URL + "\n\n"
                 + "Web：" + webLabel + " · " + webCommit + "\n"
                 + "MCP expectedVersion：" + expectedMcpVersion + "\n"
-                + "更新清单：" + BuildConfig.UPDATE_MANIFEST_URL + "\n\n"
-                + "A2 仍只承载线上海岸。清缓存不会删除 Cookie、localStorage 或登录态。";
-    }
-
-    private void openUpdateCenter() {
-        hideNetworkError();
-        webView.loadUrl(BuildConfig.UPDATE_PAGE_URL);
+                + "更新清单：" + BuildConfig.UPDATE_MANIFEST_URL + "\n"
+                + (offline ? "清单状态：离线，显示 APK 内基础信息\n\n" : "\n")
+                + "A3 将菜单、关于、更新骨架与断网恢复放在本地壳。清缓存不会删除 Cookie、localStorage、sessionStorage 或 IndexedDB。";
     }
 
     private String emptyFallback(String value, String fallback) {
@@ -445,6 +492,17 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
         return "https".equalsIgnoreCase(Uri.parse(value).getScheme());
     }
 
+    private boolean isInternalUrl(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return false;
+        }
+        Uri uri = Uri.parse(value);
+        Uri coast = Uri.parse(BuildConfig.COAST_URL);
+        return "https".equalsIgnoreCase(uri.getScheme())
+                && coast.getHost() != null
+                && coast.getHost().equalsIgnoreCase(uri.getHost());
+    }
+
     @Override
     public void onMainFrameStarted() {
         hideNetworkError();
@@ -452,7 +510,11 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
 
     @Override
     public void onMainFrameLoaded(String url) {
+        resetNetworkLoadMode();
+        offlineCacheAttempted = false;
         hideNetworkError();
+        presentWebContent();
+        applyDocumentThemeColor();
         if (clearHistoryAfterHomeLoad) {
             webView.clearHistory();
             clearHistoryAfterHomeLoad = false;
@@ -460,10 +522,78 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
     }
 
     @Override
-    public void onMainFrameError(String message) {
+    public void onMainFrameError(
+            String message,
+            String failedUrl,
+            boolean allowCachedFallback
+    ) {
+        if (allowCachedFallback && !offlineCacheAttempted && isInternalUrl(failedUrl)) {
+            offlineCacheAttempted = true;
+            usingCacheOnly = true;
+            webView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ONLY);
+            webView.post(() -> webView.loadUrl(failedUrl));
+            return;
+        }
+
+        resetNetworkLoadMode();
+        pageProgress.removeCallbacks(revealPageProgress);
         pageProgress.setVisibility(View.GONE);
+        hideLoadingOverlay();
+        applySystemSurfaceBars();
         errorMessage.setText(message);
         errorPanel.setVisibility(View.VISIBLE);
+    }
+
+    private void resetNetworkLoadMode() {
+        if (usingCacheOnly && webView != null) {
+            webView.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
+        }
+        usingCacheOnly = false;
+    }
+
+    private void presentWebContent() {
+        if (!firstPagePresented) {
+            firstPagePresented = true;
+            webView.animate().alpha(1f).setDuration(CONTENT_FADE_MS).start();
+        } else {
+            webView.setAlpha(1f);
+        }
+        hideLoadingOverlay();
+    }
+
+    private void hideLoadingOverlay() {
+        if (loadingOverlay.getVisibility() != View.VISIBLE) {
+            return;
+        }
+        loadingOverlay.animate()
+                .alpha(0f)
+                .setDuration(CONTENT_FADE_MS)
+                .withEndAction(() -> loadingOverlay.setVisibility(View.GONE))
+                .start();
+    }
+
+    private void applyDocumentThemeColor() {
+        String script = "(function(){var node=document.querySelector('meta[name=theme-color]');"
+                + "return node&&node.content?node.content:'';})();";
+        webView.evaluateJavascript(script, rawValue -> {
+            try {
+                String value = new JSONArray("[" + rawValue + "]").optString(0, "").trim();
+                if (!value.matches("#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?")) {
+                    return;
+                }
+                int color = Color.parseColor(value);
+                applySystemBarColor(color, isLightColor(color));
+            } catch (Exception ignored) {
+                // System light/dark colors remain the safe fallback.
+            }
+        });
+    }
+
+    private boolean isLightColor(int color) {
+        double luminance = (0.299d * Color.red(color)
+                + 0.587d * Color.green(color)
+                + 0.114d * Color.blue(color)) / 255d;
+        return luminance >= 0.62d;
     }
 
     @Override
@@ -573,6 +703,9 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
     @Override
     protected void onDestroy() {
         updateChecker.close();
+        if (pageProgress != null) {
+            pageProgress.removeCallbacks(revealPageProgress);
+        }
         if (fileChooserCallback != null) {
             fileChooserCallback.onReceiveValue(null);
             fileChooserCallback = null;
