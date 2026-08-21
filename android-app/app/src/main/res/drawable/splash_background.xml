@@ -2,10 +2,10 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/coast_navy" />
     <item
-        android:bottom="112dp"
+        android:bottom="96dp"
         android:drawable="@drawable/coast_icon"
         android:gravity="center"
-        android:left="112dp"
-        android:right="112dp"
-        android:top="112dp" />
+        android:left="96dp"
+        android:right="96dp"
+        android:top="96dp" />
 </layer-list>

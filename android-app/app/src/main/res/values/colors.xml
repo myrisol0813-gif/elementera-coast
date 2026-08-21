@@ -8,4 +8,11 @@
     <color name="coast_white">#FFFDF8</color>
     <color name="coast_text_muted">#BAC3DF</color>
     <color name="coast_transparent">#00000000</color>
+    <color name="shell_surface">#FAF8F3</color>
+    <color name="shell_surface_elevated">#FFFDF8</color>
+    <color name="shell_text_primary">#202333</color>
+    <color name="shell_text_secondary">#626779</color>
+    <color name="shell_divider">#D9D6CE</color>
+    <color name="shell_menu_surface">#E8FFFDF8</color>
+    <color name="shell_menu_pressed">#F2E9D7</color>
 </resources>

@@ -4,11 +4,11 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:fontFamily">sans</item>
         <item name="android:colorAccent">@color/coast_gold</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">@color/coast_navy_dark</item>
-        <item name="android:windowLightNavigationBar">false</item>
-        <item name="android:navigationBarColor">@color/coast_navy_dark</item>
-        <item name="android:windowBackground">@color/coast_navy</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">@color/shell_surface</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:navigationBarColor">@color/shell_surface</item>
+        <item name="android:windowBackground">@color/shell_surface</item>
         <item name="android:forceDarkAllowed">false</item>
     </style>
 

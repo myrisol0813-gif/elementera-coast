@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">元素海岸</string>
-    <string name="shell_title">元素海岸</string>
-    <string name="shell_subtitle">Elementera Coast · A2</string>
-    <string name="shell_menu">海岸外壳菜单</string>
+    <string name="app_name">CoastGPT</string>
+    <string name="shell_title">CoastGPT</string>
+    <string name="shell_subtitle">Elementera Coast · A3</string>
+    <string name="shell_menu">打开 CoastGPT 本地菜单</string>
+    <string name="loading_coast">正在抵达海岸…</string>
     <string name="network_error_title">海风暂时没有抵达</string>
     <string name="network_error_message">线上海岸没有成功载入。可以重试，或从系统浏览器确认海岸是否可访问。</string>
     <string name="retry">重试</string>
@@ -12,13 +13,14 @@
     <string name="refresh_coast">刷新海岸</string>
     <string name="reopen_home">重新打开首页</string>
     <string name="check_update">检查 APP 更新</string>
-    <string name="about_coast">关于元素海岸</string>
+    <string name="about_coast">关于 CoastGPT</string>
     <string name="exit_hint">再按一次返回，离开海岸</string>
     <string name="cache_cleared">资源缓存已清，Cookie 与登录态保留</string>
     <string name="external_link_failed">没有找到可以打开此链接的应用</string>
     <string name="unsupported_link">这个链接暂时不能从海岸外壳打开</string>
     <string name="file_picker_failed">没有找到可用的文件选择器</string>
-    <string name="checking_update">正在查看海岸更新…</string>
-    <string name="update_check_failed">暂时没有读到更新清单，请稍后再试</string>
-    <string name="open_update_center">打开海岸更新中心</string>
+    <string name="checking_update">正在查看 CoastGPT 更新…</string>
+    <string name="update_check_failed">离线，暂未读取线上清单</string>
+    <string name="open_update_center">CoastGPT 更新中心</string>
+    <string name="retry_update_check">重新检查</string>
 </resources>

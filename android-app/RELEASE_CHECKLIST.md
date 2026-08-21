@@ -1,4 +1,4 @@
-# Elementera Coast Android release checklist
+# CoastGPT Android release checklist
 
 这份清单用于发布可长期覆盖安装的 signed release APK。debug APK 只供测试，unsigned release APK 不能直接安装。
 
@@ -6,7 +6,7 @@
 
 - [ ] `applicationId` / packageName 保持 `com.elementeracoast.app`。
 - [ ] `versionCode` 高于已发布版本。
-- [ ] `versionName` 与 `releaseName` 已统一。
+- [ ] `versionName` 与 `releaseName` 已统一；A3 基线为 `1.0.2-a3` / `3` / `A3.0`。
 - [ ] 本轮没有新增未批准权限、Gateway、LoverConnect、本地 MCP 或模型上下文包装。
 
 ## 2. 创建并保管 release keystore
@@ -53,6 +53,7 @@ cd android-app
 - [ ] `lintDebug`、`lintRelease`、`assembleDebug`、`assembleRelease` 全部通过。
 - [ ] release 输出不是 `app-release-unsigned.apk`，并可通过 `apksigner verify --verbose --print-certs`。
 - [ ] 在 Android 16 模拟器与 OPPO Reno14 真机完成冷启动和更新中心 smoke test。
+- [ ] 核对桌面名称 CoastGPT、旧图标 adaptive 裁切、无固定原生顶栏、light/dark 系统栏与断网本地壳。
 - [ ] 使用已安装正式版执行一次同签名覆盖安装。
 
 ## 5. 计算并记录 APK SHA-256

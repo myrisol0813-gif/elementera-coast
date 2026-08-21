@@ -18,7 +18,7 @@ public final class CoastWebViewClient extends WebViewClient {
 
         void onMainFrameLoaded(String url);
 
-        void onMainFrameError(String message);
+        void onMainFrameError(String message, String failedUrl, boolean allowCachedFallback);
 
         void openExternalUri(Uri uri);
     }
@@ -80,7 +80,11 @@ public final class CoastWebViewClient extends WebViewClient {
     public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
         if (request.isForMainFrame()) {
             mainFrameFailed = true;
-            delegate.onMainFrameError("海岸暂时无法连接。请检查网络后再试。");
+            delegate.onMainFrameError(
+                    "海岸暂时无法连接。可以重试，或继续使用 CoastGPT 本地菜单。",
+                    request.getUrl().toString(),
+                    true
+            );
         }
     }
 
@@ -92,7 +96,11 @@ public final class CoastWebViewClient extends WebViewClient {
     ) {
         if (request.isForMainFrame() && errorResponse.getStatusCode() >= 500) {
             mainFrameFailed = true;
-            delegate.onMainFrameError("线上海岸暂时没有回应。稍后重试即可。");
+            delegate.onMainFrameError(
+                    "线上海岸暂时没有回应。稍后重试即可，本地菜单仍可使用。",
+                    request.getUrl().toString(),
+                    true
+            );
         }
     }
 
@@ -100,6 +108,10 @@ public final class CoastWebViewClient extends WebViewClient {
     public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
         handler.cancel();
         mainFrameFailed = true;
-        delegate.onMainFrameError("安全连接没有通过校验，海岸外壳已停止载入。");
+        delegate.onMainFrameError(
+                "安全连接没有通过校验，CoastGPT 已停止载入。",
+                error.getUrl(),
+                false
+        );
     }
 }
