@@ -140,8 +140,9 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
         settings.setGeolocationEnabled(false);
         settings.setUserAgentString(
                 settings.getUserAgentString()
-                        + " ElementeraCoastAndroid/"
+                        + " ElementeraCoastApp/"
                         + BuildConfig.VERSION_NAME
+                        + " Android"
         );
 
         CookieManager cookieManager = CookieManager.getInstance();
@@ -287,9 +288,25 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
 
             @Override
             public void onFailure() {
-                toast(R.string.update_check_failed);
+                showUpdateCheckFailure();
             }
         });
+    }
+
+    private void showUpdateCheckFailure() {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("暂时没有读到更新清单")
+                .setMessage("海岸仍可正常使用。请确认网络后稍后重试，也可以打开公开更新中心查看。")
+                .setNegativeButton("重试", (dialog, which) -> checkForAppUpdate())
+                .setNeutralButton(
+                        R.string.open_update_center,
+                        (dialog, which) -> openUpdateCenter()
+                )
+                .setPositiveButton("关闭", null)
+                .show();
     }
 
     private void showUpdateResult(CoastUpdateChecker.UpdateInfo updateInfo) {
@@ -304,11 +321,29 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
                 .append("（")
                 .append(BuildConfig.VERSION_CODE)
                 .append("）\n")
+                .append("当前发布名：")
+                .append(BuildConfig.RELEASE_NAME)
+                .append("\n\n")
                 .append("更新清单：")
                 .append(emptyFallback(updateInfo.latestVersionName, "未标注"))
                 .append("（")
                 .append(updateInfo.latestVersionCode)
-                .append("）");
+                .append("）\n")
+                .append("清单发布名：")
+                .append(emptyFallback(updateInfo.releaseName, "未标注"));
+
+        if (!updateInfo.webLabel.isEmpty() || !updateInfo.webCommit.isEmpty()) {
+            message.append("\nWeb：")
+                    .append(emptyFallback(updateInfo.webLabel, "未标注"))
+                    .append(" · ")
+                    .append(emptyFallback(updateInfo.webCommit, "未标注"));
+        }
+        if (!updateInfo.expectedMcpVersion.isEmpty()) {
+            message.append("\nMCP 预期：").append(updateInfo.expectedMcpVersion);
+        }
+        if (!updateInfo.publishedAt.isEmpty()) {
+            message.append("\n发布时间：").append(updateInfo.publishedAt);
+        }
 
         if (!updateInfo.releaseNotes.isEmpty()) {
             message.append("\n\n");
@@ -320,11 +355,17 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
         if (!updateInfo.sha256.isEmpty()) {
             message.append("\n\nSHA-256：").append(updateInfo.sha256);
         }
+        if (!isHttps(updateInfo.apkUrl)) {
+            message.append("\n\n更新清单已存在，但暂无公开 APK 下载链接。");
+        }
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this)
                 .setTitle(newer ? "发现新的海岸外壳" : "当前已是最新版")
                 .setMessage(message.toString())
-                .setNegativeButton("关闭", null);
+                .setNeutralButton(
+                        R.string.open_update_center,
+                        (dialog, which) -> openUpdateCenter()
+                );
 
         if (newer && isHttps(updateInfo.apkUrl)) {
             builder.setPositiveButton(
@@ -332,28 +373,65 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
                     (dialog, which) -> launchExternal(Uri.parse(updateInfo.apkUrl))
             );
         } else {
-            builder.setPositiveButton("知道了", null);
+            builder.setPositiveButton("关闭", null);
         }
         builder.show();
     }
 
     private void showAboutDialog() {
-        String message = "Elementera Coast Android shell\n"
-                + "发布名：" + BuildConfig.RELEASE_NAME + "\n"
-                + "APP：" + BuildConfig.VERSION_NAME + "（" + BuildConfig.VERSION_CODE + "）\n"
-                + "package：" + BuildConfig.APPLICATION_ID + "\n\n"
-                + "Web：" + BuildConfig.EXPECTED_WEB_LABEL + " · "
-                + BuildConfig.EXPECTED_WEB_COMMIT + "\n"
-                + "MCP 预期：" + BuildConfig.EXPECTED_MCP_VERSION + "\n"
-                + "入口：" + BuildConfig.COAST_URL + "\n\n"
-                + "A1 只承载线上海岸。清缓存不会删除 Cookie、localStorage 或登录态。";
-
-        new AlertDialog.Builder(this)
+        AlertDialog aboutDialog = new AlertDialog.Builder(this)
                 .setTitle(R.string.about_coast)
-                .setMessage(message)
+                .setMessage(buildAboutMessage(null))
                 .setNeutralButton("检查更新", (dialog, which) -> checkForAppUpdate())
+                .setNegativeButton(
+                        R.string.open_update_center,
+                        (ignored, which) -> openUpdateCenter()
+                )
                 .setPositiveButton("关闭", null)
-                .show();
+                .create();
+        aboutDialog.show();
+
+        updateChecker.check(BuildConfig.UPDATE_MANIFEST_URL, new CoastUpdateChecker.Callback() {
+            @Override
+            public void onSuccess(CoastUpdateChecker.UpdateInfo updateInfo) {
+                if (aboutDialog.isShowing()) {
+                    aboutDialog.setMessage(buildAboutMessage(updateInfo));
+                }
+            }
+
+            @Override
+            public void onFailure() {
+                // The static BuildConfig values remain visible; normal shell use is unaffected.
+            }
+        });
+    }
+
+    private String buildAboutMessage(CoastUpdateChecker.UpdateInfo updateInfo) {
+        String webLabel = updateInfo == null
+                ? BuildConfig.EXPECTED_WEB_LABEL
+                : emptyFallback(updateInfo.webLabel, BuildConfig.EXPECTED_WEB_LABEL);
+        String webCommit = updateInfo == null
+                ? BuildConfig.EXPECTED_WEB_COMMIT
+                : emptyFallback(updateInfo.webCommit, BuildConfig.EXPECTED_WEB_COMMIT);
+        String expectedMcpVersion = updateInfo == null
+                ? BuildConfig.EXPECTED_MCP_VERSION
+                : emptyFallback(updateInfo.expectedMcpVersion, BuildConfig.EXPECTED_MCP_VERSION);
+
+        return "APP 名称：元素海岸\n"
+                + "发布名：" + BuildConfig.RELEASE_NAME + "\n"
+                + "APP versionName：" + BuildConfig.VERSION_NAME + "\n"
+                + "APP versionCode：" + BuildConfig.VERSION_CODE + "\n"
+                + "packageName：" + BuildConfig.APPLICATION_ID + "\n"
+                + "WebView 加载地址：" + BuildConfig.COAST_URL + "\n\n"
+                + "Web：" + webLabel + " · " + webCommit + "\n"
+                + "MCP expectedVersion：" + expectedMcpVersion + "\n"
+                + "更新清单：" + BuildConfig.UPDATE_MANIFEST_URL + "\n\n"
+                + "A2 仍只承载线上海岸。清缓存不会删除 Cookie、localStorage 或登录态。";
+    }
+
+    private void openUpdateCenter() {
+        hideNetworkError();
+        webView.loadUrl(BuildConfig.UPDATE_PAGE_URL);
     }
 
     private String emptyFallback(String value, String fallback) {

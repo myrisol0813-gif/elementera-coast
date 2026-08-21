@@ -21,14 +21,15 @@ android {
         applicationId = "com.elementeracoast.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0-a1"
+        versionCode = 2
+        versionName = "1.0.1-a2"
 
         buildConfigField("String", "COAST_URL", "\"https://app.elementeracoast.com\"")
         buildConfigField("String", "UPDATE_MANIFEST_URL", "\"https://app.elementeracoast.com/public/app-update.json\"")
-        buildConfigField("String", "RELEASE_NAME", "\"A1.0\"")
-        buildConfigField("String", "EXPECTED_WEB_LABEL", "\"P6.4\"")
-        buildConfigField("String", "EXPECTED_WEB_COMMIT", "\"c8cc53b\"")
+        buildConfigField("String", "UPDATE_PAGE_URL", "\"https://app.elementeracoast.com/updates\"")
+        buildConfigField("String", "RELEASE_NAME", "\"A2.0\"")
+        buildConfigField("String", "EXPECTED_WEB_LABEL", "\"A2 / P6.4+A1\"")
+        buildConfigField("String", "EXPECTED_WEB_COMMIT", "\"f3f3acd\"")
         buildConfigField("String", "EXPECTED_MCP_VERSION", "\"1.9.2\"")
     }
 

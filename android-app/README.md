@@ -1,56 +1,57 @@
-# Elementera Coast Android shell A1
+# Elementera Coast Android APP A2
 
-元素海岸 Android 壳 A1 是现有线上海岸的轻量原生入口。它不重写聊天、思维壤、信箱、灯塔、日历、Radio、Dogtalk、Daily 或 MCP；这些能力仍由 Cloudflare canonical runtime 提供。
+元素海岸 Android APP A2 是现有线上海岸的稳定原生入口。它整理已有 Web 功能在 Android WebView 中的导航、更新、恢复与发布体验，不重写聊天，也不改变 Cloudflare、MCP、记忆或 P6.3 clean-context contract。
 
-## A1 基线
+## 当前版本
 
 - APP 名称：元素海岸
 - 项目名：Elementera Coast
 - packageName：`com.elementeracoast.app`
-- 发布名：A1.0
-- versionName：`1.0.0-a1`
-- versionCode：`1`
+- releaseName：A2.0
+- versionName：`1.0.1-a2`
+- versionCode：`2`
 - minSdk：26
 - targetSdk / compileSdk：36
 - 技术栈：Java 17、原生 Android View、单 Activity、WebView
 - WebView 地址：`https://app.elementeracoast.com`
-- Web 基线：P6.4 / `c8cc53b`
-- MCP 预期版本：1.9.2
-- Gradle：8.13
-- Android Gradle Plugin：8.13.2
+- 更新清单：`https://app.elementeracoast.com/public/app-update.json`
+- 公开更新页：`https://app.elementeracoast.com/updates`
+- Web 标签：A2 / P6.4+A1
+- MCP expectedVersion：1.9.2
 
 工程没有 Compose、AndroidX、Google Play Services 或第三方运行时依赖。
 
-## 已实现
+## A2 已实现
 
-- 同域导航始终留在 WebView；外部 HTTP(S)、mailto 与 tel 链接交给系统应用。
 - JavaScript、DOM storage、数据库存储、第一方 Cookie 与 WebView 缓存已启用。
-- Cookie 会在暂停时 flush，因此 12 小时海岸会话可按服务端规则保持。
-- 第三方 Cookie、明文 HTTP、mixed content、文件系统直读、自动弹窗与地理位置已关闭。
-- Android 历史返回优先；无历史时采用两秒内双击返回退出。
-- Android 13+ 注册 predictive back 回调，覆盖 ColorOS 手势返回路径。
-- `adjustResize` 与 Android 11+ 的 system bar、cutout、IME insets 共同处理键盘和安全区。
-- WebView 没有 SwipeRefresh 或触摸拦截父容器；页面纵向滚动由 WebView 与 PWA 自己处理。
-- 原生窄工具栏提供刷新、首页、清资源缓存、检查更新、系统浏览器和关于入口。
-- 主框架网络错误、HTTP 5xx 与 SSL 校验失败会显示可操作错误页，不留下白屏。
-- 下载链接交给系统浏览器或下载能力；A1 不在应用内静默下载或安装。
-- Web 文件选择器使用系统文档选择器，不申请存储、相机或麦克风权限。
-- Android 12+ 使用系统启动页；旧系统使用深蓝旧金静态启动背景。
-- 复用现有海岸 PWA 图标作为 A1 图标与启动标记。
+- 同域导航留在 APP；外部 HTTP(S)、mailto、tel 与下载链接交给系统应用。
+- Cookie 在暂停时 flush；普通刷新与资源缓存清理不会主动删除 Cookie 或登录态。
+- Android 历史返回优先；无历史时两秒内双击返回退出。
+- Android 13+ predictive back 覆盖 ColorOS 手势返回路径。
+- `adjustResize` 配合 system bar、cutout 与 IME insets 处理键盘和安全区。
+- WebView 没有 SwipeRefresh 或拦截触控的父容器；滚动仍由 PWA 自己管理。
+- 原生菜单包含刷新、首页、清缓存重载、检查更新、系统浏览器和关于入口。
+- “检查更新”和“关于元素海岸”读取同一份 production update manifest；失败不影响海岸使用。
+- User-Agent 后缀为 `ElementeraCoastApp/1.0.1-a2 Android`，只供 Web UI 与更新诊断识别。
+- 主框架网络错误、HTTP 5xx 与 SSL 校验失败显示原生错误页，提供重试、清缓存重载和系统浏览器入口。
+- 系统文档选择器支持 Web 文件输入，不申请存储、相机或麦克风权限。
 - 固定竖屏，与现有 PWA `orientation: portrait` 保持一致。
 
-## A1 明确不包含
+主聊天、思维壤、记忆、日历、灯塔、信箱、Radio、Dogtalk、Daily、工作台和工具能力仍由线上海岸与 canonical Cloudflare / MCP runtime 提供。
+
+## 明确不包含
 
 - 原生聊天重写
-- LoverConnect bridge
+- Myrisol Gateway
+- LoverConnect bridge、本地 MCP 或手机状态上传
+- QQ、微信、Telegram、Discord 接入
 - 截图、通知监听、无障碍、设备管理员、锁屏或后台保活
-- 手机状态上传、本地 MCP 或 Myrisol Gateway
-- QQ、微信、Telegram 等外部入口
-- 自动下载、自动安装 APK
+- 通知推送系统
+- 自动下载或自动安装 APK
 - Google Play 发布或 Play 服务
-- Web 主聊天 UI 的更新后台
+- 新的模型上下文包装或旧 Context Manifest / Mode / Ambient / Facets / Inspector
 
-后续可以评估通知、本地状态、小纸条与 LoverConnect bridge，但它们均不在 A1 权限与代码路径中。
+未来可以评估通知、本地状态、手机小纸条和 LoverConnect bridge，但它们均不在 A2 权限与代码路径中。
 
 ## 工程结构
 
@@ -66,6 +67,8 @@ android-app/
         CoastUpdateChecker.java
       res/
   gradle/wrapper/
+  scripts/launch-smoke.sh
+  RELEASE_CHECKLIST.md
   build.gradle.kts
   settings.gradle.kts
   gradlew
@@ -75,24 +78,17 @@ android-app/
 
 ## 构建环境
 
-推荐：
+推荐 Android Studio 稳定版、JDK 17、Android SDK Platform 36 与 Build-Tools 36.x。首次同步需要访问 Google Maven、Maven Central 与 Gradle distribution 服务。
 
-- Android Studio Narwhal 或更新稳定版
-- JDK 17
-- Android SDK Platform 36
-- Android SDK Build-Tools 36.x
-
-首次同步需要访问 Google Maven、Maven Central 与 Gradle distribution 服务。
-
-### Android Studio
+Android Studio：
 
 1. 选择 Open，打开仓库中的 `android-app/`。
 2. 确认 Gradle JDK 为 17。
-3. 在 SDK Manager 安装 Android SDK Platform 36 与 Build-Tools 36.x。
+3. 安装 Android SDK Platform 36 与 Build-Tools 36.x。
 4. 等待 Gradle Sync 完成。
-5. 选择 `app` 配置，在真机或模拟器运行。
+5. 选择 `app` 配置，在真机或 API 36 模拟器运行。
 
-### 命令行 debug APK
+### Debug APK
 
 ```bash
 cd android-app
@@ -105,9 +101,9 @@ cd android-app
 android-app/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-debug APK 使用 Gradle 自动创建的本机 debug key。它适合 A1 真机测试，不应作为长期发行签名。
+debug APK 使用当前构建机的 debug key，只用于开发和真机测试，不应作为长期公开发行包。不同电脑或不同 CI run 产生的 debug key 可能不同，因而不一定能够彼此覆盖安装。
 
-### 命令行 release APK
+### Unsigned release APK
 
 未配置 release signing 时：
 
@@ -116,23 +112,27 @@ cd android-app
 ./gradlew clean lintRelease assembleRelease
 ```
 
-产物是未签名 release APK：
+产物：
 
 ```text
 android-app/app/build/outputs/apk/release/app-release-unsigned.apk
 ```
 
-正式或可覆盖更新的 release APK 应使用长期保存的同一把签名 key。A1 从以下本地环境变量读取签名，不会把密码写进仓库：
+unsigned release APK 只是构建检查产物，不能作为正常可安装更新发布。
+
+### Signed release APK
+
+工程从本地环境变量读取签名配置：
 
 ```bash
-export COAST_KEYSTORE_FILE=/absolute/path/to/elementera-coast-release.jks
+export COAST_KEYSTORE_FILE=/absolute/private/path/elementera-coast-release.jks
 export COAST_KEYSTORE_PASSWORD='local-secret'
 export COAST_KEY_ALIAS='elementera-coast'
 export COAST_KEY_PASSWORD='local-secret'
 ./gradlew clean lintRelease assembleRelease
 ```
 
-不要提交 `.jks`、`.keystore`、密码、token 或 `local.properties`。丢失 release key 后，Android 无法把新 APK 作为同一签名应用覆盖安装。
+不要提交 `.jks`、`.keystore`、密码、token、`local.properties` 或任何私钥。release key 一旦丢失，Android 将无法把后续 APK 作为同一签名应用覆盖安装。完整发布步骤见 [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)。
 
 ## SHA-256
 
@@ -149,54 +149,63 @@ Windows PowerShell：
 Get-FileHash .\app\build\outputs\apk\debug\app-debug.apk -Algorithm SHA256
 ```
 
+正式发布时，`app-update.json.android.sha256` 必须对应 `apkUrl` 指向的同一个 signed release APK。`apkUrl` 为空时不要填写与公开下载无关的 debug checksum。
+
 ## 安装与覆盖安装
 
-通过 ADB：
+ADB 安装 debug APK：
 
 ```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-也可以把 APK 传到 OPPO Reno14，在 ColorOS 的文件管理器中点开。首次侧载时系统可能要求为当前文件来源临时开启“允许安装未知应用”。
+也可以把 APK 传到 OPPO Reno14，在 ColorOS 文件管理器中点开。首次侧载时系统可能要求为当前文件来源临时开启“允许安装未知应用”。
 
 覆盖安装必须同时满足：
 
 1. packageName 仍为 `com.elementeracoast.app`；
-2. 新 APK 的 versionCode 更高或使用允许降级的调试安装方式；
+2. versionCode 高于已安装版本；A2 的 versionCode 为 2；
 3. 新旧 APK 使用同一签名 key。
 
-debug APK 与正式 release APK 通常不是同一签名。切换签名时需要先卸载旧版，卸载会清除该 APP 的 WebView 本地数据与 Cookie。
+A1 到 A2 的 versionCode 已递增，使用同一签名时可覆盖安装。若 A1 与 A2 debug APK 来自不同签名环境，ColorOS 会拒绝覆盖；需要卸载旧版后安装。卸载会清除 APP 的 WebView Cookie、本地存储与登录态。
 
 ## 更新中心
 
-只读清单位于：
+公开只读清单：
 
 ```text
 https://app.elementeracoast.com/public/app-update.json
 ```
 
-原生菜单的“检查 APP 更新”仅在用户点按时读取清单。A1 不后台轮询、不强弹窗、不自动下载。若 `apkUrl` 为空，只显示版本与 release notes；未来填入公开 HTTPS 下载页后，按钮会交给系统浏览器。
+公开页面：
 
-清单同时标注：
+```text
+https://app.elementeracoast.com/updates
+```
 
-- Android 壳最新 versionCode / versionName
-- Web / PWA 标签与基线 commit
-- MCP 预期版本
-- APK URL、SHA-256、发布时间与更新说明
+原生“检查 APP 更新”只在用户点按时读取清单：
 
-发布新 APK 时依次更新 versionCode、versionName、releaseName、apkUrl、sha256、publishedAt 和 releaseNotes。versionCode 必须递增。
+- 本机 versionCode 小于 latestVersionCode：提示有新版；
+- 本机 versionCode 等于或高于 latestVersionCode：提示当前已是最新；
+- `apkUrl` 为空：明确提示暂无公开 APK 下载链接；
+- 读取失败：显示可理解的恢复提示，不白屏、不崩溃；
+- 不后台轮询、不强弹窗、不自动下载、不自动安装。
+
+“关于元素海岸”显示 APP 名称、versionName、versionCode、releaseName、packageName、WebView 地址，并在能读取清单时显示当前 Web label / commit 与 MCP expectedVersion。
+
+Web 侧“海岸更新 / 关于海岸”只读取公开清单并渲染 UI。APP 模式来自 User-Agent，不写入 localStorage，不进入聊天请求、思维壤、模型上下文或 MCP，也不能作为认证依据。
 
 ## 刷新与缓存语义
 
 - “刷新海岸”：普通 `WebView.reload()`。
-- “重新打开首页”：回到 `https://app.elementeracoast.com`，载入后清掉旧 WebView 导航历史。
-- “清缓存重载”：清 WebView HTTP 资源缓存，并删除当前站点的 Cache Storage 后重载首页。
+- “重新打开首页”：载入 `https://app.elementeracoast.com` 后清掉旧 WebView 导航历史。
+- “清缓存重载”：清 WebView HTTP 资源缓存和当前站点 Cache Storage，再重载首页。
 
-清缓存重载不会删除 Cookie、localStorage、sessionStorage 或 IndexedDB，因而不会主动清掉登录态与页面本地状态。若服务端 12 小时会话已过期，重新载入仍会回到海岸密码门。
+清缓存重载不会删除 Cookie、localStorage、sessionStorage 或 IndexedDB。若服务端会话已经过期，重新载入仍会回到海岸密码门。
 
 ## 权限
 
-A1 Manifest 只声明：
+Manifest 只声明：
 
 ```text
 android.permission.INTERNET
@@ -204,33 +213,74 @@ android.permission.INTERNET
 
 系统文档选择器和系统浏览器通过外部 Activity 工作，不需要读取外部存储权限。
 
-## OPPO Reno14 / ColorOS 16 / Android 16 手动测试
+## 故障排除
+
+### 启动后白屏或停在错误页
+
+先确认 Chrome / Android System WebView 已启用，再打开系统浏览器访问线上海岸。回到 APP 依次尝试“重试”和“清缓存重载”。SSL 错误不会被忽略；若系统时间异常，先修正时间。
+
+### 登录态丢失
+
+“清缓存重载”不会删除 Cookie；卸载 APP、清除应用数据、签名切换后重装会删除 WebView 数据。服务端会话过期也会正常回到密码门。
+
+### 键盘遮挡输入框
+
+确认使用 A2 APK，并记录输入法名称、横竖屏状态和 ColorOS 导航方式。A2 使用 `adjustResize` 与 IME insets；不要在 Web 侧添加全局 `overflow:hidden` 或壳层 CSS 补丁。
+
+### 无法检查更新
+
+在系统浏览器打开 `https://app.elementeracoast.com/public/app-update.json`。若浏览器可读而 APP 不可读，记录网络类型、WebView 版本和系统时间，再重试。海岸正文加载不依赖更新清单。
+
+### APK 无法覆盖安装
+
+核对 packageName、versionCode 和签名。最常见原因是两个 debug APK 来自不同 debug key。只有在确认可以接受清除 APP WebView 数据时才卸载旧版。
+
+### `app-update.json` 返回 401 或格式错误
+
+该清单应匿名返回 HTTP 200。检查 Cloudflare public static whitelist、`_headers` 和 production deployment；不要把它改成认证端点，也不要在清单中放 token、内部路径或 CI 私有 artifact URL。
+
+## OPPO Reno14 / ColorOS 16 / Android 16 真机清单
 
 目标机：PLA110，ColorOS 16.0.7，Android 16。
 
-- [ ] 1. debug 或同签名 release APK 可安装。
-- [ ] 2. 冷启动后启动页消失，线上海岸或密码门成功出现。
-- [ ] 3. 登录后退出到桌面再回来，登录态仍在服务端有效期内保持。
-- [ ] 4. 主聊天 textarea 可聚焦、输入、长文本换行与发送。
-- [ ] 5. Gboard / 系统键盘弹起时，输入框、光标与发送按钮不被遮挡。
-- [ ] 6. 键盘收起后 message scroller 与底部 composer 恢复原位。
-- [ ] 7. 主聊天消息区可连续纵向滚动。
-- [ ] 8. 思维壤、侧边栏、feature panel、modal 与长页面均可滚动。
-- [ ] 9. 左右手势返回先走 WebView 历史；无历史时第一次提示、第二次退出。
-- [ ] 10. 竖屏保持稳定；A1 明确锁定竖屏。
-- [ ] 11. 切到后台 30 秒与 5 分钟后回来不白屏、不重置当前页。
-- [ ] 12. 菜单“刷新海岸”可用。
-- [ ] 13. “清缓存重载”可用，且不会主动清掉 Cookie / 登录态。
-- [ ] 14. 断网启动或加载失败时出现原生错误页；恢复网络后“重试”可恢复。
-- [ ] 15. 站内链接留在 APP；外部链接交给默认 Chrome。
-- [ ] 16. APK 或普通下载链接能交给系统浏览器 / 下载器，不会静默失败。
-- [ ] 17. 图片 / 文件选择入口能调起系统文档选择器，无额外权限弹窗。
-- [ ] 18. 刘海、状态栏、手势条与三键导航均不压住工具栏或输入区。
-- [ ] 19. 原生“检查 APP 更新”能读取清单，A1 显示已是最新版。
-- [ ] 20. 使用同签名且更高 versionCode 的 APK 可执行 `adb install -r` 覆盖安装。
+- [ ] 1. A2 APK 可从文件管理器或 ADB 安装。
+- [ ] 2. 同签名 A1 可用 `adb install -r` 或系统安装器覆盖到 A2。
+- [ ] 3. 冷启动后深蓝启动页正常消失，不闪退。
+- [ ] 4. 线上海岸或密码门成功出现。
+- [ ] 5. 登录成功；服务端有效期内退出到桌面再回来仍保持登录态。
+- [ ] 6. 主聊天可输入、长文本换行并发送。
+- [ ] 7. 键盘弹起时输入框、光标与发送按钮不被遮挡，收起后布局恢复。
+- [ ] 8. 主聊天消息区可连续纵向滚动。
+- [ ] 9. 思维壤面板可滚动。
+- [ ] 10. 侧边栏内容可滚动，底部“海岸更新 / 关于海岸”可见且不挤压主入口。
+- [ ] 11. feature panel、modal、overlay 与长页面可滚动。
+- [ ] 12. 返回键先走 WebView 历史；无历史时第一次提示、第二次退出。
+- [ ] 13. 左右边缘手势返回行为与返回键一致。
+- [ ] 14. 原生右上角菜单六项均可点按。
+- [ ] 15. “刷新海岸”保留当前路由并正常重载。
+- [ ] 16. “清缓存重载”可恢复页面，且不会主动删除 Cookie。
+- [ ] 17. “关于元素海岸”显示 A2.0、1.0.1-a2、versionCode 2、packageName、Web、MCP 与入口地址。
+- [ ] 18. “检查 APP 更新”能读取 production 清单；当前显示已是最新版，且说明暂无公开 APK 链接。
+- [ ] 19. Web 侧“海岸更新”与 `/updates` 页面可打开，版本一致。
+- [ ] 20. 站内链接留在 APP；外部链接、下载链接交给默认 Chrome / 系统下载能力。
+- [ ] 21. 断网启动或加载失败出现原生错误页；恢复网络后重试可恢复。
+- [ ] 22. 切到后台 30 秒与 5 分钟后回来不白屏、不重置当前输入场景。
+- [ ] 23. APP 保持竖屏；状态栏、刘海、手势条和三键导航不遮挡内容。
+- [ ] 24. 卸载 / 重装前明确会清除 APP Cookie、本地存储与登录态。
+- [ ] 25. 安装前将 APK SHA-256 与交付报告或正式更新清单逐字对照。
 
-ColorOS 若对侧载 APK 显示风险提醒，应核对 packageName、签名与 SHA-256 后再继续；不要关闭系统级安全能力来绕过正常提示。
+还应逐项打开主聊天、思维壤、记忆、日历、灯塔、信箱、Radio、Dogtalk、Daily、工作台 / 工具入口，确认内部导航不误跳系统浏览器，页面状态与滚动均可恢复。
 
 ## CI
 
-仓库的 `.github/workflows/android-shell.yml` 会在 Android 工程或更新清单变化时执行 wrapper 校验、lint、debug/release 构建，并上传 APK 与 SHA-256 清单。CI release 在未提供私有签名配置时是 unsigned，这是预期行为。
+`.github/workflows/android-shell.yml` 在 A2 Android 或更新中心文件变化时执行：
+
+- Gradle wrapper validation
+- 根 `npm test`
+- Cloudflare Pages Functions build
+- `lintDebug` / `lintRelease`
+- `assembleDebug` / `assembleRelease`
+- Android 16 emulator 安装与 10 秒存活 smoke test
+- debug / unsigned release APK 与 SHA-256 artifact 上传
+
+CI 未配置私有 release signing 时，release 产物保持 unsigned，这是预期行为。

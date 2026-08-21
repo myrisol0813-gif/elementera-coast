@@ -146,6 +146,78 @@
   line-height: 1.65;
 }
 
+.updates-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.updates-card {
+  padding: 16px;
+  border-radius: 15px;
+  background: var(--surface-soft);
+}
+
+.updates-card h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.updates-card dl {
+  display: grid;
+  grid-template-columns: minmax(104px, auto) minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.updates-card dt,
+.updates-card dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.updates-card dt {
+  color: var(--muted);
+}
+
+.updates-card ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.updates-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  margin-top: 12px;
+  padding: 8px 13px;
+  border-radius: 11px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.updates-muted {
+  color: var(--muted);
+}
+
+@media (max-width: 480px) {
+  .updates-card dl {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .updates-card dd + dt {
+    margin-top: 7px;
+  }
+}
+
 .memory-pocket-list {
   display: grid;
   gap: 12px;

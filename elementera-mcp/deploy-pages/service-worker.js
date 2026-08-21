@@ -1,15 +1,15 @@
-const CACHE_NAME = 'elementera-coast-app-28';
+const CACHE_NAME = 'elementera-coast-app-29';
 const CORE = Object.freeze([
   '/',
   '/index.html',
   '/manifest.json',
-  '/public/styles/tokens.css?v=coast-app-28',
-  '/public/styles/shell.css?v=coast-app-28',
-  '/public/styles/chat.css?v=coast-app-28',
-  '/public/styles/features.css?v=coast-app-28',
-  '/public/styles/calendar.css?v=coast-app-28',
-  '/public/styles/desk.css?v=coast-app-28',
-  '/public/app.js?v=coast-app-28',
+  '/public/styles/tokens.css?v=coast-app-29',
+  '/public/styles/shell.css?v=coast-app-29',
+  '/public/styles/chat.css?v=coast-app-29',
+  '/public/styles/features.css?v=coast-app-29',
+  '/public/styles/calendar.css?v=coast-app-29',
+  '/public/styles/desk.css?v=coast-app-29',
+  '/public/app.js?v=coast-app-29',
   '/public/core/api.js',
   '/public/core/dom.js',
   '/public/core/icons.js',
@@ -31,6 +31,10 @@ const CORE = Object.freeze([
   '/public/features/calendar.js',
   '/public/features/desk.js',
   '/public/features/toolroom.js',
+  '/public/features/updates.js',
+  '/updates.html',
+  '/public/updates-page.js',
+  '/public/styles/updates.css',
   '/public/icons/icon-16.png',
   '/public/icons/icon-32.png',
   '/public/icons/apple-touch-icon.png',
@@ -61,6 +65,7 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api/')
     || url.pathname.startsWith('/mcp')
     || url.pathname.startsWith('/.well-known/')
+    || url.pathname === '/public/app-update.json'
     || ['/login', '/logout', '/mailbox'].includes(url.pathname)) return;
 
   if (request.mode === 'navigate') {

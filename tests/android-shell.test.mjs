@@ -18,11 +18,11 @@ assert.deepEqual({
   webCommit: updateManifest.web.commit,
   mcpVersion: updateManifest.mcp.expectedVersion,
 }, {
-  latestVersionCode: 1,
-  latestVersionName: '1.0.0-a1',
-  releaseName: 'A1.0',
-  webLabel: 'P6.4',
-  webCommit: 'c8cc53b',
+  latestVersionCode: 2,
+  latestVersionName: '1.0.1-a2',
+  releaseName: 'A2.0',
+  webLabel: 'A2 / P6.4+A1',
+  webCommit: 'f3f3acd',
   mcpVersion: '1.9.2',
 });
 assert.equal(updateManifest.android.apkUrl, '');
@@ -41,8 +41,10 @@ for (const expected of [
   'compileSdk = 36',
   'minSdk = 26',
   'targetSdk = 36',
-  'versionCode = 1',
-  'versionName = "1.0.0-a1"',
+  'versionCode = 2',
+  'versionName = "1.0.1-a2"',
+  'RELEASE_NAME", "\\"A2.0\\"',
+  'UPDATE_PAGE_URL',
   'https://app.elementeracoast.com',
 ]) assert.ok(appBuild.includes(expected), 'Android build contract missing: ' + expected);
 
@@ -89,6 +91,10 @@ for (const expected of [
   'webView.clearCache(true)',
   "caches.keys()",
   'FileChooserParams.parseResult',
+  'ElementeraCoastApp/',
+  'BuildConfig.UPDATE_PAGE_URL',
+  'buildAboutMessage(updateInfo)',
+  '更新清单已存在，但暂无公开 APK 下载链接',
 ]) assert.ok(mainActivity.includes(expected), 'Android shell behavior missing: ' + expected);
 assert.equal(mainActivity.includes('addJavascriptInterface'), false);
 assert.equal(mainActivity.includes('removeAllCookies'), false);
@@ -108,11 +114,40 @@ const updateChecker = await read(
 assert.match(updateChecker, /MAX_MANIFEST_BYTES = 64 \* 1024/);
 assert.match(updateChecker, /"https"\.equalsIgnoreCase/);
 assert.match(updateChecker, /setInstanceFollowRedirects\(false\)/);
+assert.match(updateChecker, /ElementeraCoastApp\/" \+ BuildConfig\.VERSION_NAME \+ " Android/);
 
 const middleware = await read('functions/_middleware.js');
 assert.match(middleware, /'\/public\/app-update\.json'/);
+for (const publicUpdatePath of [
+  "'/updates'",
+  "'/updates.html'",
+  "'/public/updates-page.js'",
+  "'/public/styles/updates.css'",
+]) assert.ok(middleware.includes(publicUpdatePath), `public updates route missing: ${publicUpdatePath}`);
 const headers = await read('elementera-mcp/deploy-pages/_headers');
-assert.match(headers, /^\/public\/app-update\.json\n[\s\S]*?Content-Type: application\/json; charset=utf-8$/m);
+assert.match(headers, /^\/public\/app-update\.json\n[\s\S]*?Content-Type: application\/json; charset=utf-8[\s\S]*?Access-Control-Allow-Origin: \*$/m);
+
+const updatesHtml = await read('elementera-mcp/deploy-pages/updates.html');
+for (const expected of [
+  '<title>海岸更新 · Elementera Coast</title>',
+  'id="androidVersion"',
+  'id="apkSha"',
+  'id="releaseNotes"',
+  'debug APK 只用于测试',
+  '/public/updates-page.js',
+]) assert.ok(updatesHtml.includes(expected), `public updates page missing: ${expected}`);
+
+const updatesFeature = await read('elementera-mcp/deploy-pages/public/features/updates.js');
+for (const expected of [
+  'ElementeraCoastApp\\/([^\\s]+)\\s+Android',
+  "credentials: 'omit'",
+  "router.register('coast-updates'",
+  "router.register('coast-about'",
+  'document.documentElement.dataset.coastRuntime',
+  '不会写入思维壤、不会进入模型上下文',
+]) assert.ok(updatesFeature.includes(expected), `APP updates feature missing: ${expected}`);
+assert.equal(updatesFeature.includes('addJavascriptInterface'), false);
+assert.equal(updatesFeature.includes('localStorage'), false);
 
 const wrapperProperties = await read('android-app/gradle/wrapper/gradle-wrapper.properties');
 assert.match(wrapperProperties, /gradle-8\.13-bin\.zip/);
@@ -126,6 +161,7 @@ for (const expected of [
   'gradle/actions/wrapper-validation@v4',
   './gradlew lintDebug lintRelease assembleDebug assembleRelease',
   'actions/upload-artifact@v4',
+  'elementera-coast-android-a2',
 ]) assert.ok(workflow.includes(expected), 'Android CI missing: ' + expected);
 
 console.log('android shell contract tests passed');

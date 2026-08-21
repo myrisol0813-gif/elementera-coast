@@ -12,5 +12,11 @@
 /public/app-update.json
   Cache-Control: no-cache, must-revalidate, max-age=0
   Content-Type: application/json; charset=utf-8
+  Access-Control-Allow-Origin: *
+  X-Content-Type-Options: nosniff
+/updates
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+/updates.html
+  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
 /public/*
   Cache-Control: no-cache, must-revalidate, max-age=0
