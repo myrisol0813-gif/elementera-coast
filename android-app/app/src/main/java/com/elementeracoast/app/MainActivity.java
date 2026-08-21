@@ -45,6 +45,7 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
     private TextView errorMessage;
     private ValueCallback<Uri[]> fileChooserCallback;
     private final CoastUpdateChecker updateChecker = new CoastUpdateChecker();
+    private boolean firstPagePresented;
     private final Runnable revealPageProgress = () -> {
         if (pageProgress != null && pageProgress.getProgress() < 100 && firstPagePresented) {
             pageProgress.setVisibility(View.VISIBLE);
@@ -52,7 +53,6 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
     };
     private long lastBackPressedAt;
     private boolean clearHistoryAfterHomeLoad;
-    private boolean firstPagePresented;
     private boolean offlineCacheAttempted;
     private boolean usingCacheOnly;
 
