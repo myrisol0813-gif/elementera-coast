@@ -3,10 +3,6 @@ import { confirmDanger } from './core/danger.js';
 import { escapeAttribute, escapeHtml, formatRichText, q } from './core/dom.js';
 import { hydrateIconSlots, icon } from './core/icons.js';
 
-if (/ElementeraCoastApp\/[^\s]+\s+Android\s+HybridShell/i.test(navigator.userAgent)) {
-  document.documentElement.dataset.coastNativeShell = 'hybrid';
-}
-
 function emptyThoughtSoil(visitorId = '') {
   return {
     visitor_id: visitorId,

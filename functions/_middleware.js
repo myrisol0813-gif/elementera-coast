@@ -14,12 +14,6 @@ const PUBLIC_PWA_ASSETS = new Set([
   '/public/icons/icon-192.png',
   '/public/icons/icon-512.png',
   '/public/icons/icon-maskable-512.png',
-  '/public/app-update.json',
-  '/public/updates-page.js',
-  '/public/styles/updates.css',
-  '/updates',
-  '/updates/',
-  '/updates/index.html',
 ]);
 
 const PUBLIC_MAILBOX_ASSETS = new Set([

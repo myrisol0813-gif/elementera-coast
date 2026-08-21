@@ -16,7 +16,6 @@ import { createTools } from './features/tools.js';
 import { createCalendar } from './features/calendar.js';
 import { createDesk } from './features/desk.js';
 import { createToolroom } from './features/toolroom.js';
-import { createUpdates } from './features/updates.js';
 
 const storage = createStorage();
 let toastTimer = 0;
@@ -46,7 +45,6 @@ const daily = createDaily({ storage, router, toast, chat, calendar });
 const letters = createLetters({ storage, chat, models, router, toast });
 const desk = createDesk({ chat, router, toast });
 const toolroom = createToolroom({ chat, router });
-const updates = createUpdates({ router, toast });
 
 chat.setRunSettingsProvider(tools.getSettings);
 chat.setMemoryController(memory);
@@ -66,59 +64,7 @@ const controllers = Object.freeze({
   calendar,
   desk,
   toolroom,
-  updates,
 });
-
-// A4 UI-only bridge. It deliberately exposes no records, credentials, model
-// context, or authorization decisions: the native shell can only ask the
-// already-loaded Coast UI to open one of its existing rooms.
-const nativeShellMatch = navigator.userAgent.match(
-  /ElementeraCoastApp\/([^\s]+)\s+Android\s+HybridShell/,
-);
-if (nativeShellMatch) {
-  document.documentElement.dataset.coastNativeShell = 'hybrid';
-  document.documentElement.dataset.coastAppVersion = nativeShellMatch[1];
-
-  const nativeRoomHandlers = Object.freeze({
-    chat: async () => {
-      await router.close();
-      rooms.activateMain();
-    },
-    daily: () => daily.handleAction('home', document.body),
-    calendar: () => daily.handleAction('calendar', document.body),
-    summary: () => daily.handleAction('summary', document.body),
-    moments: () => daily.handleAction('moments', document.body),
-    diary: () => daily.handleAction('diary', document.body),
-    album: () => daily.handleAction('album', document.body),
-    pets: () => daily.handleAction('pets', document.body),
-    widgets: () => daily.handleAction('widgets', document.body),
-    lighthouse: () => rooms.open('lighthouse'),
-    radio: () => rooms.open('radio'),
-    memory: () => memory.handleAction('open', document.body),
-    dogtalk: async () => {
-      await router.close();
-      rooms.activateMain();
-      const details = q('#mainDogtalkComposer details');
-      if (details) {
-        details.open = true;
-        details.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        q('[name="body"]', details)?.focus({ preventScroll: true });
-      }
-    },
-  });
-
-  window.CoastNativeShell = Object.freeze({
-    openRoom(roomId) {
-      const handler = nativeRoomHandlers[String(roomId || '')];
-      if (!handler) return false;
-      Promise.resolve(handler()).catch((error) => {
-        console.error('[native-shell:open-room]', error);
-        toast('房间已打开，线上内容暂未同步。');
-      });
-      return true;
-    },
-  });
-}
 
 document.addEventListener('click', async (event) => {
   if (!event.target.closest('[data-conversation-id]')) chat.closeMenu();
@@ -180,7 +126,6 @@ document.addEventListener('submit', async (event) => {
 
 async function start() {
   hydrateIconSlots();
-  updates.start();
   shell.start();
   rooms.start();
   models.start();
