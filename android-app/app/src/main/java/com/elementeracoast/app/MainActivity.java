@@ -49,8 +49,8 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
         super.onCreate(savedInstanceState);
 
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        configureSystemBars();
         setContentView(R.layout.activity_main);
+        configureSystemBars();
 
         View appRoot = findViewById(R.id.app_root);
         configureInsets(appRoot);
