@@ -2,9 +2,16 @@
 <resources>
     <string name="app_name">CoastGPT</string>
     <string name="shell_title">CoastGPT</string>
-    <string name="shell_subtitle">Elementera Coast · A3</string>
+    <string name="shell_subtitle">Elementera Coast · A4</string>
     <string name="shell_menu">打开 CoastGPT 本地菜单</string>
-    <string name="loading_coast">正在抵达海岸…</string>
+    <string name="home_subtitle">本地房间 · 在线内容岛</string>
+    <string name="home_ready_note">房间与按钮已在本机。动态内容会在进入房间后同步。</string>
+    <string name="loading_coast">正在预热线上海岸…</string>
+    <string name="syncing_room">正在同步线上内容…</string>
+    <string name="local_room_ready">本地房间已打开</string>
+    <string name="online_room_ready">线上内容已同步</string>
+    <string name="offline_room_status">离线，暂未同步</string>
+    <string name="back_to_rooms">返回 CoastGPT 房间列表</string>
     <string name="network_error_title">海风暂时没有抵达</string>
     <string name="network_error_message">线上海岸没有成功载入。可以重试，或从系统浏览器确认海岸是否可访问。</string>
     <string name="retry">重试</string>
@@ -14,7 +21,7 @@
     <string name="reopen_home">重新打开首页</string>
     <string name="check_update">检查 APP 更新</string>
     <string name="about_coast">关于 CoastGPT</string>
-    <string name="exit_hint">再按一次返回，离开海岸</string>
+    <string name="exit_hint">再按一次返回，离开 CoastGPT</string>
     <string name="cache_cleared">资源缓存已清，Cookie 与登录态保留</string>
     <string name="external_link_failed">没有找到可以打开此链接的应用</string>
     <string name="unsupported_link">这个链接暂时不能从海岸外壳打开</string>
@@ -23,4 +30,8 @@
     <string name="update_check_failed">离线，暂未读取线上清单</string>
     <string name="open_update_center">CoastGPT 更新中心</string>
     <string name="retry_update_check">重新检查</string>
+    <string name="refresh_current_room">刷新当前房间</string>
+    <string name="back_to_home">回到房间首页</string>
+    <string name="open_web_update_page">打开网页版更新页</string>
+    <string name="close">关闭</string>
 </resources>

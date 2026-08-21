@@ -6,7 +6,7 @@
 
 - [ ] `applicationId` / packageName 保持 `com.elementeracoast.app`。
 - [ ] `versionCode` 高于已发布版本。
-- [ ] `versionName` 与 `releaseName` 已统一；A3 基线为 `1.0.2-a3` / `3` / `A3.0`。
+- [ ] `versionName` 与 `releaseName` 已统一；A4 基线为 `1.0.3-a4` / `4` / `A4.0`。
 - [ ] 本轮没有新增未批准权限、Gateway、LoverConnect、本地 MCP 或模型上下文包装。
 
 ## 2. 创建并保管 release keystore
