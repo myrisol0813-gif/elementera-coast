@@ -121,7 +121,7 @@ const redirects = await read(resolve(pages, '_redirects'));
 const headers = await read(resolve(pages, '_headers'));
 assert.match(redirects, /^\/gptlike \/index\.html 200$/m);
 assert.match(redirects, /^\/app\.html \/index\.html 200$/m);
-assert.match(redirects, /^\/updates \/updates\.html 200$/m);
+assert.equal(redirects.includes('/updates'), false, 'updates directory must use Pages canonical routing');
 
 const manifest = JSON.parse(await read(resolve(pages, 'manifest.json')));
 assert.deepEqual({
@@ -206,7 +206,7 @@ for (const url of coreUrls) {
 }
 assert.ok(coreUrls.includes('/public/features/desk.js'));
 assert.ok(coreUrls.includes('/public/features/updates.js'));
-assert.ok(coreUrls.includes('/updates.html'));
+assert.ok(coreUrls.includes('/updates/index.html'));
 assert.ok(coreUrls.includes('/public/media/myri-default-avatar.jpg'));
 assert.match(await read(resolve(pages, 'public/app.js')), /navigator\.serviceWorker\.register\('\/service-worker\.js', \{ scope: '\/' \}\)/);
 

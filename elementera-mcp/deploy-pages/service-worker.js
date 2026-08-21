@@ -32,7 +32,7 @@ const CORE = Object.freeze([
   '/public/features/desk.js',
   '/public/features/toolroom.js',
   '/public/features/updates.js',
-  '/updates.html',
+  '/updates/index.html',
   '/public/updates-page.js',
   '/public/styles/updates.css',
   '/public/icons/icon-16.png',
