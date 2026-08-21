@@ -103,7 +103,7 @@ public final class CoastUpdateChecker implements AutoCloseable {
         connection.setRequestProperty("Accept", "application/json");
         connection.setRequestProperty(
                 "User-Agent",
-                "ElementeraCoastApp/" + BuildConfig.VERSION_NAME + " Android"
+                "ElementeraCoastApp/" + BuildConfig.VERSION_NAME + " Android HybridShell"
         );
 
         try {

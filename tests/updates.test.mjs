@@ -16,7 +16,7 @@ const window = new Window({ url: 'https://app.elementeracoast.com/' });
 Object.defineProperty(globalThis, 'document', { configurable: true, value: window.document });
 Object.defineProperty(globalThis, 'navigator', {
   configurable: true,
-  value: { userAgent: 'Android WebView ElementeraCoastApp/1.0.2-a3 Android' },
+  value: { userAgent: 'Android WebView ElementeraCoastApp/1.0.3-a4 Android HybridShell' },
 });
 
 let fetchOptions = null;
@@ -45,11 +45,11 @@ const updates = createUpdates({ router, toast: (message) => toasts.push(message)
 
 updates.start();
 assert.equal(document.documentElement.dataset.coastRuntime, 'android-app');
-assert.equal(document.documentElement.dataset.coastAppVersion, '1.0.2-a3');
+assert.equal(document.documentElement.dataset.coastAppVersion, '1.0.3-a4');
 
 const updateView = await updates.handleAction('open');
 assert.equal(updateView.title, '海岸更新');
-assert.match(updateView.body, /1\.0\.2-a3/);
+assert.match(updateView.body, /1\.0\.3-a4/);
 assert.match(updateView.body, /APK 下载链接待发布/);
 assert.equal(fetchOptions.credentials, 'omit');
 assert.equal(fetchOptions.cache, 'no-store');

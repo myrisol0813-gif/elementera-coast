@@ -5,13 +5,15 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
-import android.content.res.Configuration;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
+import android.graphics.Typeface;
+import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowInsets;
@@ -22,7 +24,8 @@ import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
-import android.widget.PopupMenu;
+import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -30,31 +33,52 @@ import android.widget.Toast;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.util.Locale;
-
 public final class MainActivity extends Activity implements CoastWebViewClient.Delegate {
     private static final int FILE_CHOOSER_REQUEST_CODE = 4101;
     private static final long DOUBLE_BACK_EXIT_WINDOW_MS = 2_000L;
-    private static final long CONTENT_FADE_MS = 180L;
+    private static final long CONTENT_FADE_MS = 150L;
+    private static final int MAX_NATIVE_DISPATCH_ATTEMPTS = 8;
+    private static final String STATE_ROOM_ID = "coast_room_id";
+    private static final String LOCAL_STATE = "coast_shell_state";
+    private static final String LAST_ROOM_ID = "last_room_id";
+    private static final String LAST_ROOM_OPENED_AT = "last_room_opened_at";
 
     private View appRoot;
+    private View homeScreen;
+    private View roomScreen;
+    private LinearLayout roomList;
+    private TextView homeSyncNote;
     private WebView webView;
     private ProgressBar pageProgress;
-    private View loadingOverlay;
+    private View roomSkeleton;
+    private TextView skeletonTitle;
+    private TextView skeletonSubtitle;
+    private View localRoomPanel;
+    private TextView localRoomTitle;
+    private TextView localRoomBody;
+    private Button localPrimaryButton;
+    private Button localSecondaryButton;
     private View errorPanel;
     private TextView errorMessage;
+    private TextView roomNavTitle;
+    private TextView roomNavStatus;
     private ValueCallback<Uri[]> fileChooserCallback;
+    private SharedPreferences localState;
+    private CoastRoom currentRoom;
+    private CoastRoom pendingRoom;
     private final CoastUpdateChecker updateChecker = new CoastUpdateChecker();
-    private boolean firstPagePresented;
     private final Runnable revealPageProgress = () -> {
-        if (pageProgress != null && pageProgress.getProgress() < 100 && firstPagePresented) {
+        if (pageProgress != null && pageProgress.getProgress() < 100 && currentRoom != null) {
             pageProgress.setVisibility(View.VISIBLE);
         }
     };
+
     private long lastBackPressedAt;
+    private boolean webReady;
     private boolean clearHistoryAfterHomeLoad;
     private boolean offlineCacheAttempted;
     private boolean usingCacheOnly;
+    private int roomSwitchToken;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,23 +87,52 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
 
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         setContentView(R.layout.activity_main);
-
-        appRoot = findViewById(R.id.app_root);
-        webView = findViewById(R.id.coast_webview);
-        pageProgress = findViewById(R.id.page_progress);
-        loadingOverlay = findViewById(R.id.loading_overlay);
-        errorPanel = findViewById(R.id.error_panel);
-        errorMessage = findViewById(R.id.error_message);
+        bindViews();
+        localState = getSharedPreferences(LOCAL_STATE, MODE_PRIVATE);
 
         configureSystemBars();
         configureInsets(appRoot);
         configureWebView();
         configureShellControls();
+        populateRoomList();
         configureBackHandler();
 
-        if (savedInstanceState == null || webView.restoreState(savedInstanceState) == null) {
-            loadCoastHome(false);
+        boolean restored = savedInstanceState != null && webView.restoreState(savedInstanceState) != null;
+        webReady = restored;
+        if (!restored) {
+            prewarmCoast();
         }
+
+        CoastRoom restoredRoom = savedInstanceState == null
+                ? null
+                : CoastRoom.fromId(savedInstanceState.getString(STATE_ROOM_ID));
+        if (restoredRoom == null) {
+            showHome();
+        } else {
+            openRoom(restoredRoom);
+        }
+    }
+
+    private void bindViews() {
+        appRoot = findViewById(R.id.app_root);
+        homeScreen = findViewById(R.id.home_screen);
+        roomScreen = findViewById(R.id.room_screen);
+        roomList = findViewById(R.id.room_list);
+        homeSyncNote = findViewById(R.id.home_sync_note);
+        webView = findViewById(R.id.coast_webview);
+        pageProgress = findViewById(R.id.page_progress);
+        roomSkeleton = findViewById(R.id.room_skeleton);
+        skeletonTitle = findViewById(R.id.skeleton_title);
+        skeletonSubtitle = findViewById(R.id.skeleton_subtitle);
+        localRoomPanel = findViewById(R.id.local_room_panel);
+        localRoomTitle = findViewById(R.id.local_room_title);
+        localRoomBody = findViewById(R.id.local_room_body);
+        localPrimaryButton = findViewById(R.id.local_primary_button);
+        localSecondaryButton = findViewById(R.id.local_secondary_button);
+        errorPanel = findViewById(R.id.error_panel);
+        errorMessage = findViewById(R.id.error_message);
+        roomNavTitle = findViewById(R.id.room_nav_title);
+        roomNavStatus = findViewById(R.id.room_nav_status);
     }
 
     private void configureSystemBars() {
@@ -90,41 +143,42 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.setNavigationBarContrastEnforced(false);
         }
-        applySystemSurfaceBars();
+        applyShellSystemBars();
     }
 
-    private void applySystemSurfaceBars() {
-        applySystemBarColor(getColor(R.color.shell_surface), !isSystemDarkMode());
+    private void applyShellSystemBars() {
+        applySystemBarColors(getColor(R.color.coast_navy), false);
     }
 
-    private boolean isSystemDarkMode() {
-        int nightMode = getResources().getConfiguration().uiMode
-                & Configuration.UI_MODE_NIGHT_MASK;
-        return nightMode == Configuration.UI_MODE_NIGHT_YES;
-    }
-
-    private void applySystemBarColor(int color, boolean useDarkIcons) {
+    private void applySystemBarColors(int statusColor, boolean useDarkStatusIcons) {
         Window window = getWindow();
-        window.setStatusBarColor(color);
-        window.setNavigationBarColor(color);
+        window.setStatusBarColor(statusColor);
+        window.setNavigationBarColor(getColor(R.color.coast_navy));
         if (appRoot != null) {
-            appRoot.setBackgroundColor(color);
+            appRoot.setBackgroundColor(getColor(R.color.coast_navy));
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             WindowInsetsController controller = window.getInsetsController();
             if (controller != null) {
-                int mask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
-                        | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
-                controller.setSystemBarsAppearance(useDarkIcons ? mask : 0, mask);
+                int statusMask = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS;
+                controller.setSystemBarsAppearance(
+                        useDarkStatusIcons ? statusMask : 0,
+                        statusMask
+                );
+                controller.setSystemBarsAppearance(
+                        0,
+                        WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+                );
             }
             return;
         }
 
         int visibility = window.getDecorView().getSystemUiVisibility();
-        int mask = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-                | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
-        visibility = useDarkIcons ? visibility | mask : visibility & ~mask;
+        visibility = useDarkStatusIcons
+                ? visibility | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                : visibility & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        visibility &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
         window.getDecorView().setSystemUiVisibility(visibility);
     }
 
@@ -176,7 +230,7 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
                 settings.getUserAgentString()
                         + " ElementeraCoastApp/"
                         + BuildConfig.VERSION_NAME
-                        + " Android"
+                        + " Android HybridShell"
         );
 
         CookieManager cookieManager = CookieManager.getInstance();
@@ -196,10 +250,10 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
             public void onProgressChanged(WebView view, int newProgress) {
                 pageProgress.setProgress(newProgress, true);
                 pageProgress.removeCallbacks(revealPageProgress);
-                if (newProgress >= 100 || !firstPagePresented) {
+                if (newProgress >= 100 || currentRoom == null || roomSkeleton.getVisibility() == View.VISIBLE) {
                     pageProgress.setVisibility(View.GONE);
                 } else {
-                    pageProgress.postDelayed(revealPageProgress, 140L);
+                    pageProgress.postDelayed(revealPageProgress, 180L);
                 }
             }
 
@@ -234,75 +288,417 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
     }
 
     private void configureShellControls() {
-        findViewById(R.id.shell_menu_button).setOnClickListener(this::showShellMenu);
-        findViewById(R.id.retry_button).setOnClickListener(view -> retryCurrentPage());
+        findViewById(R.id.home_menu_button).setOnClickListener(view -> showShellMenu());
+        findViewById(R.id.room_menu_button).setOnClickListener(view -> showShellMenu());
+        findViewById(R.id.room_back_button).setOnClickListener(view -> showHome());
+        findViewById(R.id.retry_button).setOnClickListener(view -> retryCurrentRoom());
         findViewById(R.id.open_browser_button).setOnClickListener(
-                view -> launchExternal(Uri.parse(BuildConfig.COAST_URL))
+                view -> launchExternal(currentExternalUri())
         );
         findViewById(R.id.clear_cache_button).setOnClickListener(
                 view -> clearResourceCacheAndReload()
         );
     }
 
-    private void showShellMenu(View anchor) {
-        PopupMenu popupMenu = new PopupMenu(this, anchor);
-        popupMenu.inflate(R.menu.coast_shell_menu);
-        popupMenu.setOnMenuItemClickListener(item -> {
-            int id = item.getItemId();
-            if (id == R.id.menu_refresh) {
-                retryCurrentPage();
-                return true;
+    private void populateRoomList() {
+        roomList.removeAllViews();
+        String currentGroup = "";
+        for (CoastRoom room : CoastRoom.all()) {
+            if (!currentGroup.equals(room.group)) {
+                currentGroup = room.group;
+                roomList.addView(createGroupLabel(currentGroup));
             }
-            if (id == R.id.menu_home) {
-                loadCoastHome(true);
-                return true;
-            }
-            if (id == R.id.menu_clear_cache) {
-                clearResourceCacheAndReload();
-                return true;
-            }
-            if (id == R.id.menu_check_update) {
-                showLocalUpdateCenter();
-                return true;
-            }
-            if (id == R.id.menu_open_browser) {
-                launchExternal(Uri.parse(BuildConfig.COAST_URL));
-                return true;
-            }
-            if (id == R.id.menu_about) {
-                showAboutDialog();
-                return true;
-            }
-            return false;
-        });
-        popupMenu.show();
+            roomList.addView(createRoomCard(room));
+        }
     }
 
-    private void retryCurrentPage() {
-        hideNetworkError();
+    private View createGroupLabel(String label) {
+        TextView title = new TextView(this);
+        title.setText(label);
+        title.setTextColor(getColor(R.color.coast_text_muted));
+        title.setTextSize(11f);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        title.setLetterSpacing(0.09f);
+        title.setPadding(dp(7), dp(17), dp(7), dp(8));
+        return title;
+    }
+
+    private View createRoomCard(CoastRoom room) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setMinimumHeight(dp(72));
+        card.setPadding(dp(12), dp(10), dp(12), dp(10));
+        card.setBackgroundResource(R.drawable.bg_room_card);
+        card.setClickable(true);
+        card.setFocusable(true);
+        card.setContentDescription(room.title + "，" + room.subtitle);
+        card.setOnClickListener(view -> openRoom(room));
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        cardParams.bottomMargin = dp(8);
+        card.setLayoutParams(cardParams);
+
+        TextView symbol = new TextView(this);
+        symbol.setGravity(Gravity.CENTER);
+        symbol.setText(room.symbol);
+        symbol.setTextColor(getColor(R.color.coast_gold_soft));
+        symbol.setTextSize(20f);
+        symbol.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        symbol.setBackgroundResource(R.drawable.bg_room_symbol);
+        card.addView(symbol, new LinearLayout.LayoutParams(dp(46), dp(46)));
+
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+        );
+        copyParams.leftMargin = dp(12);
+        copyParams.rightMargin = dp(8);
+
+        TextView title = new TextView(this);
+        title.setText(room.title);
+        title.setTextColor(getColor(R.color.coast_white));
+        title.setTextSize(15f);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        copy.addView(title);
+
+        TextView subtitle = new TextView(this);
+        subtitle.setText(room.subtitle);
+        subtitle.setTextColor(getColor(R.color.coast_text_muted));
+        subtitle.setTextSize(11f);
+        subtitle.setMaxLines(2);
+        copy.addView(subtitle);
+        card.addView(copy, copyParams);
+
+        TextView arrow = new TextView(this);
+        arrow.setText("›");
+        arrow.setTextColor(getColor(R.color.coast_gold_soft));
+        arrow.setTextSize(24f);
+        card.addView(arrow, new LinearLayout.LayoutParams(dp(20), dp(42)));
+        return card;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private void prewarmCoast() {
+        webReady = false;
         resetNetworkLoadMode();
         offlineCacheAttempted = false;
+        webView.loadUrl(BuildConfig.COAST_URL);
+    }
+
+    private void showHome() {
+        currentRoom = null;
+        pendingRoom = null;
+        roomSwitchToken += 1;
+        pageProgress.removeCallbacks(revealPageProgress);
+        pageProgress.setVisibility(View.GONE);
+        homeScreen.setVisibility(View.VISIBLE);
+        roomScreen.setVisibility(View.GONE);
+        applyShellSystemBars();
+        updateHomeSyncNote();
+    }
+
+    private void updateHomeSyncNote() {
+        String lastRoomId = localState.getString(LAST_ROOM_ID, "");
+        CoastRoom lastRoom = CoastRoom.fromId(lastRoomId);
+        if (lastRoom == null) {
+            homeSyncNote.setText(R.string.home_ready_note);
+            return;
+        }
+        String status = webReady ? "线上内容岛已预热" : "本地入口已就绪";
+        homeSyncNote.setText(status + " · 上次停在「" + lastRoom.title + "」");
+    }
+
+    private void openRoom(CoastRoom room) {
+        currentRoom = room;
+        pendingRoom = null;
+        int switchToken = ++roomSwitchToken;
+        localState.edit()
+                .putString(LAST_ROOM_ID, room.id)
+                .putLong(LAST_ROOM_OPENED_AT, System.currentTimeMillis())
+                .apply();
+
+        homeScreen.setVisibility(View.GONE);
+        roomScreen.setVisibility(View.VISIBLE);
+        roomNavTitle.setText(room.title);
+        roomNavStatus.setText(R.string.local_room_ready);
+        hideNetworkError();
+        pageProgress.setVisibility(View.GONE);
+        applyShellSystemBars();
+
+        if (room.kind == CoastRoom.Kind.LOCAL_UPDATE) {
+            showLocalUpdateRoom(switchToken);
+            return;
+        }
+        if (room.kind == CoastRoom.Kind.LOCAL_ABOUT) {
+            showLocalAboutRoom(switchToken);
+            return;
+        }
+
+        prepareWebRoom(room, switchToken);
+    }
+
+    private void prepareWebRoom(CoastRoom room, int switchToken) {
+        webView.setVisibility(View.VISIBLE);
+        localRoomPanel.setVisibility(View.GONE);
+        showRoomSkeleton(room);
+        pendingRoom = room;
+        offlineCacheAttempted = false;
+        resetNetworkLoadMode();
+
+        String currentUrl = webView.getUrl();
+        if (room.kind == CoastRoom.Kind.WEB_PAGE) {
+            String mailboxUrl = BuildConfig.COAST_URL + "/mailbox";
+            if (isMailboxUrl(currentUrl) && webReady) {
+                pendingRoom = null;
+                presentWebContent(switchToken);
+            } else {
+                webReady = false;
+                webView.loadUrl(mailboxUrl);
+            }
+            return;
+        }
+
+        if (isLoginUrl(currentUrl) && webReady) {
+            presentLoginContent(switchToken);
+            return;
+        }
+        if (isAppRuntimeUrl(currentUrl) && webReady) {
+            dispatchRoomAction(room, switchToken, 0);
+            return;
+        }
+
+        webReady = false;
+        webView.loadUrl(BuildConfig.COAST_URL);
+    }
+
+    private void showRoomSkeleton(CoastRoom room) {
+        skeletonTitle.setText(room.title);
+        skeletonSubtitle.setText(room.subtitle + "\n本地房间已打开");
+        roomNavStatus.setText(R.string.local_room_ready);
+        roomSkeleton.setAlpha(1f);
+        roomSkeleton.setVisibility(View.VISIBLE);
+        webView.setAlpha(0f);
+    }
+
+    private void dispatchRoomAction(CoastRoom room, int switchToken, int attempt) {
+        if (currentRoom != room || switchToken != roomSwitchToken) {
+            return;
+        }
+        String script = "(function(){try{return !!(window.CoastNativeShell"
+                + "&&window.CoastNativeShell.openRoom("
+                + JSONObject.quote(room.id)
+                + "));}catch(_error){return false;}})();";
+        webView.evaluateJavascript(script, rawValue -> {
+            if (currentRoom != room || switchToken != roomSwitchToken) {
+                return;
+            }
+            if ("true".equals(rawValue)) {
+                pendingRoom = null;
+                webView.postDelayed(() -> presentWebContent(switchToken), 110L);
+                return;
+            }
+            if (attempt < MAX_NATIVE_DISPATCH_ATTEMPTS) {
+                webView.postDelayed(
+                        () -> dispatchRoomAction(room, switchToken, attempt + 1),
+                        150L
+                );
+                return;
+            }
+            roomNavStatus.setText("线上入口已打开");
+            presentWebContent(switchToken);
+        });
+    }
+
+    private void presentLoginContent(int switchToken) {
+        roomNavStatus.setText("登录后继续同步此房间");
+        presentWebContent(switchToken);
+    }
+
+    private void presentWebContent(int switchToken) {
+        if (switchToken != roomSwitchToken || currentRoom == null) {
+            return;
+        }
+        hideNetworkError();
+        webView.animate().cancel();
+        webView.animate().alpha(1f).setDuration(CONTENT_FADE_MS).start();
+        if (roomSkeleton.getVisibility() == View.VISIBLE) {
+            roomSkeleton.animate()
+                    .alpha(0f)
+                    .setDuration(CONTENT_FADE_MS)
+                    .withEndAction(() -> {
+                        if (switchToken == roomSwitchToken) {
+                            roomSkeleton.setVisibility(View.GONE);
+                            roomSkeleton.setAlpha(1f);
+                        }
+                    })
+                    .start();
+        }
+        if (!isLoginUrl(webView.getUrl())) {
+            roomNavStatus.setText(R.string.online_room_ready);
+        }
+    }
+
+    private void showLocalUpdateRoom(int switchToken) {
+        webView.setVisibility(View.INVISIBLE);
+        roomSkeleton.setVisibility(View.GONE);
+        errorPanel.setVisibility(View.GONE);
+        localRoomPanel.setVisibility(View.VISIBLE);
+        localRoomTitle.setText(R.string.open_update_center);
+        localRoomBody.setText(buildUpdateCenterMessage(null, false));
+        localPrimaryButton.setText(R.string.retry_update_check);
+        localPrimaryButton.setOnClickListener(view -> refreshLocalUpdateRoom(switchToken));
+        localSecondaryButton.setText(R.string.open_web_update_page);
+        localSecondaryButton.setOnClickListener(
+                view -> launchExternal(Uri.parse(BuildConfig.UPDATE_PAGE_URL))
+        );
+        roomNavStatus.setText("APK 内本地更新骨架");
+        refreshLocalUpdateRoom(switchToken);
+    }
+
+    private void refreshLocalUpdateRoom(int switchToken) {
+        if (currentRoom != CoastRoom.UPDATES || switchToken != roomSwitchToken) {
+            return;
+        }
+        localRoomBody.setText(buildUpdateCenterMessage(null, true));
+        roomNavStatus.setText("正在读取线上清单…");
+        updateChecker.check(BuildConfig.UPDATE_MANIFEST_URL, new CoastUpdateChecker.Callback() {
+            @Override
+            public void onSuccess(CoastUpdateChecker.UpdateInfo updateInfo) {
+                if (currentRoom == CoastRoom.UPDATES && switchToken == roomSwitchToken) {
+                    localRoomBody.setText(buildUpdateCenterMessage(updateInfo, false));
+                    roomNavStatus.setText(updateInfo.latestVersionCode > BuildConfig.VERSION_CODE
+                            ? "发现 CoastGPT 新版本"
+                            : "当前已是最新版");
+                }
+            }
+
+            @Override
+            public void onFailure() {
+                if (currentRoom == CoastRoom.UPDATES && switchToken == roomSwitchToken) {
+                    localRoomBody.setText(buildUpdateCenterMessage(null, false));
+                    roomNavStatus.setText(R.string.offline_room_status);
+                }
+            }
+        });
+    }
+
+    private void showLocalAboutRoom(int switchToken) {
+        webView.setVisibility(View.INVISIBLE);
+        roomSkeleton.setVisibility(View.GONE);
+        errorPanel.setVisibility(View.GONE);
+        localRoomPanel.setVisibility(View.VISIBLE);
+        localRoomTitle.setText(R.string.about_coast);
+        localRoomBody.setText(buildAboutMessage(null, false));
+        localPrimaryButton.setText(R.string.check_update);
+        localPrimaryButton.setOnClickListener(view -> openRoom(CoastRoom.UPDATES));
+        localSecondaryButton.setText(R.string.open_browser);
+        localSecondaryButton.setOnClickListener(
+                view -> launchExternal(Uri.parse(BuildConfig.COAST_URL))
+        );
+        roomNavStatus.setText("APK 内本地关于页");
+
+        updateChecker.check(BuildConfig.UPDATE_MANIFEST_URL, new CoastUpdateChecker.Callback() {
+            @Override
+            public void onSuccess(CoastUpdateChecker.UpdateInfo updateInfo) {
+                if (currentRoom == CoastRoom.ABOUT && switchToken == roomSwitchToken) {
+                    localRoomBody.setText(buildAboutMessage(updateInfo, false));
+                    roomNavStatus.setText("线上版本信息已同步");
+                }
+            }
+
+            @Override
+            public void onFailure() {
+                if (currentRoom == CoastRoom.ABOUT && switchToken == roomSwitchToken) {
+                    localRoomBody.setText(buildAboutMessage(null, true));
+                    roomNavStatus.setText(R.string.offline_room_status);
+                }
+            }
+        });
+    }
+
+    private void showShellMenu() {
+        String[] entries = {
+                getString(R.string.refresh_current_room),
+                getString(R.string.back_to_home),
+                getString(R.string.clear_cache_reload),
+                getString(R.string.check_update),
+                getString(R.string.open_browser),
+                getString(R.string.about_coast),
+        };
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.app_name)
+                .setItems(entries, (dialog, which) -> {
+                    if (which == 0) {
+                        retryCurrentRoom();
+                    } else if (which == 1) {
+                        showHome();
+                    } else if (which == 2) {
+                        clearResourceCacheAndReload();
+                    } else if (which == 3) {
+                        openRoom(CoastRoom.UPDATES);
+                    } else if (which == 4) {
+                        launchExternal(currentExternalUri());
+                    } else if (which == 5) {
+                        openRoom(CoastRoom.ABOUT);
+                    }
+                })
+                .setNegativeButton(R.string.close, null)
+                .show();
+    }
+
+    private void retryCurrentRoom() {
+        CoastRoom room = currentRoom;
+        if (room == null) {
+            prewarmCoast();
+            homeSyncNote.setText("正在后台重新连接线上海岸…");
+            return;
+        }
+        if (room == CoastRoom.UPDATES) {
+            refreshLocalUpdateRoom(roomSwitchToken);
+            return;
+        }
+        if (room == CoastRoom.ABOUT) {
+            showLocalAboutRoom(roomSwitchToken);
+            return;
+        }
+
+        int switchToken = ++roomSwitchToken;
+        hideNetworkError();
+        showRoomSkeleton(room);
+        pendingRoom = room;
+        resetNetworkLoadMode();
+        offlineCacheAttempted = false;
+        webReady = false;
         String currentUrl = webView.getUrl();
         if (currentUrl == null || currentUrl.trim().isEmpty()) {
-            loadCoastHome(false);
+            prepareWebRoom(room, switchToken);
         } else {
             webView.reload();
         }
     }
 
-    private void loadCoastHome(boolean resetHistory) {
-        hideNetworkError();
-        resetNetworkLoadMode();
-        offlineCacheAttempted = false;
-        clearHistoryAfterHomeLoad = resetHistory;
-        webView.loadUrl(BuildConfig.COAST_URL);
-    }
-
     private void clearResourceCacheAndReload() {
+        CoastRoom room = currentRoom;
         hideNetworkError();
         resetNetworkLoadMode();
         offlineCacheAttempted = false;
         webView.clearCache(true);
+        if (room != null && room.kind != CoastRoom.Kind.LOCAL_ABOUT
+                && room.kind != CoastRoom.Kind.LOCAL_UPDATE) {
+            pendingRoom = room;
+            showRoomSkeleton(room);
+        }
+
         String currentUrl = webView.getUrl();
         if (isInternalUrl(currentUrl)) {
             String script = "(async function(){try{"
@@ -313,60 +709,12 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
                     + "window.location.replace("
                     + JSONObject.quote(BuildConfig.COAST_URL)
                     + ");})();";
+            webReady = false;
             webView.evaluateJavascript(script, null);
         } else {
-            loadCoastHome(false);
+            prewarmCoast();
         }
         toast(R.string.cache_cleared);
-    }
-
-    private void showLocalUpdateCenter() {
-        if (isFinishing() || isDestroyed()) {
-            return;
-        }
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle(R.string.open_update_center)
-                .setMessage(buildUpdateCenterMessage(null, false))
-                .setNegativeButton(R.string.retry_update_check, null)
-                .setNeutralButton(
-                        "网页版更新页",
-                        (ignored, which) -> launchExternal(Uri.parse(BuildConfig.UPDATE_PAGE_URL))
-                )
-                .setPositiveButton("关闭", null)
-                .create();
-        dialog.setOnShowListener(ignored -> {
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener(
-                    view -> refreshUpdateDialog(dialog)
-            );
-            refreshUpdateDialog(dialog);
-        });
-        dialog.show();
-    }
-
-    private void refreshUpdateDialog(AlertDialog dialog) {
-        if (!dialog.isShowing()) {
-            return;
-        }
-        dialog.setTitle(R.string.open_update_center);
-        dialog.setMessage(buildUpdateCenterMessage(null, true));
-        updateChecker.check(BuildConfig.UPDATE_MANIFEST_URL, new CoastUpdateChecker.Callback() {
-            @Override
-            public void onSuccess(CoastUpdateChecker.UpdateInfo updateInfo) {
-                if (dialog.isShowing()) {
-                    boolean newer = updateInfo.latestVersionCode > BuildConfig.VERSION_CODE;
-                    dialog.setTitle(newer ? "发现 CoastGPT 新版本" : "CoastGPT 已是最新版");
-                    dialog.setMessage(buildUpdateCenterMessage(updateInfo, false));
-                }
-            }
-
-            @Override
-            public void onFailure() {
-                if (dialog.isShowing()) {
-                    dialog.setTitle("CoastGPT 本地更新中心");
-                    dialog.setMessage(buildUpdateCenterMessage(null, false));
-                }
-            }
-        });
     }
 
     private String buildUpdateCenterMessage(
@@ -386,7 +734,7 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
         if (updateInfo == null) {
             message.append("\n\n")
                     .append(loading ? "正在读取线上更新清单…" : "离线，暂未读取线上清单。")
-                    .append("\n本地菜单、关于、错误恢复与版本说明仍可使用。");
+                    .append("\n本地房间、菜单、关于、错误恢复与版本说明仍可使用。");
         } else {
             message.append("\n\n线上版本：")
                     .append(emptyFallback(updateInfo.latestVersionName, "未标注"))
@@ -419,38 +767,8 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
             }
         }
 
-        message.append("\n\n签名说明：debug APK 只用于测试；正式覆盖安装需保持 packageName 与长期 release 签名一致，并递增 versionCode。");
+        message.append("\n\n签名说明：debug APK 只用于测试；正式覆盖安装需保持 packageName 与长期 release 签名一致，并递增 versionCode。\n\nA4 不会自动下载或安装 APK。");
         return message.toString();
-    }
-
-    private void showAboutDialog() {
-        AlertDialog aboutDialog = new AlertDialog.Builder(this)
-                .setTitle(R.string.about_coast)
-                .setMessage(buildAboutMessage(null, false))
-                .setNeutralButton("检查更新", (dialog, which) -> showLocalUpdateCenter())
-                .setNegativeButton(
-                        "网页版更新页",
-                        (ignored, which) -> launchExternal(Uri.parse(BuildConfig.UPDATE_PAGE_URL))
-                )
-                .setPositiveButton("关闭", null)
-                .create();
-        aboutDialog.show();
-
-        updateChecker.check(BuildConfig.UPDATE_MANIFEST_URL, new CoastUpdateChecker.Callback() {
-            @Override
-            public void onSuccess(CoastUpdateChecker.UpdateInfo updateInfo) {
-                if (aboutDialog.isShowing()) {
-                    aboutDialog.setMessage(buildAboutMessage(updateInfo, false));
-                }
-            }
-
-            @Override
-            public void onFailure() {
-                if (aboutDialog.isShowing()) {
-                    aboutDialog.setMessage(buildAboutMessage(null, true));
-                }
-            }
-        });
     }
 
     private String buildAboutMessage(
@@ -473,12 +791,13 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
                 + "APP versionName：" + BuildConfig.VERSION_NAME + "\n"
                 + "APP versionCode：" + BuildConfig.VERSION_CODE + "\n"
                 + "packageName：" + BuildConfig.APPLICATION_ID + "\n"
-                + "WebView 加载地址：" + BuildConfig.COAST_URL + "\n\n"
+                + "在线内容岛：" + BuildConfig.COAST_URL + "\n\n"
                 + "Web：" + webLabel + " · " + webCommit + "\n"
                 + "MCP expectedVersion：" + expectedMcpVersion + "\n"
                 + "更新清单：" + BuildConfig.UPDATE_MANIFEST_URL + "\n"
                 + (offline ? "清单状态：离线，显示 APK 内基础信息\n\n" : "\n")
-                + "A3 将菜单、关于、更新骨架与断网恢复放在本地壳。清缓存不会删除 Cookie、localStorage、sessionStorage 或 IndexedDB。";
+                + "A4 将首页、房间入口、房间骨架、菜单、关于、更新与错误恢复放进 APK；单一 WebView 只承载在线内容岛。APP 只保存上次房间 ID 与时间，不缓存聊天、信箱或记忆正文。\n\n"
+                + "清缓存不会删除 Cookie、localStorage、sessionStorage 或 IndexedDB。APP 模式只用于 UI，不是身份或权限依据，也不会进入模型上下文。";
     }
 
     private String emptyFallback(String value, String fallback) {
@@ -503,21 +822,69 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
                 && coast.getHost().equalsIgnoreCase(uri.getHost());
     }
 
+    private boolean isAppRuntimeUrl(String value) {
+        if (!isInternalUrl(value)) {
+            return false;
+        }
+        String path = Uri.parse(value).getPath();
+        return path == null || path.isEmpty() || "/".equals(path) || "/index.html".equals(path);
+    }
+
+    private boolean isMailboxUrl(String value) {
+        return isInternalUrl(value) && "/mailbox".equals(Uri.parse(value).getPath());
+    }
+
+    private boolean isLoginUrl(String value) {
+        return isInternalUrl(value) && "/login".equals(Uri.parse(value).getPath());
+    }
+
     @Override
     public void onMainFrameStarted() {
+        webReady = false;
         hideNetworkError();
     }
 
     @Override
     public void onMainFrameLoaded(String url) {
+        webReady = true;
         resetNetworkLoadMode();
         offlineCacheAttempted = false;
         hideNetworkError();
-        presentWebContent();
         applyDocumentThemeColor();
         if (clearHistoryAfterHomeLoad) {
             webView.clearHistory();
             clearHistoryAfterHomeLoad = false;
+        }
+
+        if (currentRoom == null) {
+            updateHomeSyncNote();
+            return;
+        }
+        if (currentRoom.kind == CoastRoom.Kind.LOCAL_UPDATE
+                || currentRoom.kind == CoastRoom.Kind.LOCAL_ABOUT) {
+            return;
+        }
+
+        int switchToken = roomSwitchToken;
+        if (currentRoom.kind == CoastRoom.Kind.WEB_PAGE) {
+            if (isMailboxUrl(url)) {
+                pendingRoom = null;
+                presentWebContent(switchToken);
+            } else if (isLoginUrl(url)) {
+                presentLoginContent(switchToken);
+            } else {
+                webReady = false;
+                webView.loadUrl(BuildConfig.COAST_URL + "/mailbox");
+            }
+            return;
+        }
+
+        if (isAppRuntimeUrl(url)) {
+            dispatchRoomAction(currentRoom, switchToken, 0);
+        } else if (isLoginUrl(url)) {
+            presentLoginContent(switchToken);
+        } else {
+            presentWebContent(switchToken);
         }
     }
 
@@ -527,6 +894,7 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
             String failedUrl,
             boolean allowCachedFallback
     ) {
+        webReady = false;
         if (allowCachedFallback && !offlineCacheAttempted && isInternalUrl(failedUrl)) {
             offlineCacheAttempted = true;
             usingCacheOnly = true;
@@ -538,10 +906,21 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
         resetNetworkLoadMode();
         pageProgress.removeCallbacks(revealPageProgress);
         pageProgress.setVisibility(View.GONE);
-        hideLoadingOverlay();
-        applySystemSurfaceBars();
-        errorMessage.setText(message);
+        if (currentRoom == null) {
+            homeSyncNote.setText("离线，暂未同步 · 本地房间和按钮仍可使用");
+            return;
+        }
+        if (currentRoom.kind == CoastRoom.Kind.LOCAL_UPDATE
+                || currentRoom.kind == CoastRoom.Kind.LOCAL_ABOUT) {
+            return;
+        }
+        roomSkeleton.setVisibility(View.GONE);
+        localRoomPanel.setVisibility(View.GONE);
+        webView.setAlpha(0f);
+        errorMessage.setText(message + "\n\n本地房间仍然在这里。恢复网络后可以重试同步。");
         errorPanel.setVisibility(View.VISIBLE);
+        roomNavStatus.setText(R.string.offline_room_status);
+        applyShellSystemBars();
     }
 
     private void resetNetworkLoadMode() {
@@ -551,28 +930,10 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
         usingCacheOnly = false;
     }
 
-    private void presentWebContent() {
-        if (!firstPagePresented) {
-            firstPagePresented = true;
-            webView.animate().alpha(1f).setDuration(CONTENT_FADE_MS).start();
-        } else {
-            webView.setAlpha(1f);
-        }
-        hideLoadingOverlay();
-    }
-
-    private void hideLoadingOverlay() {
-        if (loadingOverlay.getVisibility() != View.VISIBLE) {
+    private void applyDocumentThemeColor() {
+        if (currentRoom == null) {
             return;
         }
-        loadingOverlay.animate()
-                .alpha(0f)
-                .setDuration(CONTENT_FADE_MS)
-                .withEndAction(() -> loadingOverlay.setVisibility(View.GONE))
-                .start();
-    }
-
-    private void applyDocumentThemeColor() {
         String script = "(function(){var node=document.querySelector('meta[name=theme-color]');"
                 + "return node&&node.content?node.content:'';})();";
         webView.evaluateJavascript(script, rawValue -> {
@@ -582,9 +943,9 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
                     return;
                 }
                 int color = Color.parseColor(value);
-                applySystemBarColor(color, isLightColor(color));
+                applySystemBarColors(color, isLightColor(color));
             } catch (Exception ignored) {
-                // System light/dark colors remain the safe fallback.
+                applyShellSystemBars();
             }
         });
     }
@@ -613,6 +974,16 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
         launchExternal(uri);
     }
 
+    private Uri currentExternalUri() {
+        String currentUrl = webView.getUrl();
+        if (currentRoom != null && currentRoom.kind == CoastRoom.Kind.WEB_PAGE) {
+            return Uri.parse(BuildConfig.COAST_URL + "/mailbox");
+        }
+        return isInternalUrl(currentUrl)
+                ? Uri.parse(currentUrl)
+                : Uri.parse(BuildConfig.COAST_URL);
+    }
+
     private void launchExternal(Uri uri) {
         try {
             startActivity(new Intent(Intent.ACTION_VIEW, uri));
@@ -637,17 +1008,8 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
     }
 
     private void handleBack() {
-        if (errorPanel.getVisibility() == View.VISIBLE) {
-            if (webView.canGoBack()) {
-                hideNetworkError();
-                webView.goBack();
-            } else {
-                retryCurrentPage();
-            }
-            return;
-        }
-        if (webView.canGoBack()) {
-            webView.goBack();
+        if (currentRoom != null) {
+            showHome();
             return;
         }
 
@@ -683,6 +1045,9 @@ public final class MainActivity extends Activity implements CoastWebViewClient.D
 
     @Override
     protected void onSaveInstanceState(Bundle outState) {
+        if (currentRoom != null) {
+            outState.putString(STATE_ROOM_ID, currentRoom.id);
+        }
         webView.saveState(outState);
         super.onSaveInstanceState(outState);
     }

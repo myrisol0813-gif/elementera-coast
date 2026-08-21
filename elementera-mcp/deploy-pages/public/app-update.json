@@ -1,21 +1,22 @@
 {
   "appName": "CoastGPT",
   "android": {
-    "latestVersionCode": 3,
-    "latestVersionName": "1.0.2-a3",
-    "releaseName": "A3.0",
+    "latestVersionCode": 4,
+    "latestVersionName": "1.0.3-a4",
+    "releaseName": "A4.0",
     "apkUrl": "",
     "sha256": "",
     "publishedAt": "2026-08-21",
     "releaseNotes": [
-      "手机桌面名称更新为 CoastGPT，并恢复仓库原有深蓝旧金图标",
-      "移除固定原生顶栏，使用轻量悬浮菜单与系统/页面主题色",
-      "加入本地启动骨架、离线菜单、关于、更新说明与缓存优先恢复"
+      "新增 APK 本地首页、16 个房间入口与即时房间骨架",
+      "复用单一 WebView 作为在线内容岛，房间切换不重建 WebView",
+      "移除遮挡网页的悬浮菜单，改为底部安全区内的单一原生入口",
+      "断网仍可使用房间列表、菜单、关于、更新与错误恢复"
     ]
   },
   "web": {
-    "label": "A3 / P6.4+A1+A2",
-    "commit": "e70936d"
+    "label": "A4 / P6.4+A1+A2+A3",
+    "commit": "7fcfd13"
   },
   "mcp": {
     "expectedVersion": "1.9.2"
